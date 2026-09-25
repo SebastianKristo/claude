@@ -101,7 +101,7 @@
       const subline = `${inList.length} oppgaver · ${done} fullført`;
       const progress = { width: `${inList.length ? done / inList.length * 100 : 0}%`, height: '100%', borderRadius: 3, background: GREEN, transition: 'width .4s' };
       const tabs = lists.map(l => { const act = cur === l.id, n = data[l.id].filter(x => !x.done).length; return { k: l.id, label: l.navn, count: n,
-        style: { height: 40, borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 13, fontWeight: 500, background: act ? PINK : 'transparent', color: act ? '#2a1720' : '#a9a7a2' },
+        style: { height: 40, borderRadius: 20, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 13, fontWeight: 500, background: act ? PINK : '#1c1c1f', color: act ? '#2a1720' : '#a9a7a2' },
         countStyle: { minWidth: 20, height: 20, borderRadius: 10, display: 'grid', placeItems: 'center', fontSize: 11, fontWeight: 600, background: act ? 'rgba(42,23,32,0.14)' : '#2a2a2d' } }; });
       const draftPrio = { label: PR[s.prio][0], style: { ...tag(s.prio), height: 32, padding: '0 12px', borderRadius: 16, fontSize: 12 } };
       const filters = [['open', 'Åpne'], ['high', 'Høy'], ['done', 'Fullført'], ['all', 'Alle']].map(([k, label]) => ({ k, label, style: { height: 32, padding: '0 13px', borderRadius: 16, fontSize: 12, fontWeight: 500, background: s.filter === k ? '#f4f3ef' : '#1c1c1f', color: s.filter === k ? '#1a1a1c' : '#c9c7c2' } }));
@@ -123,9 +123,10 @@
     <div style="height:6px;border-radius:3px;background:#1f1f22;overflow:hidden;margin-top:8px"><div style="${S(progress)}"></div></div>
   </section>
 
-  <div style="display:grid;grid-template-columns:repeat(${Math.max(1, tabs.length)},1fr);gap:2px;padding:4px;border-radius:20px;background:#1c1c1f">
-    ${tabs.map(t => `<button data-on-click="goTab" data-arg="${e(t.k)}" style="${S(t.style)}"><span>${e(t.label)}</span><span style="${S(t.countStyle)}"><span>${e(t.count)}</span></span></button>`).join('')}
-  </div>
+  ${tabs.length <= 3 && tabs.every(t => String(t.label).length <= (tabs.length > 2 ? 11 : 17)) ? KD.segHTML('lister', tabs.map(t => [t.k, t.count ? `${t.label} · ${t.count}` : t.label]), cur, 'goTab', { pink: true, h: 40 })
+    : `<div data-key="tabs-rull" style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:0 var(--kd-kant,10px)">
+    ${tabs.map(t => `<button data-key="tab-${e(t.k)}" data-on-click="goTab" data-arg="${e(t.k)}" style="${S({ ...t.style, flex: 'none', maxWidth: 200, padding: '0 8px 0 16px', whiteSpace: 'nowrap' })}"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis">${e(t.label)}</span><span style="${S({ ...t.countStyle, flex: 'none' })}"><span>${e(t.count)}</span></span></button>`).join('')}
+  </div>`}
 
   <form style="display:flex;align-items:center;gap:10px;height:52px;padding:0 8px 0 16px;border-radius:26px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05)">
     <span class="ms" style="font-size:20px;color:#6d6c69">add</span>

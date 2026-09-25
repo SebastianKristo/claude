@@ -71,9 +71,11 @@
       min_w: 3,                                                            // under dette regnes enheten som av
       logg_antall: 5,
     };
-    static sheetCss = `.kd-sv-dev{cursor:pointer}`;
+    static sheetCss = `.kd-sv-dev{cursor:pointer;-webkit-user-select:none;user-select:none}.kd-sv-dev:active{transform:scale(.985)}
+.kd-sv-seg [data-seg-thumb]{background:linear-gradient(180deg, oklch(0.82 0.12 75 / 0.30), oklch(0.82 0.12 75 / 0.14)) !important;box-shadow:inset 0 0 0 1px oklch(0.82 0.12 75 / 0.45), inset 0 1px 0 rgba(255,255,255,0.25), 0 4px 14px rgba(0,0,0,0.3) !important}
+.kd-sv-seg [data-seg-b] .ms{transition:color .25s}.kd-sv-seg [data-seg-b][style*="font-weight:600"] .ms{color:oklch(0.82 0.12 75)}`;
 
-    constructor() { super(); this.state = { view: 'pris', sel: null }; }
+    constructor() { super(); this.state = { view: 'pris', sel: null, open: {} }; }
     now() { return new Date(window.__kdMockNowStrom || Date.now()); }
 
     /* ---------- data ---------- */
@@ -217,10 +219,10 @@
               }), null);
             if (kwh != null) { const pr = NORGES != null ? NORGES : (today && today[s0.getHours()] != null ? today[s0.getHours()] : null); w = `${nf(kwh, 1)} kWh${pr != null ? ` · ${nf(kwh * pr)} kr` : ''}`; }
           }
-          ev.push({ t, text: `${name} ferdig`, who: w, kind: 'ok' });
+          ev.push({ t, text: `${name} ferdig`, who: w, kind: 'ok', icon: d.icon });
           continue;
         }
-        ev.push({ t, text: e.state === 'on' ? `${name} slått på` : `${name}${room} av`, who, kind: e.state });
+        ev.push({ t, text: e.state === 'on' ? `${name} slått på` : `${name}${room} av`, who, kind: e.state, icon: d ? d.icon : null });
       }
       // Spotpris over varselgrensen (siste gang den krysset i dag)
       const lim = Number(c.spot_varsel);
@@ -239,7 +241,8 @@
 
     /* ---------- handlinger ---------- */
     pick(e, h) { h = Number(h); this.setState({ sel: this.state.sel === h ? null : h }); }
-    go(e, k) { this.setState({ view: k, sel: null }); }
+    go(e, k) { if (k && k !== this.state.view) this.setState({ view: k, sel: null }); }
+    openRoom(e, r) { const o = { ...(this.state.open || {}) }; o[r] = !o[r]; this.setState({ open: o }); }
     tapDev(e, id) {
       const d = (this._devs || []).find((x) => x.id === id); if (!d) return;
       if (d.ctl && /^(switch|fan|light|input_boolean)\./.test(d.ctl)) this.toggle(d.ctl); else this.more(d.ctl || d.pow);
@@ -310,15 +313,7 @@
       }).join('');
       const ringLabels = [['00', 50, 1], ['06', 99, 50], ['12', 50, 99], ['18', 1, 50]].map(([t, x, y]) => `<span style="${KD.S({ position: 'absolute', left: `${x}%`, top: `${y}%`, transform: 'translate(-50%,-50%)', fontSize: 10, color: '#6d6c69', fontVariantNumeric: 'tabular-nums', pointerEvents: 'none' })}">${E(t)}</span>`).join('');
 
-      const views = VIEWS.map(([k, l, ic]) => {
-        const act = s.view === k;
-        const st = { height: 60, borderRadius: 17, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 5, background: act ? a(C.amber, 0.16) : 'transparent', boxShadow: act ? `inset 0 0 0 1px ${a(C.amber, 0.45)}` : 'none', color: act ? '#f2f1ee' : '#a9a7a2', transition: 'background .25s' };
-        const ist = { fontSize: 21, color: act ? C.amber : '#a9a7a2', fontVariationSettings: `'FILL' ${act ? 1 : 0}` };
-        return `<button data-on-click="go" data-arg="${k}" style="${KD.S(st)}">
-        <span class="ms" style="${KD.S(ist)}">${E(ic)}</span>
-        <span style="font-size:12px;font-weight:500;white-space:nowrap">${E(l)}</span>
-      </button>`;
-      }).join('');
+      const views = KD.segHTML('view', VIEWS, s.view, 'go', { h: 44, r: 22, style: 'margin:0' });
 
       const stats = [
         ...(NORGES != null || this.P.fast ? [[FAST, NORGES != null ? `${nf(NORGES)} kr` : '–', '#f2f1ee'], ['Spart i dag', saved != null ? `${nf(saved, 0)} kr` : '–', C.green]]
@@ -330,47 +325,97 @@
       </div>`).join('');
 
       const devices = this._devs = this._devices();
-      const roomNames = [...new Set(devices.map((d) => d.room))];
-      const roomsHtml = roomNames.map((room, i) => {
-        const list = devices.filter((d) => d.room === room);
-        const w = list.filter((d) => d.on).reduce((t, d) => t + (d.w || 0), 0);
-        const rowStyle = { display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 4px', borderTop: i ? '1px solid rgba(255,255,255,0.05)' : 'none' };
-        const dot = { width: 7, height: 7, borderRadius: 4, flex: 'none', background: w >= 800 ? C.amber : w ? a(C.amber, 0.5) : '#48474a' };
-        const devs = list.map((d) => {
-          const st = { height: 32, padding: '0 11px 0 8px', borderRadius: 16, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap', background: d.on ? a(C.amber, 0.14) : '#1f1f22', color: d.on ? '#f2f1ee' : '#8e8d89', boxShadow: d.on ? `inset 0 0 0 1px ${a(C.amber, 0.35)}` : 'inset 0 0 0 1px rgba(255,255,255,0.04)', transition: 'background .2s' };
-          const ist = { fontSize: 16, color: d.on ? C.amber : '#6d6c69', fontVariationSettings: `'FILL' ${d.on ? 1 : 0}` };
-          const label = d.on && d.w != null ? `${d.name} · ${intl(d.w)} W` : d.name;
-          return `<button class="kd-sv-dev" data-on-click="tapDev" data-hold="holdDev" data-arg="${KD.e(d.id)}" style="${KD.S(st)}"><span class="ms" style="${KD.S(ist)}">${E(d.icon)}</span>${E(label)}</button>`;
-        }).join('');
-        return `<div style="${KD.S(rowStyle)}">
-        <div style="display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;padding-top:6px">
-          <div style="display:flex;align-items:center;gap:8px">
-            <span style="${KD.S(dot)}"></span>
-            <span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(room)}</span>
+      const minW = Number(c.min_w) || 0;
+      const canSw = (d) => !!d.ctl && /^(switch|fan|light|input_boolean)\./.test(d.ctl);
+      const onW = (d) => (d.on && d.w != null ? d.w : 0);
+      const rooms = [...new Set(devices.map((d) => d.room))].map((room, i) => {
+        const list = devices.filter((d) => d.room === room).map((d, j) => [d, j]).sort((x, y) => (onW(y[0]) - onW(x[0])) || ((y[0].on ? 1 : 0) - (x[0].on ? 1 : 0)) || (x[1] - y[1])).map((x) => x[0]);
+        return { room, i, list, w: list.reduce((t, d) => t + onW(d), 0), on: list.filter((d) => d.on).length };
+      }).sort((x, y) => (y.w - x.w) || (y.on - x.on) || (x.i - y.i));
+      const devSum = rooms.reduce((t, r) => t + r.w, 0);
+      const houseW = Math.max(devSum, watt != null ? watt : 0);
+      const restW = Math.max(0, houseW - devSum);
+      const roomCol = (k) => a(C.amber, [1, 0.72, 0.52, 0.38, 0.28, 0.22][Math.min(5, k)]);
+      const litRooms = rooms.filter((r) => r.w > 0);
+      const mixBar = houseW > 0 ? `<div style="display:flex;gap:3px;height:10px;border-radius:5px;overflow:hidden">
+        ${litRooms.map((r, k) => `<span title="${KD.e(r.room)}" style="flex:${r.w} 1 0;min-width:4px;background:${roomCol(k)};transition:flex .5s"></span>`).join('')}
+        ${restW > 0 ? `<span title="Annet" style="flex:${restW} 1 0;min-width:4px;background:#3a3a3e"></span>` : ''}
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px 14px;font-size:11.5px;color:#8e8d89;min-width:0">
+        ${litRooms.slice(0, 5).map((r, k) => `<span style="display:inline-flex;align-items:center;gap:6px;min-width:0;white-space:nowrap"><span style="width:8px;height:8px;border-radius:3px;background:${roomCol(k)};flex:none"></span>${E(r.room)}<span style="color:#6d6c69;font-variant-numeric:tabular-nums">${E(Math.round(r.w / houseW * 100) + ' %')}</span></span>`).join('')}
+        ${restW > 0 ? `<span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap"><span style="width:8px;height:8px;border-radius:3px;background:#3a3a3e;flex:none"></span>${E('Annet')}<span style="color:#6d6c69;font-variant-numeric:tabular-nums">${E(Math.round(restW / houseW * 100) + ' %')}</span></span>` : ''}
+      </div>` : '';
+
+      const devRow = (d, roomW) => {
+        const sw = canSw(d), isOn = !!d.on, w = d.w, swOn = sw && this.v(d.ctl) === 'on';
+        const val = w != null && (isOn || w > 0 || swOn) ? intl(w) : isOn ? 'På' : 'Av';
+        const sub = isOn && w != null && roomW > 0 ? `${Math.round(w / roomW * 100)} % av rommet` : isOn ? (w != null && w < minW ? 'Standby' : 'På') : swOn ? (w ? `Standby · ${intl(w)} W` : 'Standby') : w != null && w > 0 ? `Standby · ${intl(w)} W` : (/^climate\./.test(d.ctl || '') ? 'Varmer ikke' : 'Av');
+        const tg = sw ? `<span style="position:relative;flex:none;width:40px;height:24px;border-radius:12px;background:${swOn ? C.amber : '#3a3a3e'};transition:background .25s;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05)">
+            <span style="position:absolute;top:3px;left:${swOn ? 19 : 3}px;width:18px;height:18px;border-radius:9px;background:${swOn ? '#161618' : '#a9a7a2'};box-shadow:0 1px 3px rgba(0,0,0,0.35);transition:left .3s cubic-bezier(.34,1.4,.64,1),background .25s"></span></span>`
+          : `<span class="ms" style="flex:none;width:40px;text-align:center;font-size:20px;color:#6d6c69">chevron_right</span>`;
+        return `<div class="kd-sv-dev" data-key="dev-${KD.e(d.id)}" data-on-click="tapDev" data-hold="holdDev" data-arg="${KD.e(d.id)}" role="button" style="display:flex;align-items:center;gap:12px;min-width:0;padding:9px 10px 9px 8px;border-radius:16px;background:${isOn ? '#232326' : 'transparent'};transition:background .25s">
+          <span style="flex:none;width:36px;height:36px;border-radius:12px;display:grid;place-items:center;background:${isOn ? a(C.amber, 0.16) : '#232326'}">
+            <span class="ms" style="font-size:19px;color:${isOn ? C.amber : '#6d6c69'};font-variation-settings:'FILL' ${isOn ? 1 : 0}">${E(d.icon)}</span>
+          </span>
+          <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
+            <span style="font-size:14px;font-weight:500;color:${isOn ? '#f2f1ee' : '#a9a7a2'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(d.name)}</span>
+            <span style="font-size:11.5px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(sub)}</span>
+          </span>
+          <span style="flex:none;font-size:14px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap;color:${isOn && w ? '#f2f1ee' : '#6d6c69'}">${E(val)}${w != null && (isOn || w > 0 || swOn) ? `<span style="font-size:11px;color:#8e8d89;font-weight:400"> W</span>` : ''}</span>
+          ${tg}
+        </div>`;
+      };
+      const roomsHtml = rooms.map((r, k) => {
+        const open = !!(s.open || {})[r.room], TOP = 3;
+        const shown = open ? r.list : r.list.slice(0, TOP);
+        const pct = houseW > 0 ? r.w / houseW * 100 : 0;
+        const lit = r.w > 0;
+        return `<div data-key="room-${KD.e(r.room)}" style="display:flex;flex-direction:column;gap:10px;min-width:0;padding:14px 10px 10px;border-radius:24px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
+          <div style="display:flex;align-items:center;gap:10px;min-width:0;padding:0 6px">
+            <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+              <div style="font-size:16px;font-weight:500;letter-spacing:-0.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(r.room)}</div>
+              <div style="font-size:11.5px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(`${r.on} av ${r.list.length} på${lit && houseW ? ` · ${Math.round(pct)} % av huset` : ''}`)}</div>
+            </div>
+            <div style="flex:none;font-size:22px;font-weight:500;letter-spacing:-0.02em;font-variant-numeric:tabular-nums;white-space:nowrap;color:${lit ? '#f2f1ee' : '#6d6c69'}">${E(lit ? intl(r.w) : '0')}<span style="font-size:12px;color:#8e8d89;font-weight:400"> W</span></div>
           </div>
-          <span style="font-size:12px;color:#8e8d89;padding-left:15px;font-variant-numeric:tabular-nums;white-space:nowrap">${E(w ? `${intl(w)} W` : 'Av')}</span>
-        </div>
-        <div style="flex:none;max-width:64%;display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end">${devs}</div>
-      </div>`;
+          <div style="margin:0 6px;height:6px;border-radius:3px;background:#2a2a2d;overflow:hidden">
+            <div style="height:100%;width:${lit ? Math.max(2, pct).toFixed(1) : 0}%;border-radius:3px;background:linear-gradient(90deg, ${a(C.amber, 0.55)}, ${roomCol(k < litRooms.length ? k : 5)});box-shadow:0 0 12px ${a(C.amber, 0.35)};transition:width .6s cubic-bezier(.3,1,.4,1)"></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:2px;min-width:0">${shown.map((d) => devRow(d, r.w)).join('')}</div>
+          ${r.list.length > TOP ? `<button data-on-click="openRoom" data-arg="${KD.e(r.room)}" style="align-self:stretch;height:36px;border-radius:14px;background:#232326;display:flex;align-items:center;justify-content:center;gap:6px;font-size:12.5px;font-weight:500;color:#c9c7c2">
+            ${E(open ? 'Vis færre' : `Vis alle ${r.list.length}`)}<span class="ms" style="font-size:18px;transition:transform .3s;transform:rotate(${open ? 180 : 0}deg)">expand_more</span></button>` : ''}
+        </div>`;
       }).join('');
 
       const spot = this._series(this.P.spotpris, 'today');
       const log = this._log(devices, spot, NOW_H, today);
+      const rel = (t) => {
+        const m = Math.round((now - t) / 60e3);
+        if (m < 1) return 'nå'; if (m < 60) return `${m} min siden`;
+        const h = Math.floor(m / 60), r = m % 60;
+        return h < 6 && r ? `${h} t ${r} min siden` : `${h} t siden`;
+      };
       const logHtml = log.map((e, i, arr) => {
         const col = e.kind === 'alert' ? C.red : e.kind === 'on' ? C.amber : e.kind === 'off' ? C.blue : C.green;
-        const dot = { width: 9, height: 9, borderRadius: 5, marginTop: 5, background: col, flex: 'none' };
-        const line = { flex: 1, width: 1, background: i < arr.length - 1 ? 'rgba(255,255,255,0.1)' : 'transparent', marginTop: 4 };
-        return `<div style="display:flex;gap:14px;align-items:stretch">
-          <div style="display:flex;flex-direction:column;align-items:center;width:10px;flex:none">
-            <span style="${KD.S(dot)}"></span>
-            <span style="${KD.S(line)}"></span>
+        const ic = e.kind === 'alert' ? 'trending_up' : e.kind === 'ok' ? 'check_circle' : (e.icon || (e.kind === 'on' ? 'power' : 'power_off'));
+        const badge = e.kind === 'on' ? 'Slått på' : e.kind === 'off' ? 'Slått av' : e.kind === 'ok' ? 'Ferdig' : 'Pris';
+        const last = i === arr.length - 1;
+        return `<div data-key="ev-${i}" style="display:flex;gap:12px;align-items:stretch;min-width:0">
+          <div style="display:flex;flex-direction:column;align-items:center;width:34px;flex:none">
+            <span style="width:34px;height:34px;border-radius:12px;flex:none;display:grid;place-items:center;background:${a(col, 0.14)};box-shadow:inset 0 0 0 1px ${a(col, 0.3)}">
+              <span class="ms" style="font-size:18px;color:${col};font-variation-settings:'FILL' 1">${E(ic)}</span>
+            </span>
+            <span style="flex:1;width:2px;min-height:10px;margin:4px 0;border-radius:1px;background:${last ? 'transparent' : `linear-gradient(${a(col, 0.35)}, rgba(255,255,255,0.06))`}"></span>
           </div>
-          <div style="flex:1;display:flex;justify-content:space-between;gap:12px;padding-bottom:14px">
-            <div style="display:flex;flex-direction:column;gap:2px">
-              <div style="font-size:14px">${E(e.text)}</div>
-              <div style="font-size:12px;color:#8e8d89">${E(e.who)}</div>
+          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;padding:2px 0 ${last ? 0 : 14}px">
+            <div style="display:flex;align-items:baseline;gap:10px;min-width:0">
+              <div style="flex:1;min-width:0;font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(e.text)}</div>
+              <div style="flex:none;font-size:11.5px;color:#8e8d89;font-variant-numeric:tabular-nums;white-space:nowrap">${E(KD.hm(e.t))}</div>
             </div>
-            <div style="font-size:12px;color:#8e8d89;font-variant-numeric:tabular-nums">${E(KD.hm(e.t))}</div>
+            <div style="display:flex;align-items:center;gap:8px;min-width:0;font-size:12px;color:#8e8d89">
+              <span style="flex:none;padding:1px 7px;border-radius:7px;font-size:10.5px;font-weight:600;letter-spacing:0.02em;color:${col};background:${a(col, 0.12)}">${E(badge)}</span>
+              <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E([rel(e.t), e.who].filter(Boolean).join(' · '))}</span>
+            </div>
           </div>
         </div>`;
       }).join('');
@@ -398,9 +443,9 @@
     </div>
   </section>
 
-  <section style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:5px;border-radius:22px;background:#1c1c1f">${views}</section>
+  <section class="kd-sv-seg">${views}</section>
 
-  <section style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">${stats}</section>
+  <section style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">${stats}</section>
 
   ${alerts.length ? `<section style="display:flex;flex-direction:column;gap:8px">
       <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:oklch(0.82 0.12 75);padding:0 4px">Krever oppmerksomhet</div>
@@ -414,17 +459,23 @@
         </div>`).join('')}
     </section>` : ''}
 
-  ${devices.length ? `<section data-kd-rom style="display:flex;flex-direction:column;gap:2px">
-    <div style="display:flex;justify-content:space-between;align-items:baseline;padding:0 4px 8px">
-      <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Rom</div>
-      <div style="font-size:12px;color:#6d6c69;white-space:nowrap">${E(`${devices.filter((d) => d.on).length} av ${devices.length} på`)}</div>
+  ${devices.length ? `<section data-kd-rom style="display:flex;flex-direction:column;gap:10px;min-width:0">
+    <div style="display:flex;flex-direction:column;gap:10px;padding:0 4px 4px;min-width:0">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
+        <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Rom</div>
+        <div style="font-size:12px;color:#8e8d89;white-space:nowrap;font-variant-numeric:tabular-nums">${E(`${devices.filter((d) => d.on).length} av ${devices.length} på${houseW ? ` · ${intl(houseW)} W` : ''}`)}</div>
+      </div>
+      ${mixBar}
     </div>
     ${roomsHtml}
   </section>` : ''}
 
-  ${log.length ? `<section style="display:flex;flex-direction:column;gap:8px">
-    <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:0 4px">Siste hendelser</div>
-    <div style="display:flex;flex-direction:column;padding-left:4px">${logHtml}</div>
+  ${log.length ? `<section style="display:flex;flex-direction:column;gap:10px;min-width:0">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;padding:0 4px">
+      <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Siste hendelser</div>
+      <div style="font-size:12px;color:#6d6c69;white-space:nowrap">Siste døgn</div>
+    </div>
+    <div style="display:flex;flex-direction:column;padding:16px 14px;border-radius:24px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);min-width:0">${logHtml}</div>
   </section>` : ''}
 </div>`;
     }

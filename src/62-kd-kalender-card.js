@@ -18,6 +18,9 @@
  *   hytter: []                           # sensor.<sted>_oversikt fra KI Hyttebesøk (tom = finnes selv)
  *
  * Hvilke kalendere som vises kan hver bruker velge i «Tilpass oppsett» (lagres i HA-brukerdata 'kd_kalender' = { kalendere: [id…] }).
+ * Kildene (serier, filmer, plex_serier, plex_filmer, post, post_kalender, bursdager) kan også velges der
+ * ('kd_kalender'.kilder = { serier: 'calendar.sonarr', post: '' (= ingen) … }); config er reserve.
+ * Serier/filmer kan være en upcoming_media-sensor (attributtet data) eller en kalender (f.eks. Sonarr/Radarr-kalenderen).
  * Farger: kalendere som heter som en person (Rune, Cybele, Sebastian) eller «Familie» får designets farger.
  * Hytta leser KI Hyttebesøk (sensor.<sted>_oversikt: her_naa, dager, opphold, kommende, per_maaned …).
  * Pakker finnes i entitetsregisteret (Norwegian Parcel Tracker).
@@ -45,6 +48,16 @@
   const cap = s => String(s).replace(/^./, c => c.toUpperCase());
   const hm = d => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
   const hash = s => { let h = 0; for (const ch of String(s)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h; };
+  /* Kilder som kan velges i «Tilpass oppsett»: [nøkkel, navn, ikon, mønster, domener] */
+  const SRC = [
+    ['serier', 'Serier', 'live_tv', /sonarr/i, ['sensor', 'calendar'], 'Sonarr – upcoming-sensor eller kalender'],
+    ['filmer', 'Filmer', 'movie', /radarr/i, ['sensor', 'calendar'], 'Radarr – upcoming-sensor eller kalender'],
+    ['plex_serier', 'Plex · serier', 'smart_display', /plex/i, ['sensor'], 'Nylig lagt til (serier)'],
+    ['plex_filmer', 'Plex · filmer', 'smart_display', /plex/i, ['sensor'], 'Nylig lagt til (filmer)'],
+    ['post', 'Posten · neste levering', 'mail', /posten|post_?nord|nar_kommer/i, ['sensor'], 'Sensor med neste leveringsdato'],
+    ['post_kalender', 'Posten · kalender', 'local_post_office', /posten|post/i, ['calendar'], 'Kalender med leveringsdager'],
+    ['bursdager', 'Bursdager', 'cake', /birthday|bursdag|f[oø]dsel/i, ['calendar'], 'Kalender med bursdager'],
+  ];
   const bdName = s => String(s || '').replace(/\(\s*\d{4}\s*\)/g, '').replace(/[_-]+/g, ' ').replace(/\b(bursdag|birthday|fodselsdag|fødselsdag)\b/gi, '').replace(/[’']\s*s\b/gi, '').replace(/\s{2,}/g, ' ').replace(/^[\s.,·-]+|[\s.,·-]+$/g, '').replace(/^./, c => c.toUpperCase());
 
   class KDKalenderCard extends KD.KDSheet {
@@ -67,8 +80,14 @@
     /* ================= data ================= */
     /* Alle calendar.* med navn og farge. Standardutvalget (config kalendere + auto, minus ekskluder/hytta) får fargene først
        (samme som før), resten får farge etterpå, så fargene ikke hopper når brukeren slår kalendere av/på. */
+    /** Valgte kilder: brukerens valg ('kd_kalender'.kilder; '' = ingen) → config */
+    _src() {
+      const u = (KD.ud(this, 'kd_kalender') || {}).kilder || {}, c = this.config, out = {};
+      for (const [k] of SRC) out[k] = Object.prototype.hasOwnProperty.call(u, k) ? (u[k] || null) : (c[k] || null);
+      return out;
+    }
     _allCals() {
-      const c = this.config, ex = new Set(c.ekskluder || []), hut = this._hutCalIds(), out = [];
+      const c = this.config, src = this._src(), ex = new Set([...(c.ekskluder || []), ...['serier', 'filmer', 'post_kalender'].map(k => src[k]).filter(id => id && id.startsWith('calendar.'))]), hut = this._hutCalIds(), out = [];
       let fi = 0;
       const col = (navn, id) => { const w = WHO.find(x => x[0].test(navn + ' ' + id)); return w ? w[1] : PALETTE[fi++ % PALETTE.length]; };
       const cfg = new Map();
@@ -112,9 +131,15 @@
     _pcol(name) { const p = PERSC.find(x => x[0].test(name)); if (p) return p[1]; this._pc = this._pc || {}; if (!this._pc[name]) this._pc[name] = PERS_FALL[Object.keys(this._pc).length % PERS_FALL.length]; return this._pc[name]; }
 
     _upcoming() {
-      const c = this.config;
+      const c = this._src();
       const read = (id, type) => {
         const st = this.st(id); if (!st) return [];
+        if (id.startsWith('calendar.')) { // Sonarr/Radarr-kalender: «Serie - 1x03 - Episode» / «Film (Kino)»
+          return this._events([{ id, navn: type, col: C.blue }], 60, day0(new Date()), 'src-' + type).map(ev => {
+            const m = String(ev.summary || '').match(/^(.+?)\s+-\s+(S?\d+[xE]\d+)\s+-\s+(.+)$/i), kino = /\(?(kino|cinema|theatrical)\)?/i.test(ev.summary || '');
+            return { type, src: id, title: (m ? m[1] : String(ev.summary || '').replace(/\s*\((kino|cinema|theatrical|physical|digital)[^)]*\)\s*$/i, '')).trim(), episode: m ? m[3] : '', number: m ? m[2].toUpperCase().replace(/^(\d+)X(\d+)$/, (x, a1, b1) => `S${pad(a1)}E${pad(b1)}`) : '', when: ev.start, studio: '', kino };
+          }).filter(x => x.title);
+        }
         let d = st.attributes.data; if (typeof d === 'string') { try { d = JSON.parse(d); } catch (x) { d = null; } }
         if (!Array.isArray(d)) return [];
         return d.filter(x => x && (x.airdate || x.aired) && x.title).map(x => ({ type, src: id, title: x.title, episode: x.episode && x.episode !== 'TBA' ? x.episode : '', number: x.number || '', when: new Date(x.airdate || x.aired), studio: x.studio || '', kino: !!x.flag }));
@@ -125,7 +150,7 @@
       return [...read(c.serier, 'serie'), ...read(c.filmer, 'film')].filter(x => !isNaN(x.when) && x.when >= t0).map(x => ({ ...x, plex: plex.has(key(x)) })).sort((p, q) => p.when - q.when);
     }
     _bdays() {
-      const id = this.config.bursdager; if (!id || !this.st(id)) return [];
+      const id = this._src().bursdager; if (!id || !this.st(id)) return [];
       const t0 = day0(new Date());
       const raw = this.cached(`kd-kal-bd-${id}-${isoL(t0)}`, 30 * 60e3, () => this.calendar([id], 367), null) || [];
       const seen = new Set(), out = [];
@@ -164,12 +189,55 @@
     kalAlle(ev, k) { this._setCals(k === 'alle' ? this._allCals().map(x => x.id) : k === 'ingen' ? [] : null); }
 
     /* ================= «Tilpass oppsett»: hvilke kalendere som vises ================= */
+    srcPick(ev, k) { this.setState(s => ({ srcOpen: s.srcOpen === k ? null : k, srcQ: '' })); this.haptic('selection'); }
+    srcQ(ev) { this.setState({ srcQ: ev.target.value }); }
+    srcSet(ev, arg) {
+      const i = arg.indexOf('|'), k = arg.slice(0, i), id = arg.slice(i + 1), u = KD.ud(this, 'kd_kalender') || {}, kil = { ...(u.kilder || {}) };
+      if (id === '*') delete kil[k]; else kil[k] = id;
+      this.haptic('selection'); this.setState({ srcOpen: null });
+      KD.udSave(this, 'kd_kalender', { ...u, kilder: kil });
+    }
+    _srcHTML() {
+      const s = this.state, src = this._src(), u = (KD.ud(this, 'kd_kalender') || {}).kilder || {}, ids = Object.keys((this._hass && this._hass.states) || {});
+      const name = id => String(this.fname(id) || id);
+      const rows = SRC.map(([k, label, icon, re, doms, hint]) => {
+        const cur = src[k], open = s.srcOpen === k, own = Object.prototype.hasOwnProperty.call(u, k), ok = cur && this.st(cur);
+        const sub = !cur ? 'Ingen valgt' : `${ok ? '' : 'Finnes ikke · '}${cur}`;
+        let list = '';
+        if (open) {
+          const q = String(s.srcQ || '').trim().toLowerCase();
+          const pool = ids.filter(id => doms.includes(id.split('.')[0]));
+          const hit = id => !q || id.toLowerCase().includes(q) || name(id).toLowerCase().includes(q);
+          const match = pool.filter(id => re.test(id) || re.test(name(id)));
+          let cand = q ? pool.filter(hit).sort((x, y) => (re.test(y) ? 1 : 0) - (re.test(x) ? 1 : 0)) : [...match, ...(doms.includes('calendar') ? pool.filter(id => id.startsWith('calendar.') && !match.includes(id)) : [])];
+          cand = cand.slice(0, 40);
+          const opt = (id, t1, t2, sel, ic) => `<button data-key="src-${e(k)}-${e(id)}" data-on-click="srcSet" data-arg="${e(k + '|' + id)}" style="min-height:44px;padding:6px 12px;border-radius:14px;display:flex;align-items:center;gap:10px;width:100%;min-width:0;text-align:left;background:${sel ? 'oklch(0.78 0.13 350 / 0.16)' : 'transparent'};box-shadow:${sel ? 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.6)' : 'none'}">
+            <span class="ms" style="font-size:18px;flex:none;color:${sel ? 'oklch(0.82 0.1 350)' : '#8e8d89'}">${ic}</span>
+            <span style="flex:1;min-width:0;display:flex;flex-direction:column"><span style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(t1)}</span>${t2 ? `<span style="font-size:11px;color:#6d6c69;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(t2)}</span>` : ''}</span>
+            ${sel ? `<span class="ms" style="font-size:18px;flex:none;color:oklch(0.82 0.1 350)">check</span>` : ''}</button>`;
+          list = `<div style="display:flex;flex-direction:column;gap:2px;padding:4px 0 6px;min-width:0">
+          <div style="display:flex;align-items:center;gap:8px;height:40px;margin:2px 4px 4px;padding:0 14px;border-radius:20px;background:#1c1c1f;min-width:0"><span class="ms" style="font-size:18px;color:#8e8d89">search</span><input data-on-input="srcQ" value="${e(s.srcQ || '')}" placeholder="Søk i ${doms.map(d => d + '.*').join(' og ')}" style="flex:1;min-width:0;border:0;outline:none;background:transparent;color:#f2f1ee;font:inherit;font-size:13px"></div>
+          ${this.config[k] ? opt('*', 'Standard', this.config[k], !own, 'restart_alt') : ''}
+          ${opt('', 'Ingen', 'Skjul denne delen', own && !u[k], 'block')}
+          ${cand.map(id => opt(id, name(id), id, own && u[k] === id, id.startsWith('calendar.') ? 'calendar_month' : 'sensors')).join('')}
+          ${!cand.length ? `<div style="padding:10px 12px;font-size:12px;color:#6d6c69">Fant ingen${q ? ` som matcher «${e(q)}»` : ` – søk etter ${doms.join('/')}`}</div>` : ''}
+        </div>`;
+        }
+        return `<div data-key="kd-src-${k}" style="display:flex;flex-direction:column;min-width:0;border-radius:18px;background:${open ? 'rgba(255,255,255,0.05)' : 'transparent'}">
+        <button data-on-click="srcPick" data-arg="${k}" style="min-height:52px;padding:4px 10px 4px 12px;border-radius:16px;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;width:100%;text-align:left">
+          <span style="width:32px;height:32px;border-radius:16px;display:grid;place-items:center;background:${cur ? 'oklch(0.78 0.13 350 / 0.16)' : 'rgba(255,255,255,0.06)'}"><span class="ms" style="font-size:18px;color:${cur ? 'oklch(0.82 0.1 350)' : '#8e8d89'}">${icon}</span></span>
+          <span style="min-width:0;display:flex;flex-direction:column;gap:1px"><span style="font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(label)}${own ? '' : ' <span style="font-size:11px;color:#6d6c69">· standard</span>'}</span><span style="font-size:11px;color:${cur && !ok ? 'oklch(0.72 0.15 25)' : '#8e8d89'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${e(hint)}">${e(open ? hint : sub)}</span></span>
+          <span class="ms" style="font-size:20px;color:#8e8d89">${open ? 'expand_less' : 'expand_more'}</span>
+        </button>${list}</div>`;
+      }).join('');
+      return `<div style="padding:10px 12px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">Kilder</div>${rows}`;
+    }
     tilpassHTML() {
-      const all = this._allCals(); if (!all.length) return '';
+      const all = this._allCals(); if (!all.length) return this._srcHTML();
       const on = new Set(this._cals().map(x => x.id)), user = !!this._userCals();
       const pill = (k, l, act) => `<button data-on-click="kalAlle" data-arg="${k}" style="height:30px;padding:0 12px;border-radius:15px;font-size:12px;font-weight:500;background:${act ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.06)'};color:${act ? '#f4f3ef' : '#a9a7a2'}">${l}</button>`;
       const allOn = all.every(x => on.has(x.id)), noneOn = !on.size;
-      return `<div style="padding:10px 12px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">Kalendere</div>
+      return `${this._srcHTML()}<div style="padding:10px 12px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">Kalendere</div>
     <div style="display:flex;align-items:center;gap:6px;padding:2px 8px 6px 12px">
       <span style="flex:1;font-size:12px;color:#8e8d89">${on.size} av ${all.length} vises${user ? '' : ' · standard'}</span>
       ${pill('alle', 'Alle', allOn)}${pill('ingen', 'Ingen', noneOn)}${user ? pill('std', 'Standard', false) : ''}
@@ -303,7 +371,7 @@
     }
 
     body() {
-      const s = this.state, c = this.config, TODAY = day0(new Date());
+      const s = this.state, c = { ...this.config, ...this._src() }, TODAY = day0(new Date());
       const cals = this._cals(), places = this._places();
       const has = { cal: true, cabin: places.length > 0, up: !!(this.st(c.serier) || this.st(c.filmer)), bday: !!(c.bursdager && this.st(c.bursdager)), post: !!(this.st(c.post) || this.st(c.post_kalender)) };
       const tabDefs = [['cal', 'Kalender', 'event'], ['cabin', 'Hytta', 'cottage'], ['up', 'Framover', 'movie'], ['bday', 'Bursdager', 'cake'], ['post', 'Posten', 'mail']].filter(t => has[t[0]]);

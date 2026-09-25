@@ -11,6 +11,7 @@
     'camera.ringeklokke_g6_entry_medium_resolution_channel': cam('Ringeklokke G6 Entry Medium resolution channel', 30, 220),
     'camera.mellomgang_g5_turret_ultra_high_resolution_channel': cam('Mellomgang G5 Turret Ultra High resolution channel', 200, 260),
     'camera.veranda_g6_bullet_high_resolution_channel': cam('Veranda G6 Bullet High resolution channel', 120, 200),
+    'camera.veranda_g6_bullet_low_resolution_channel': cam('Veranda G6 Bullet Low resolution channel', 120, 200),
     'camera.stue_g6_turret_high_resolution_channel': cam('Stue G6 Turret High resolution channel', 25, 280),
     'camera.ringeklokke_g6_entry_package_camera': cam('Ringeklokke G6 Entry Package Camera', 45, 10),
     // Frigate-kameraene (samme kameraer – skal ikke vises dobbelt)

@@ -25,7 +25,7 @@
     // Rom fra ki_rom (rekkefølgen her = rekkefølgen i kortet)
     'sensor.kdm_vaskegang_oversikt': ov('Vaskegang', { brytere: [{ entity: 'switch.varmtvannsbereder', effekt: 'sensor.varmtvannsbereder_power' }] }),
     'sensor.kdm_bad_oversikt': ov('Bad', { klima: [{ entity: 'climate.kdm_bad_gulvvarme', effekt: 'sensor.kdm_bad_gulvvarme_power' }], brytere: [{ entity: 'switch.kdm_bad_speillys', effekt: 'sensor.kdm_bad_speillys_power' }] }),
-    'sensor.kdm_stue_oversikt': ov('Stue', { brytere: [{ entity: 'switch.kdm_server_rack', effekt: 'sensor.kdm_server_rack_power' }, { entity: 'switch.kdm_stue_tv', effekt: 'sensor.kdm_stue_tv_power' }, { entity: 'switch.kdm_stue_lys', effekt: 'sensor.kdm_stue_lys_power' }] }),
+    'sensor.kdm_stue_oversikt': ov('Stue', { brytere: [{ entity: 'switch.kdm_server_rack', effekt: 'sensor.kdm_server_rack_power' }, { entity: 'switch.kdm_stue_tv', effekt: 'sensor.kdm_stue_tv_power' }, { entity: 'switch.kdm_stue_lys', effekt: 'sensor.kdm_stue_lys_power' }, { entity: 'switch.kdm_stue_lydplanke', effekt: 'sensor.kdm_stue_lydplanke_power' }] }),
     'sensor.kdm_kjokken_oversikt': ov('Kjøkken', { brytere: [{ entity: 'switch.kdm_fryseskap', effekt: 'sensor.kdm_fryseskap_power' }, { entity: 'switch.kdm_oppvaskmaskin', effekt: 'sensor.kdm_oppvaskmaskin_power' }], klima: [{ entity: 'climate.kdm_kjokken_gulvvarme', effekt: 'sensor.kdm_kjokken_gulvvarme_power' }] }),
     'sensor.kdm_kontor_oversikt': ov('Kontor', { brytere: [{ entity: 'switch.kdm_pult', effekt: 'sensor.kdm_pult_power' }] }),
     'sensor.kdm_sebastian_oversikt': ov('Sebastian', { klima: [{ entity: 'climate.kdm_sebastian_panelovn', effekt: 'sensor.kdm_sebastian_panelovn_power' }] }),
@@ -36,6 +36,7 @@
     'switch.kdm_server_rack': dev('', 'Server rack', 'on'), 'sensor.kdm_server_rack_power': W(180),
     'switch.kdm_stue_tv': dev('', 'Stue TV', 'on'), 'sensor.kdm_stue_tv_power': W(120),
     'switch.kdm_stue_lys': dev('', 'Stue lys', 'on'), 'sensor.kdm_stue_lys_power': W(60),
+    'switch.kdm_stue_lydplanke': dev('', 'Stue lydplanke', 'on'), 'sensor.kdm_stue_lydplanke_power': W(2),
     'switch.kdm_fryseskap': dev('', 'Fryseskap', 'on'), 'sensor.kdm_fryseskap_power': W(90),
     'climate.kdm_kjokken_gulvvarme': dev('', 'Kjøkken gulvvarme', 'off'), 'sensor.kdm_kjokken_gulvvarme_power': W(0),
     'switch.kdm_oppvaskmaskin': dev('', 'Oppvask', 'on'), 'sensor.kdm_oppvaskmaskin_power': W(0),
