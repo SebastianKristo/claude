@@ -152,9 +152,7 @@
     <div style="font-size:14px;color:#8e8d89">${subHtml}</div>
   </section>
 
-  <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:2px;padding:4px;border-radius:20px;background:#1c1c1f">
-    ${tabs.map(t => `<button data-on-click="tab" data-arg="${t.k}" style="${S(t.style)}"><span>${t.label}</span></button>`).join('')}
-  </div>
+  ${KD.segHTML('fane', [['enkel', 'Enkel'], ['avansert', 'Avansert']], s.tab, 'tab', { pink: true })}
 
   <section style="display:flex;flex-direction:column;gap:8px">
     ${cards || `<div style="padding:16px;border-radius:24px;background:#1c1c1f;font-size:13px;color:#8e8d89">Legg til planter i KI Planter-integrasjonen.</div>`}

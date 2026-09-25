@@ -184,6 +184,7 @@ input,select,textarea{font:inherit;color:inherit}
       this._root.className = 'kd-root' + (this.config.header === false || this.config.embedded ? ' kd-embedded' : '');
       KD.morph(this._root, html);
       if (this.afterRender) this.afterRender();
+      KD.segInit(this);
     }
     /** Finn element i kortet */
     $(sel) { return this.shadowRoot.querySelector(sel); }
@@ -191,6 +192,7 @@ input,select,textarea{font:inherit;color:inherit}
 
     /* ----- hendelser ----- */
     _dispatch(type, ev) {
+      if (type === 'click') { const p0 = ev.composedPath ? ev.composedPath()[0] : ev.target, sg = p0 && p0.closest && p0.closest('[data-seg]'); if (sg && performance.now() - (sg._segDragEnd || 0) < 350) return; } // klikk etter dra i fanevelger
       if (type === 'click' && this._holdFired) { this._holdFired = false; ev.stopPropagation(); ev.preventDefault(); return; }
       const attr = 'data-on-' + type;
       let el = ev.composedPath ? ev.composedPath()[0] : ev.target;
@@ -331,6 +333,69 @@ input,select,textarea{font:inherit;color:inherit}
 .kd-sheet-top{position:sticky;top:0;left:0;right:0;z-index:3;padding:8px 12px 18px;display:flex;flex-direction:column;align-items:center;gap:8px;background:linear-gradient(180deg,#141416 0,#141416 72%,rgba(20,20,22,0) 100%);pointer-events:none;box-sizing:border-box}
 .kd-sheet-top .kd-grip{width:36px;height:4px;border-radius:2px;background:rgba(255,255,255,0.22)}
 `;
+  /* ----- Liquid glass-fanevelger (felles for alle kort) -----
+     KD.segHTML(key, items, cur, method, opts) → HTML. items: [[verdi, tekst, ikon?], …]. Trykk kaller this[method](ev, verdi).
+     Glassboblen glir og strekkes når valget endres, og kan dras med fingeren mellom valgene (slipp velger).
+     opts: { pink: true (rosa boble, mørk tekst), h: høyde (38), r: radius, bg, gap, style: ekstra stil på rammen, small: true } */
+  KD.segHTML = (key, items, cur, method, o = {}) => {
+    const n = Math.max(1, items.length), i = Math.max(0, items.findIndex(x => x[0] === cur)), h = o.h || (o.stack ? 54 : o.small ? 32 : 38), P = 4;
+    const r = o.r != null ? o.r : Math.round((h + 2 * P) / 2);
+    const cell = `((100% - ${2 * P}px) / ${n})`;
+    const thumbBg = o.pink ? KD.PINK : 'linear-gradient(180deg, rgba(255,255,255,0.26), rgba(255,255,255,0.10))';
+    const thumbSh = o.pink ? '0 4px 14px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.35)' : 'inset 0 1px 0 rgba(255,255,255,0.45), inset 0 -1px 1px rgba(255,255,255,0.10), 0 4px 14px rgba(0,0,0,0.28)';
+    const on = o.pink ? '#2a1720' : '#f2f1ee', off = '#a9a7a2';
+    return `<div data-key="seg-${KD.e(key)}" data-seg="${KD.e(key)}" data-seg-on="${KD.e(method)}" data-seg-i="${i}" data-seg-n="${n}" style="position:relative;display:grid;grid-template-columns:repeat(${n},minmax(0,1fr));padding:${P}px;border-radius:${r}px;background:${o.bg || '#1c1c1f'};box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);touch-action:pan-y;user-select:none;-webkit-user-select:none;isolation:isolate;${o.style || ''}">
+  <span data-seg-thumb="1" style="position:absolute;z-index:0;top:${P}px;bottom:${P}px;left:calc(${P}px + ${i} * ${cell});width:calc(${cell});border-radius:${Math.max(4, r - P)}px;background:${thumbBg};box-shadow:${thumbSh};backdrop-filter:blur(8px) saturate(180%);-webkit-backdrop-filter:blur(8px) saturate(180%);transition:left .5s cubic-bezier(.34,1.35,.64,1), transform .35s cubic-bezier(.34,1.8,.64,1);pointer-events:none"></span>
+  ${items.map(([k, label, icon], j) => `<button data-on-click="${KD.e(method)}" data-arg="${KD.e(k)}" data-seg-b="${j}" style="position:relative;z-index:1;height:${h}px;min-width:0;border-radius:${Math.max(4, r - P)}px;display:flex;flex-direction:${o.stack ? 'column' : 'row'};align-items:center;justify-content:center;gap:${o.stack ? 3 : 6}px;padding:0 ${o.stack ? 2 : 6}px;font-size:${o.stack ? 10 : o.small ? 12 : 13}px;font-weight:${j === i ? 600 : 500};white-space:nowrap;color:${j === i ? on : off};transition:color .25s">${icon ? `<span class="ms" style="font-size:${o.stack ? 20 : o.small ? 15 : 17}px;font-variation-settings:'FILL' ${j === i ? 1 : 0}">${KD.e(icon)}</span>` : ''}<span style="min-width:0;overflow:hidden;text-overflow:ellipsis">${KD.e(label)}</span></button>`).join('')}
+</div>`;
+  };
+  /** Kobler dra-støtte og strekk-animasjon til alle [data-seg] i kortet (kalles etter hver rendring) */
+  KD.segInit = (card) => {
+    const root = card.shadowRoot; if (!root) return;
+    for (const el of root.querySelectorAll('[data-seg]')) {
+      const i = +el.getAttribute('data-seg-i'), th = el.querySelector('[data-seg-thumb]');
+      // strekk («flytende glass») når valget endres
+      if (el._segI != null && el._segI !== i && th && th.animate && !el._segDragged) {
+        const d = Math.min(3, Math.abs(i - el._segI));
+        th.animate([{ transform: 'scale(1,1)' }, { transform: `scale(${1 + 0.14 * d},${1 - 0.06 * d})`, offset: 0.35 }, { transform: 'scale(0.98,1.02)', offset: 0.7 }, { transform: 'scale(1,1)' }], { duration: 520, easing: 'ease-out' });
+      }
+      el._segI = i; el._segDragged = false;
+      if (el._segInit) continue; el._segInit = true;
+      let d = null;
+      const btns = () => [...el.querySelectorAll('[data-seg-b]')];
+      const idxAt = x => { let best = 0, bd = 1e9; btns().forEach((b, j) => { const r = b.getBoundingClientRect(), dd = Math.abs(x - (r.left + r.width / 2)); if (dd < bd) { bd = dd; best = j; } }); return best; };
+      el.addEventListener('pointerdown', ev => { if (ev.button > 0) return; d = { x0: ev.clientX, y0: ev.clientY, id: ev.pointerId, moved: false, j: -1 }; });
+      el.addEventListener('pointermove', ev => {
+        if (!d || ev.pointerId !== d.id) return;
+        const t = el.querySelector('[data-seg-thumb]'); if (!t) return;
+        if (!d.moved) {
+          if (Math.abs(ev.clientY - d.y0) > 10 && Math.abs(ev.clientY - d.y0) > Math.abs(ev.clientX - d.x0)) { d = null; return; }
+          if (Math.abs(ev.clientX - d.x0) < 8) return;
+          d.moved = true; try { el.setPointerCapture(ev.pointerId); } catch (e) { }
+          t.style.transition = 'left .12s cubic-bezier(.3,1.3,.6,1), transform .3s cubic-bezier(.34,1.8,.64,1)';
+          t.style.transform = 'scale(1.08,1.12)';
+        }
+        const r = el.getBoundingClientRect(), w = t.offsetWidth, first = btns()[0].getBoundingClientRect(), last = btns()[btns().length - 1].getBoundingClientRect();
+        t.style.left = KD.clamp(ev.clientX - r.left - w / 2, first.left - r.left, last.left - r.left) + 'px';
+        const j = idxAt(ev.clientX);
+        if (j !== d.j) { d.j = j; card.haptic && card.haptic('selection'); btns().forEach((b, k) => { b.style.color = k === j ? '' : ''; }); }
+      });
+      const end = ev => {
+        if (!d || ev.pointerId !== d.id) return;
+        const dd = d; d = null;
+        if (!dd.moved) return;
+        el._segDragEnd = performance.now(); el._segDragged = true;
+        const t = el.querySelector('[data-seg-thumb]');
+        if (t) { t.style.transition = ''; t.style.transform = ''; }
+        const j = ev.type === 'pointercancel' ? -1 : idxAt(ev.clientX), b = btns()[j];
+        const fn = card[el.getAttribute('data-seg-on')];
+        if (b && typeof fn === 'function') fn.call(card, ev, b.getAttribute('data-arg'), b);
+        card._force = true; card._queue && card._queue();
+      };
+      el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
+    }
+  };
+
   /** HTML for topp-pillen. Bruk KD.sheetTopHTML(ikon, tittel, sub) og KD.animateSheetTop(root) */
   KD.sheetTopHTML = (icon, title, sub, closeHandler = 'closeSheet', extraStyle = '') => `
 <div class="kd-sheet-top" style="${extraStyle}">

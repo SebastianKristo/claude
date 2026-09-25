@@ -520,9 +520,7 @@
         const maxR = Math.max(1, ...rows.map(r => Math.max(r.u, r.e)));
         const stack = rows.filter(r => r.u).map((r, i) => ({ width: `${r.u / Math.max(usedSum, estSum, 1) * 100}%`, background: al(B, 1 - i * 0.08) })).concat(estSum ? [{ width: `${estSum / Math.max(usedSum, estSum) * 100}%`, background: al(B, 0.18) }] : []);
         html += `
-    <div style="display:flex;padding:3px;border-radius:14px;background:#1c1c1f;gap:2px;align-self:flex-start">
-      ${[['dag', 'I dag'], ['uke', 'Uke'], ['maned', 'Måned'], ['ar', 'År']].map(([k, label]) => `<button data-on-click="period" data-arg="${k}" style="${S({ height: 32, padding: '0 14px', borderRadius: 11, fontSize: 13, fontWeight: 500, background: s.period === k ? '#323235' : 'transparent', color: s.period === k ? '#f2f1ee' : '#8e8d89' })}"><span>${label}</span></button>`).join('')}
-    </div>
+    ${KD.segHTML('periode', [['dag', 'I dag'], ['uke', 'Uke'], ['maned', 'Måned'], ['ar', 'År']], s.period, 'period', { small: true })}
     <div style="background:#1c1c1f;border:1px solid rgba(255,255,255,0.05);border-radius:24px;padding:18px;display:flex;flex-direction:column;gap:14px">
       <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:12px">
         <div style="flex:none;display:flex;flex-direction:column;gap:4px;white-space:nowrap">
@@ -641,9 +639,7 @@
       </button>`).join('')}
   </section>
 
-  <nav style="display:grid;grid-template-columns:repeat(5,1fr);padding:4px;border-radius:18px;background:#1c1c1f;gap:2px;position:sticky;top:8px;z-index:2;box-shadow:0 8px 20px rgba(0,0,0,0.35)">
-    ${tabs.map(t => `<button data-on-click="tab" data-arg="${t.k}" style="${S(t.style)}"><span class="ms" style="${S(t.iconStyle)}"><span>${t.icon}</span></span><span>${t.label}</span></button>`).join('')}
-  </nav>
+  ${KD.segHTML('fane', [['now', 'Nå', 'water_drop'], ['zones', 'Soner', 'sprinkler'], ['prog', 'Program', 'event_repeat'], ['use', 'Forbruk', 'bar_chart'], ['hist', 'Historikk', 'calendar_month']], s.tab, 'tab', { stack: true, style: 'position:sticky;top:8px;z-index:2;box-shadow:0 8px 20px rgba(0,0,0,0.35)' })}
   ${html}
 </div>`;
     }
