@@ -143,6 +143,18 @@ antall lys på faller tilbake til å telle `light.*`; hendelser i dag faller til
 
 Hjem og popupene bruker full bredde (Pixel Fold, iPad). `bredde`-variabelen `--kd-bredde` kan begrense den via kortets `card_mod`/tema om ønskelig.
 
+### Nytt i denne runden
+- **Tilpass oppsett i alle popups** (knapp nederst): flytt og skjul seksjonene. Kortene kan ha egne valg øverst i panelet:
+  Kalender (hvilke kalendere som vises), Media (TV, høyttalere, apper og hva volumknappene styrer: automatisk, fjernkontroll,
+  en forsterker/mediespiller eller to skript – også `volum`, `volum_opp`, `volum_ned` i config).
+- **Tilpass dokken**: «Ny knapp» (popup, rom, person eller side/URL med navn og ikon), slett egne knapper, og skjul knapper helt fra «Mer».
+- **Tilpass Hjem**: tittel (servernavn eller ditt navn), personer på toppen (legg til alle `person.*`, fjern, sorter),
+  etasjer (vis/skjul, velg rom per etasje), romkort (stor/middels/liten, klimaknapp av/på), avstand under strømpriser.
+- **Personer**: trykk åpner personens egen popup (`#person-<id>`), hold inne gir hurtigvalg hjemme/borte/sover.
+  Merket på bildet viser stedet som i familiekortet (hjemme/sover, sonens eget ikon, eller fly når borte) med stedsnavn under.
+- **Dobbelttrykk** på tittelen åpner innstillingene (`dobbeltrykk: /config`).
+- **Strømpriser**: ny velger over hele bredden for Total / Spot / fastpris.
+
 ## Arkene – konfig
 
 Alle nøkler er valgfrie; standardverdiene er dine entiteter (se `docs/entiteter.md`) og resten finnes automatisk.

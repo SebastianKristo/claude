@@ -1,4 +1,4 @@
-/* KI Hjem Design – pikselkopi av Claude Design «Home Assistant sikkerhetspanel». Bygget 2026-09-25T23:11Z. */
+/* KI Hjem Design – pikselkopi av Claude Design «Home Assistant sikkerhetspanel». Bygget 2026-09-25T23:34Z. */
 
 /* ===== 00-kd-base.js ===== */
 try {
@@ -397,14 +397,95 @@ input,select,textarea{font:inherit;color:inherit}
   class KDSheet extends KDCard {
     static get css() { return KD.SHEET_CSS + (this.sheetCss || ''); }
     render() {
-      const body = this.body();
+      const body = this.body() + this._layHTML();
       if (this.config.header === false || this.config.embedded) return body;
       const [icon, title, sub] = this.sheetHead();
       return `<div style="background:#141416;min-height:100%">${KD.sheetTopHTML(icon, this.config.tittel || title, this.config.undertittel || sub)}<div class="kd-sheet-body" style="margin-top:-8px">${body}</div></div>`;
     }
+
+    /* ----- «Tilpass oppsett»: rekkefølge og synlighet for seksjonene i alle popups (per bruker, 'kd_ark') -----
+       Seksjonene er barna til arkets rot-div. De flyttes med CSS order og skjules med display:none (DOM-en røres ikke,
+       så morph fungerer som før). Et kort kan legge til egne innstillinger i panelet med tilpassHTML(). */
+    layKey() { return this.localName; }
+    _layData() { return (KD.ud(this, 'kd_ark') || {})[this.layKey()] || {}; }
+    _laySave(v) { const all = { ...KD.ud(this, 'kd_ark') }; if (v) all[this.layKey()] = v; else delete all[this.layKey()]; this.haptic('selection'); KD.udSave(this, 'kd_ark', all); }
+    layTog() { this.setState({ lay: !this.state.lay }); }
+    layReset() { this._laySave(null); }
+    layOp(ev, arg) {
+      const i = String(arg).lastIndexOf('|'), sig = String(arg).slice(0, i), op = String(arg).slice(i + 1);
+      const list = (this._secs || []).map(x => ({ s: x.sig, n: x.n, h: x.hid }));
+      const k = list.findIndex(x => x.s === sig); if (k < 0) return;
+      if (op === 'skjul') list[k].h = !list[k].h;
+      else { const j = k + (op === 'opp' ? -1 : 1); if (j < 0 || j >= list.length) return; [list[k], list[j]] = [list[j], list[k]]; }
+      this._laySave({ rekkefolge: list.map(x => ({ s: x.s, n: x.n })), skjul: list.filter(x => x.h).map(x => ({ s: x.s, n: x.n })) });
+    }
+    _layRoot() { const b = this._root.querySelector('.kd-sheet-body'); return (b || this._root).firstElementChild; }
+    _applyLay() {
+      if (this.constructor.noLayout) return;
+      const root = this._layRoot(); if (!root) return;
+      const D = this._layData(), edit = !!this.state.lay;
+      const seen = {}, secs = [];
+      for (const el of root.children) {
+        if (el.tagName === 'HEADER' || el.hasAttribute('data-lay-skip') || el.style.position === 'fixed') continue;
+        // signatur: første faste tekst i seksjonen (uten ikon-ligaturer og tall), så den tåler endrede verdier
+        const texts = [], tw = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        for (let n = tw.nextNode(); n && texts.length < 3; n = tw.nextNode()) {
+          if (n.parentElement && n.parentElement.closest('.ms')) continue;
+          const t = n.textContent.replace(/[\d.,:;%°–\-+·/()]+/g, ' ').replace(/\s+/g, ' ').trim();
+          if (t.length > 1) texts.push(t);
+        }
+        let sig = el.getAttribute('data-lay') || (texts[0] || el.tagName.toLowerCase()).slice(0, 28);
+        seen[sig] = (seen[sig] || 0) + 1; if (seen[sig] > 1) sig += ' #' + seen[sig];
+        secs.push({ el, sig, label: el.getAttribute('data-lay-navn') || texts.slice(0, 2).join(' · ').slice(0, 40) || sig });
+      }
+      // lagrede oppføringer {s: signatur, n: naturlig plass}: finn på signatur, ellers på plass (tekst som endrer seg, f.eks. «Borte»/«Hjemme»)
+      secs.forEach((x, n) => { x.n = n; });
+      const R = (D.rekkefolge || []).map(x => typeof x === 'string' ? { s: x } : x), H = (D.skjul || []).map(x => typeof x === 'string' ? { s: x } : x);
+      const bySig = new Set(secs.map(x => x.sig));
+      const keyOf = (e) => bySig.has(e.s) ? e.s : (e.n != null && secs[e.n] && ![...R, ...H].some(o => o.s === secs[e.n].sig) ? secs[e.n].sig : null);
+      const pos = new Map(), skjul = new Set();
+      R.forEach((e, i) => { const k = keyOf(e); if (k && !pos.has(k)) pos.set(k, i); });
+      H.forEach(e => { const k = keyOf(e); if (k) skjul.add(k); });
+      const known = secs.filter(x => pos.has(x.sig)).sort((a, b) => pos.get(a.sig) - pos.get(b.sig));
+      const out = []; let ki = 0;
+      secs.forEach(x => { out.push(pos.has(x.sig) ? known[ki++] : x); });
+      out.forEach((x, i) => {
+        x.el.style.order = String(i);
+        const hid = skjul.has(x.sig);
+        if (hid && !edit) x.el.style.display = 'none';
+        if (edit) { x.el.style.outline = hid ? '1px dashed rgba(255,255,255,0.18)' : '1.5px solid oklch(0.78 0.13 350 / 0.45)'; x.el.style.outlineOffset = '3px'; x.el.style.opacity = hid ? '0.35' : ''; }
+      });
+      const list = out.map(x => ({ sig: x.sig, n: x.n, label: x.label, hid: skjul.has(x.sig) }));
+      const js = JSON.stringify(list);
+      if (js !== this._secsJs) { this._secsJs = js; this._secs = list; if (edit) this._queue(); }
+    }
+    _layHTML() {
+      if (this.constructor.noLayout || this.config.tilpass === false) return '';
+      const s = this.state, e = KD.e, SS = KD.S;
+      if (!s.lay) return `<div data-key="kd-lay-btn" data-lay-skip="1" style="display:flex;justify-content:center;padding:4px var(--kd-kant,10px) calc(28px + env(safe-area-inset-bottom))">
+        <button data-on-click="layTog" style="display:flex;align-items:center;gap:8px;height:40px;padding:0 16px;border-radius:20px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05);color:#8e8d89;font-size:12px;font-weight:500"><span class="ms" style="font-size:17px">dashboard_customize</span>Tilpass oppsett</button></div>`;
+      const secs = this._secs || [];
+      const ib = (arg, icon, title, col, dis) => `<button data-on-click="layOp" data-arg="${e(arg)}" title="${title}" style="${SS({ width: 34, height: 34, borderRadius: 17, flex: 'none', display: 'grid', placeItems: 'center', color: col || '#8e8d89', opacity: dis ? 0.25 : 1, pointerEvents: dis ? 'none' : null })}"><span class="ms" style="font-size:20px">${icon}</span></button>`;
+      const extra = typeof this.tilpassHTML === 'function' ? this.tilpassHTML() : '';
+      return `<div data-key="kd-lay-pad" data-lay-skip="1" style="height:calc(46vh + 110px)"></div>
+  <div data-key="kd-lay-panel" data-lay-skip="1" style="position:fixed;left:var(--kd-kant,10px);right:var(--kd-kant,10px);bottom:calc(100px + env(safe-area-inset-bottom));z-index:30;max-width:620px;margin:0 auto;max-height:46vh;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;box-sizing:border-box;padding:8px;border-radius:26px;background:rgba(38,38,41,0.94);backdrop-filter:blur(22px) saturate(170%);-webkit-backdrop-filter:blur(22px) saturate(170%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.12),0 18px 40px rgba(0,0,0,0.5);display:flex;flex-direction:column;gap:2px">
+    <div style="position:sticky;top:-8px;z-index:1;display:flex;align-items:center;gap:8px;padding:6px 4px 6px 12px;margin:-8px -8px 0;border-radius:26px 26px 0 0;background:rgba(38,38,41,0.98)">
+      <span class="ms" style="font-size:20px;color:oklch(0.82 0.1 350)">dashboard_customize</span><span style="flex:1;font-size:15px;font-weight:600">Tilpass oppsett</span>
+      <button data-on-click="layReset" style="height:34px;padding:0 12px;border-radius:17px;font-size:12px;color:#a9a7a2;background:rgba(255,255,255,0.06)">Nullstill</button>
+      <button data-on-click="layTog" style="height:34px;padding:0 14px;margin-right:8px;border-radius:17px;font-size:13px;font-weight:600;background:linear-gradient(135deg, oklch(0.78 0.13 350), oklch(0.9 0.05 20));color:#2a1720">Ferdig</button></div>
+    ${extra}
+    ${secs.length ? `<div style="padding:10px 12px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">Seksjoner</div>` : ''}
+    ${secs.map((x, i) => `<div data-key="kd-lay-${e(x.sig)}" style="min-height:44px;padding:0 4px 0 12px;border-radius:14px;display:flex;align-items:center;gap:8px;opacity:${x.hid ? 0.45 : 1}">
+      <span style="flex:1;min-width:0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(x.label)}</span>
+      ${ib(x.sig + '|opp', 'arrow_upward', 'Flytt opp', null, i === 0)}${ib(x.sig + '|ned', 'arrow_downward', 'Flytt ned', null, i === secs.length - 1)}
+      ${ib(x.sig + '|skjul', x.hid ? 'visibility_off' : 'visibility', x.hid ? 'Vis' : 'Skjul', x.hid ? '#6d6c69' : 'oklch(0.82 0.1 350)')}
+    </div>`).join('')}
+  </div>`;
+    }
     _render() {
       const first = !this._didFirst;
       super._render();
+      this._applyLay();
       this._root.classList.add('kd-embedded'); // designets <header> skjules alltid i arkmodus
       if (first && this._root.querySelector('[data-bh="pill"]')) { this._didFirst = true; requestAnimationFrame(() => KD.animateSheetTop(this.shadowRoot)); }
     }
@@ -763,13 +844,37 @@ try {
     get hass() { return this._hass; }
 
     /* ---------- konfig ---------- */
-    get persons() { return (this.config.personer || DEFAULT_PERSONS).map(p => ({ ...(DEFAULT_PERSONS.find(d => d.id === p.id) || {}), ...p })); }
+    /** alle personer: config/standard + person.*-entiteter brukeren har lagt til */
+    get personsAll() {
+      const base = (this.config.personer || DEFAULT_PERSONS).map(p => ({ ...(DEFAULT_PERSONS.find(d => d.id === p.id) || {}), ...p }));
+      const PAL = ['oklch(0.55 0.08 40)', 'oklch(0.5 0.08 350)', 'oklch(0.5 0.05 250)', 'oklch(0.55 0.08 150)', 'oklch(0.55 0.09 90)', 'oklch(0.5 0.08 300)'];
+      const known = new Set(base.map(p => p.person));
+      const extra = Object.keys(this.all()).filter(id => id.startsWith('person.') && !known.has(id))
+        .map((id, i) => ({ id, navn: String(this.fname(id) || id.slice(7)).split(' ')[0], person: id, farge: PAL[(base.length + i) % PAL.length], _ekstra: true }));
+      return [...base, ...extra];
+    }
+    /** personene som vises (Tilpass Hjem → Personer; standard = config/standardlisten) */
+    get persons() {
+      const all = this.personsAll, HU = KD.ud(this, 'kd_hjem');
+      if (!Array.isArray(HU.personer)) return all.filter(p => !p._ekstra);
+      return HU.personer.map(id => all.find(p => p.id === id)).filter(Boolean);
+    }
     get meId() {
       if (this.config.meg) return this.config.meg;
-      const uid = this._hass && this._hass.user && this._hass.user.id;
-      const hit = this.persons.find(p => uid && this.at(p.person, 'user_id') === uid);
-      return hit ? hit.id : this.persons[0].id;
+      const all = this.personsAll, uid = this._hass && this._hass.user && this._hass.user.id;
+      const hit = all.find(p => uid && this.at(p.person, 'user_id') === uid);
+      return hit ? hit.id : all[0].id;
     }
+    /** Hvor personen er, som familiekortet i ki-cards: hjemme (søvn/våken), en sone med sonens eget ikon, eller borte (fly) */
+    placeOf(p) {
+      const ps = this.personState(p), v = this.v(p.person);
+      if (ps.home) return ps.sleep ? { navn: 'Sover', ms: 'bedtime', col: 'oklch(0.75 0.12 275)' } : { navn: 'Hjemme', ms: 'home', col: 'oklch(0.8 0.12 150)' };
+      if (!v || ['not_home', 'unknown', 'unavailable'].includes(v)) return { navn: 'Borte', ms: 'flight', col: 'oklch(0.68 0.2 285)' };
+      const all = this.all();
+      const z = Object.keys(all).find(id => id.startsWith('zone.') && (all[id].attributes.friendly_name === v || id === 'zone.' + v));
+      return { navn: v, mdi: z && all[z].attributes.icon, ms: 'location_on', col: 'oklch(0.75 0.12 245)' };
+    }
+    placeIcon(pl, size) { return pl.mdi ? `<ha-icon icon="${e(pl.mdi)}" style="--mdc-icon-size:${size}px;width:${size}px;height:${size}px;display:flex;color:${pl.col}"></ha-icon>` : `<span class="ms" style="font-size:${size}px;color:${pl.col};font-variation-settings:'FILL' 1">${pl.ms}</span>`; }
     personState(p) {
       const home = p.hjemme && this.st(p.hjemme) ? this.v(p.hjemme) === 'on' : this.v(p.person) === 'home';
       const sleep = p.sovn && this.st(p.sovn) ? this.v(p.sovn) === (this.config.sover_nar || 'on') : false;
@@ -790,16 +895,17 @@ try {
       if (this.config.ark === 'bubble') return;
       const h = decodeURIComponent((location.hash || '').slice(1));
       if (!h) { this._pushedHash = false; if (this.state.sheetOpen) this.setState({ sheetOpen: false }); return; }
-      let key = HASH[h], room = null;
+      let key = HASH[h], room = null, pid = null;
+      if (!key && /^person-/.test(h)) { key = 'person'; pid = h.slice(7); }
       if (!key) { const r = Object.values(this.roomsAll).find(r => (r.hash || '#' + r.id) === '#' + h || r.id === h); if (r) { key = 'rom'; room = r.id; } }
       if (!key) return;
       const q = new URLSearchParams(location.search);
-      const personId = key === 'person' ? (q.get('person') || this.state.personId || this.meId) : this.state.personId;
-      if (this.state.sheetOpen && this.state.sheetFile === key && (key !== 'rom' || this.state.sheetRoomId === room)) return;
+      const personId = key === 'person' ? (pid || q.get('person') || this.state.personId || this.meId) : this.state.personId;
+      if (this.state.sheetOpen && this.state.sheetFile === key && (key !== 'rom' || this.state.sheetRoomId === room) && (key !== 'person' || this.state.personId === personId)) return;
       this.openSheet(key, { roomId: room, personId, fromHash: true });
     }
     openSheet(file, opts = {}) {
-      if (this.config.ark === 'bubble') { if (this.state.menu || this.state.serverMenu || this.state.dockEdit) this.setState({ menu: false, serverMenu: false, dockEdit: false }); this.nav('#' + (file === 'rom' ? ((this.roomsAll[opts.roomId] || {}).hash || '#' + opts.roomId).slice(1) : SHEET_HASH[file] || file)); return; }
+      if (this.config.ark === 'bubble') { if (this.state.menu || this.state.serverMenu || this.state.dockEdit) this.setState({ menu: false, serverMenu: false, dockEdit: false }); this.nav('#' + (file === 'rom' ? ((this.roomsAll[opts.roomId] || {}).hash || '#' + opts.roomId).slice(1) : file === 'person' && opts.personId ? 'person-' + opts.personId : SHEET_HASH[file] || file)); return; }
       const patch = { sheetFile: file, menu: false, serverMenu: false, dockEdit: false };
       if (opts.roomId) patch.sheetRoomId = opts.roomId;
       if (opts.personId) patch.personId = opts.personId;
@@ -807,7 +913,7 @@ try {
       this.setState(patch);
       this._mountSheet(file, patch.sheetRoomId || this.state.sheetRoomId, patch.personId || this.state.personId);
       if (!opts.fromHash) {
-        const hash = file === 'rom' ? (this.roomsAll[patch.sheetRoomId] || {}).hash || '#' + patch.sheetRoomId : '#' + (SHEET_HASH[file] || file);
+        const hash = file === 'rom' ? (this.roomsAll[patch.sheetRoomId] || {}).hash || '#' + patch.sheetRoomId : file === 'person' && patch.personId ? '#person-' + patch.personId : '#' + (SHEET_HASH[file] || file);
         history.pushState(null, '', location.pathname + location.search + hash); this._pushedHash = true;
       }
       setTimeout(() => { this.setState({ sheetOpen: true }); this._animHead = true; }, 30);
@@ -858,7 +964,13 @@ try {
     }
 
     /* ---------- handlinger ---------- */
-    toggleServer() { this.setState({ serverMenu: !this.state.serverMenu }); }
+    toggleServer() {
+      // dobbelttrykk på navnet → innstillinger (config.dobbeltrykk, standard /config)
+      const t = Date.now();
+      if (t - (this._titleTap || 0) < 380) { this._titleTap = 0; this.setState({ serverMenu: false }); return this.nav(this.config.dobbeltrykk || '/config'); }
+      this._titleTap = t;
+      this.setState({ serverMenu: !this.state.serverMenu });
+    }
     /* Serverlista normalisert (tekst «Oslo, Strömstad=Strømstad» eller liste) */
     servers() {
       let l = this.config.servere || DEFAULT_SERVERS;
@@ -885,8 +997,9 @@ try {
       window.open(`homeassistant://navigate/${sti}?server=${navn}`);
     }
     openWeather() { this.openSheet('vaer'); }
-    openMe() { this.setState({ quickId: this.meId }); }
-    openPerson(ev, id) { this.setState({ quickId: id }); }
+    openMe() { this.openSheet('person', { personId: this.meId }); }
+    openPerson(ev, id) { this.openSheet('person', { personId: id }); }
+    quickPerson(ev, id) { this.setState({ quickId: id || this.meId }); }
     quickClose() { this.setState({ quickId: null }); }
     quickSet(ev, arg) {
       const [what, val] = arg.split(':'), p = this.persons.find(x => x.id === this.state.quickId); if (!p) return;
@@ -957,6 +1070,7 @@ try {
         const k = String(key(it) || 'i' + i); if (seen.has(k)) return; seen.add(k);
         out.push({ ...it, _k: k, _dock: i < (c.dokk || []).filter(Boolean).length });
       });
+      for (const it of (this.dockUd().egne || [])) if (it && it.id && !seen.has(it.id)) { seen.add(it.id); out.push({ ...it, _k: it.id, _egen: true }); }
       return out;
     }
     dockUd() {
@@ -978,10 +1092,40 @@ try {
       let dock;
       if (Array.isArray(u.dokk)) dock = u.dokk.map(k => pool.find(p => p._k === k)).filter(Boolean);
       else dock = pool.filter(p => p._dock);
-      const inDock = new Set(dock.map(p => p._k));
-      return { pool, dock, menu: pool.filter(p => !inDock.has(p._k)) };
+      const inDock = new Set(dock.map(p => p._k)), skjult = new Set(u.skjult || []);
+      dock = dock.filter(p => !skjult.has(p._k));
+      return { pool, dock, menu: pool.filter(p => !inDock.has(p._k) && !skjult.has(p._k)), hidden: pool.filter(p => skjult.has(p._k)) };
     }
     dockItems() { return this.dockLayout().dock; }
+    /** etasjefanene som vises (Tilpass Hjem → Etasjer) */
+    floorsVis() { const v = KD.ud(this, 'kd_hjem').etasjer_vis; return Array.isArray(v) ? FLOORS.filter(f => v.includes(f[0])) : FLOORS; }
+    /** rommene i en etasje: brukerens valg → config.etasjer → rommets etasje (hjem: config.hjem venstre+høyre) */
+    floorRooms(k) {
+      const E = KD.ud(this, 'kd_hjem').etasjer || {}, c = this.config, rooms = this.roomsAll;
+      if (Array.isArray(E[k])) return E[k].filter(id => rooms[id]);
+      if (k === 'hjem') { const h = c.hjem || {}, L = h.venstre || [], R = h.hoyre || [], out = []; for (let i = 0; i < Math.max(L.length, R.length); i++) { if (L[i]) out.push(L[i]); if (R[i]) out.push(R[i]); } return out; }
+      return ((c.etasjer || {})[k]) || Object.keys(rooms).filter(id => rooms[id].etasje === k);
+    }
+    hjemSet(ev, arg) {
+      const i = String(arg).indexOf('|'), k = arg.slice(0, i), raw = arg.slice(i + 1);
+      const v = raw === 'true' ? true : raw === 'false' ? false : raw === '' ? undefined : isNaN(+raw) ? raw : +raw;
+      const HU = { ...KD.ud(this, 'kd_hjem') }; if (v === undefined) delete HU[k]; else HU[k] = v;
+      this.haptic('selection'); KD.udSave(this, 'kd_hjem', HU);
+    }
+    hjemPers(ev, arg) {
+      const [id, op] = String(arg).split('|'), HU = { ...KD.ud(this, 'kd_hjem') };
+      const list = this.persons.map(p => p.id), i = list.indexOf(id);
+      if (op === 'vis' && i < 0) list.push(id); else if (op === 'skjul' && i >= 0) list.splice(i, 1);
+      else if (op === 'opp' && i > 0) [list[i - 1], list[i]] = [list[i], list[i - 1]]; else return;
+      HU.personer = list; this.haptic('selection'); KD.udSave(this, 'kd_hjem', HU);
+    }
+    hjemEtg(ev, arg) {
+      const [k, op, rid] = String(arg).split('|'), HU = { ...KD.ud(this, 'kd_hjem') };
+      if (op === 'apne') return this.setState({ etgOpen: this.state.etgOpen === k ? null : k });
+      if (op === 'skjul') { const v = this.floorsVis().map(f => f[0]); const j = v.indexOf(k); j >= 0 ? v.splice(j, 1) : v.push(k); HU.etasjer_vis = FLOORS.map(f => f[0]).filter(x => v.includes(x)); }
+      if (op === 'rom') { const E = { ...(HU.etasjer || {}) }, list = this.floorRooms(k).slice(), j = list.indexOf(rid); j >= 0 ? list.splice(j, 1) : list.push(rid); E[k] = list; HU.etasjer = E; }
+      this.haptic('selection'); KD.udSave(this, 'kd_hjem', HU);
+    }
     /* ----- Tilpass Hjem ----- */
     hjemCols(HU) {
       const all = [...TILE_V, ...TILE_H];
@@ -1025,9 +1169,41 @@ try {
       if (op === 'ut' && i >= 0) keys.splice(i, 1);
       else if (op === 'inn' && i < 0) { if (keys.length >= 7) return; keys.push(k); }
       else if (op === 'opp' && i > 0) [keys[i - 1], keys[i]] = [keys[i], keys[i - 1]];
+      else if (op === 'skjul' || op === 'vis') {
+        const sk = new Set(this.dockUd().skjult || []); op === 'skjul' ? sk.add(k) : sk.delete(k);
+        if (i >= 0) keys.splice(i, 1);
+        this.haptic('selection'); return this.dockSave({ dokk: keys, skjult: [...sk] });
+      }
+      else if (op === 'slett') {
+        if (i >= 0) keys.splice(i, 1);
+        this.haptic('selection'); return this.dockSave({ dokk: keys, egne: (this.dockUd().egne || []).filter(x => x.id !== k) });
+      }
       else return;
       this.haptic('selection');
       this.dockSave({ dokk: keys });
+    }
+    /* ----- ny knapp i dokken/menyen: popup, rom, person eller side (navigate) ----- */
+    nyType(ev, t) { this._ny = { type: t }; this.setState({ ny: t, nyVal: null }); }
+    nyVal(ev, v) { const [navn, ikon] = this.nyDefaults(this.state.ny, v); this._ny = { ...(this._ny || {}), type: this.state.ny, val: v, navn, ikon }; this.setState({ nyVal: v }); const f = this.$('[data-key="ny-navn"]'), g = this.$('[data-key="ny-ikon"]'); if (f) f.value = navn; if (g) g.value = ikon; }
+    nyInput(ev, k, el) { this._ny = { ...(this._ny || {}), [k]: el.value }; if (k === 'sti') this.setState({ nyVal: el.value }); }
+    nyDefaults(t, v) {
+      if (t === 'ark') { const h = HEADS[v] || []; return [h[1] || v, h[0] || 'circle']; }
+      if (t === 'rom') { const r = this.roomsAll[v] || {}; return [r.navn || v, r.ikon || 'meeting_room']; }
+      if (t === 'person') { const p = this.persons.find(x => x.id === v) || {}; return [p.navn || v, 'person']; }
+      return ['Side', 'link'];
+    }
+    nyAdd() {
+      const n = this._ny || {}, t = this.state.ny, v = t === 'sti' ? (n.sti || '').trim() : this.state.nyVal;
+      if (!t || !v) return;
+      const [dn, di] = this.nyDefaults(t, v);
+      const it = { id: 'egen_' + Date.now().toString(36), navn: (n.navn || '').trim() || dn, ikon: (n.ikon || '').trim() || di };
+      if (t === 'ark') it.ark = v; else if (t === 'rom') { it.ark = 'rom'; it.rom = v; } else if (t === 'person') { it.ark = 'person'; it.person = v; }
+      else if (v.startsWith('#')) it.hash = v; else if (/^https?:/.test(v)) it.url = v; else it.sti = v.startsWith('/') ? v : '/' + v;
+      const u = this.dockUd(), keys = this.dockLayout().dock.map(p => p._k);
+      if (keys.length < 7) keys.push(it.id);
+      this._ny = null; this.haptic('selection');
+      this.dockSave({ egne: [...(u.egne || []), it], dokk: keys });
+      this.setState({ ny: null, nyVal: null });
     }
     dockOpt(ev, k) { this.haptic('selection'); this.dockSave({ [k]: !this.dockOpts()[k] }); }
     dockReset() { this._dockUdLocal = {}; this.ws({ type: 'frontend/set_user_data', key: 'kd_dokk', value: {} }).catch(() => { }); this.setState({ tab: 0, prevTab: 0 }); }
@@ -1171,7 +1347,7 @@ try {
     /* ---------- render ---------- */
     render() {
       const s = this.state, c = this.config;
-      const PERS = this.persons, meId = this.meId, me = PERS.find(p => p.id === meId) || PERS[0];
+      const PERS = this.persons, PALL = this.personsAll, meId = this.meId, me = PALL.find(p => p.id === meId) || PALL[0];
       const GREEN = 'oklch(0.8 0.12 150)', BLUE = 'oklch(0.75 0.12 245)', AMBER = 'oklch(0.8 0.12 70)', PURP = 'oklch(0.68 0.2 285)';
       const badge = p => ({ show: !p.home || p.sleep, icon: p.sleep ? 'bedtime' : 'logout', style: { fontSize: 15, color: p.sleep ? 'oklch(0.75 0.12 275)' : PURP, fontVariationSettings: "'FILL' 1" } });
       const meS = this.personState(me), meB = badge(meS);
@@ -1194,12 +1370,16 @@ try {
       /* ----- rom ----- */
       const rooms = this.roomsAll;
       const live = id => { const r = rooms[id]; if (!r) return null; const L = KD.roomLive(this, r); const ms = KD.kiRom(this, id, 'media'); const media = ms ? parseFloat(ms.state) > 0 : false; return { ...r, ...L, media }; };
+      const HUR = KD.ud(this, 'kd_hjem'), ETG = HUR.etasjer || {};
+      const FL = this.floorsVis(), floor = FL.some(f => f[0] === s.floor) ? s.floor : (FL[0] || ['hjem'])[0];
+      const RK = { stor: [220, 40, 120], middels: [170, 34, 96], liten: [130, 28, 0] }[HUR.romkort || c.romkort || 'stor'] || [220, 40, 120];
+      const KLIMA = HUR.klimaknapp != null ? HUR.klimaknapp !== false : c.klimaknapp !== false;
       let left, right;
-      if (s.floor === 'hjem') { left = ((c.hjem || {}).venstre || []).map(live).filter(Boolean); right = ((c.hjem || {}).hoyre || []).map(live).filter(Boolean); }
+      if (floor === 'hjem' && !Array.isArray(ETG.hjem)) { left = ((c.hjem || {}).venstre || []).map(live).filter(Boolean); right = ((c.hjem || {}).hoyre || []).map(live).filter(Boolean); }
       else {
         let list;
-        if (s.floor === 'aktuelt') list = Object.keys(rooms).map(live).filter(r => r && (r.lightsOn || r.media));
-        else list = (((c.etasjer || {})[s.floor]) || Object.keys(rooms).filter(id => rooms[id].etasje === s.floor)).map(live).filter(Boolean);
+        if (floor === 'aktuelt') list = Object.keys(rooms).map(live).filter(r => r && (r.lightsOn || r.media));
+        else list = (this.floorRooms(floor)).map(live).filter(Boolean);
         left = list.filter((r, i) => i % 2 === 0); right = list.filter((r, i) => i % 2 === 1);
       }
       const carousel = (list, key) => {
@@ -1208,17 +1388,21 @@ try {
         const cards = list.map(r => {
           const iconWrap = { position: 'absolute', right: 6, top: 6, width: 58, height: 58, borderRadius: 29, display: 'grid', placeItems: 'center', background: r.lightsOn ? r.farge : '#2a2a2d', color: r.lightsOn ? '#141416' : '#8e8d89', transition: 'background .25s' };
           const hasSet = r.set != null;
-          return `<div data-key="${e(r.id)}" data-on-click="openRoom" data-arg="${e(r.id)}" style="position:relative;cursor:pointer;flex:none;width:100%;height:220px;box-sizing:border-box;scroll-snap-align:start;border-radius:28px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
+          return `<div data-key="${e(r.id)}" data-on-click="openRoom" data-arg="${e(r.id)}" style="position:relative;cursor:pointer;flex:none;width:100%;height:${RK[0]}px;box-sizing:border-box;scroll-snap-align:start;border-radius:28px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
                 <div style="position:absolute;left:18px;top:18px;right:70px;font-size:15px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(r.navn)}</div>
                 <button data-on-click="roomToggle" data-arg="${e(r.id)}" title="Lys" style="${S(iconWrap)}"><span class="ms" style="font-size:24px;font-variation-settings:'FILL' 1">${e(r.ikon)}</span></button>
                 <div style="position:absolute;left:18px;bottom:16px;display:flex;align-items:baseline;gap:4px;white-space:nowrap">
-                  <span style="font-size:40px;font-weight:300;letter-spacing:-0.04em;line-height:1;font-variant-numeric:tabular-nums">${r.temp != null ? Math.round(r.temp) : '–'}°</span>
+                  <span style="font-size:${RK[1]}px;font-weight:300;letter-spacing:-0.04em;line-height:1;font-variant-numeric:tabular-nums">${r.temp != null ? Math.round(r.temp) : '–'}°</span>
                   <span style="font-size:12px;color:#8e8d89">${r.hum != null ? Math.round(r.hum) : '–'} %</span>
                 </div>
-                ${hasSet ? `<div style="position:absolute;right:8px;bottom:8px;width:44px;height:120px;border-radius:22px;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.12);display:flex;flex-direction:column;align-items:center;justify-content:space-between">
-                    <button data-on-click="roomSet" data-arg="${e(r.id)}:up" style="width:44px;height:40px;display:grid;place-items:center;color:#c9c7c2"><span class="ms" style="font-size:20px">expand_less</span></button>
+                ${hasSet && KLIMA && RK[2] ? `<div style="position:absolute;right:8px;bottom:8px;width:44px;height:${RK[2]}px;border-radius:22px;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.12);display:flex;flex-direction:column;align-items:center;justify-content:space-between">
+                    <button data-on-click="roomSet" data-arg="${e(r.id)}:up" style="width:44px;height:${RK[2] / 3}px;display:grid;place-items:center;color:#c9c7c2"><span class="ms" style="font-size:20px">expand_less</span></button>
                     <span style="font-size:14px;font-variant-numeric:tabular-nums">${Math.round(r.set)}°</span>
-                    <button data-on-click="roomSet" data-arg="${e(r.id)}:down" style="width:44px;height:40px;display:grid;place-items:center;color:#c9c7c2"><span class="ms" style="font-size:20px">expand_more</span></button>
+                    <button data-on-click="roomSet" data-arg="${e(r.id)}:down" style="width:44px;height:${RK[2] / 3}px;display:grid;place-items:center;color:#c9c7c2"><span class="ms" style="font-size:20px">expand_more</span></button>
+                  </div>` : hasSet && KLIMA ? `<div style="position:absolute;right:8px;bottom:8px;height:34px;border-radius:17px;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.12);display:flex;align-items:center">
+                    <button data-on-click="roomSet" data-arg="${e(r.id)}:down" style="width:30px;height:34px;display:grid;place-items:center;color:#c9c7c2"><span class="ms" style="font-size:18px">remove</span></button>
+                    <span style="font-size:13px;font-variant-numeric:tabular-nums">${Math.round(r.set)}°</span>
+                    <button data-on-click="roomSet" data-arg="${e(r.id)}:up" style="width:30px;height:34px;display:grid;place-items:center;color:#c9c7c2"><span class="ms" style="font-size:18px">add</span></button>
                   </div>` : ''}
               </div>`;
         }).join('');
@@ -1363,12 +1547,39 @@ try {
             ${ib(g + '|' + k + '|skjul', hid ? 'visibility_off' : 'visibility', hid ? 'Vis' : 'Skjul', hid ? '#6d6c69' : 'oklch(0.82 0.1 350)')}
           </div>`; }).join('');
         const head = t => `<div style="padding:12px 14px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">${t}</div>`;
+        const chipH = (on, arg, fn, label, icon) => `<button class="kd-press" data-on-click="${fn}" data-arg="${e(arg)}" style="${S({ display: 'flex', alignItems: 'center', gap: 6, height: 34, padding: '0 12px', borderRadius: 17, fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap', background: on ? 'oklch(0.78 0.13 350 / 0.2)' : 'rgba(255,255,255,0.06)', boxShadow: on ? 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.7)' : 'none', color: on ? '#f2f1ee' : '#a9a7a2' })}">${icon ? `<span class="ms" style="font-size:16px">${e(icon)}</span>` : ''}${e(label)}</button>`;
+        const ib2 = (fn, arg, icon, title, col, dis) => `<button class="kd-press" data-on-click="${fn}" data-arg="${e(arg)}" title="${title}" style="${S({ width: 34, height: 34, borderRadius: 17, flex: 'none', display: 'grid', placeItems: 'center', color: col || '#8e8d89', opacity: dis ? 0.25 : 1, pointerEvents: dis ? 'none' : null })}"><span class="ms" style="font-size:20px">${icon}</span></button>`;
+        const shown = this.persons.map(p => p.id), PA = this.personsAll;
+        const persRows = [...shown.map(id => PA.find(p => p.id === id)).filter(Boolean), ...PA.filter(p => !shown.includes(p.id))].map(p => { const on = shown.includes(p.id), i = shown.indexOf(p.id);
+          return `<div data-key="he-p-${e(p.id)}" style="min-height:46px;padding:0 4px 0 12px;border-radius:16px;display:flex;align-items:center;gap:10px;opacity:${on ? 1 : 0.5}">
+            <span style="width:26px;height:26px;border-radius:13px;flex:none;display:grid;place-items:center;font-size:12px;font-weight:600;background:${e(p.farge || '#2a2a2d')};${this.pic(p)}">${e((p.navn || '?')[0])}</span>
+            <span style="flex:1;min-width:0;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(p.navn)}${p.id === this.meId ? ' <span style="color:#6d6c69;font-size:12px">(deg)</span>' : ''}</span>
+            ${on ? ib2('hjemPers', p.id + '|opp', 'arrow_upward', 'Flytt opp', null, i === 0) : ''}
+            ${ib2('hjemPers', p.id + (on ? '|skjul' : '|vis'), on ? 'remove_circle' : 'add_circle', on ? 'Fjern' : 'Legg til', on ? C.red : C.green)}
+          </div>`; }).join('');
+        const visF = this.floorsVis().map(f => f[0]), allRooms = Object.values(this.roomsAll);
+        const etgRows = FLOORS.map(([k, label]) => { const on = visF.includes(k), open = s.etgOpen === k, rs = k === 'aktuelt' ? null : this.floorRooms(k);
+          return `<div data-key="he-e-${k}" style="border-radius:16px;${open ? 'background:rgba(255,255,255,0.04);' : ''}">
+            <div style="min-height:46px;padding:0 4px 0 12px;display:flex;align-items:center;gap:10px;opacity:${on ? 1 : 0.5}">
+              <span class="ms" style="font-size:20px;color:#c9c7c2">${k === 'hjem' ? 'home' : k === 'aktuelt' ? 'bolt' : 'stairs'}</span>
+              <span style="flex:1;min-width:0;display:flex;flex-direction:column"><span style="font-size:14px">${e(label)}</span><span style="font-size:11px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${rs ? e(rs.map(id => (this.roomsAll[id] || {}).navn || id).join(', ') || 'Ingen rom') : 'Rom med lys eller media på'}</span></span>
+              ${rs ? ib2('hjemEtg', k + '|apne', open ? 'expand_less' : 'edit', 'Velg rom') : ''}
+              ${ib2('hjemEtg', k + '|skjul', on ? 'visibility' : 'visibility_off', on ? 'Skjul' : 'Vis', on ? 'oklch(0.82 0.1 350)' : '#6d6c69')}
+            </div>
+            ${open ? `<div style="display:flex;flex-wrap:wrap;gap:6px;padding:0 10px 10px">${allRooms.map(r => chipH(rs.includes(r.id), k + '|rom|' + r.id, 'hjemEtg', r.navn, r.ikon)).join('')}</div>` : ''}
+          </div>`; }).join('');
         return `<div data-key="he-bd" data-on-click="hjemEditClose" style="position:fixed;inset:0;z-index:27;background:rgba(0,0,0,0.35)"></div>
     <div data-key="he-panel" style="position:fixed;left:50%;transform:translateX(-50%);bottom:${MB}px;z-index:28;width:min(420px, calc(100vw - 24px));max-height:calc(100vh - ${MB + 40}px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;box-sizing:border-box;padding:8px;border-radius:26px;background:rgba(40,40,44,0.78);backdrop-filter:blur(26px) saturate(190%);-webkit-backdrop-filter:blur(26px) saturate(190%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.3),inset 0 0 0 0.5px rgba(255,255,255,0.18),0 18px 40px rgba(0,0,0,0.5);display:flex;flex-direction:column;gap:2px">
       <div style="display:flex;align-items:center;gap:8px;padding:6px 6px 6px 14px"><span style="flex:1;font-size:16px;font-weight:600">Tilpass Hjem</span>
         <button class="kd-hov8" data-on-click="hjemReset" style="height:34px;padding:0 12px;border-radius:17px;font-size:12px;color:#a9a7a2">Nullstill</button>
         <button data-on-click="hjemEditClose" style="height:34px;padding:0 14px;border-radius:17px;font-size:13px;font-weight:600;background:linear-gradient(135deg, oklch(0.78 0.13 350), oklch(0.9 0.05 20));color:#2a1720">Ferdig</button></div>
+      ${head('Tittel øverst')}<div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 10px 6px">${[['server', 'Servernavn', 'dns'], ['person', 'Mitt navn', 'person']].map(([v, l, ic]) => chipH(((HU.tittel || c.tittel || 'server') === v), 'tittel|' + v, 'hjemSet', l, ic)).join('')}</div>
       ${head('Seksjoner')}${rows('sek', norm(HU.seksjoner, SEK_KEYS), HLABEL.sek, 'sek')}
+      ${head('Personer på toppen')}${persRows}
+      ${head('Etasjer')}${etgRows}
+      ${head('Romkort')}<div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 10px 6px">${[['stor', 'Stor'], ['middels', 'Middels'], ['liten', 'Liten']].map(([v, l]) => chipH((HU.romkort || c.romkort || 'stor') === v, 'romkort|' + v, 'hjemSet', l)).join('')}
+        ${chipH(HU.klimaknapp != null ? HU.klimaknapp !== false : c.klimaknapp !== false, 'klimaknapp|' + (HU.klimaknapp != null ? HU.klimaknapp === false : c.klimaknapp === false), 'hjemSet', 'Klimaknapp', 'thermostat')}</div>
+      ${head('Avstand under strømpriser')}<div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 10px 6px">${[[0, 'Ingen'], [24, 'Liten'], [60, 'Middels'], [120, 'Stor']].map(([v, l]) => chipH(+(HU.gap_strom || 0) === v, 'gap_strom|' + v, 'hjemSet', l)).join('')}</div>
       ${head('Setningen øverst')}${rows('prosa', norm(HU.prosa, PROSA_KEYS), HLABEL.prosa, 'prosa')}
       ${head('Fliser – venstre kolonne')}${rows('venstre', V, HLABEL.flis, 'flis')}
       ${head('Fliser – høyre kolonne')}${rows('hoyre', H, HLABEL.flis, 'flis')}
@@ -1378,11 +1589,26 @@ try {
         const sw = on => `<span style="${S({ width: 44, height: 26, borderRadius: 13, flex: 'none', position: 'relative', background: on ? 'oklch(0.78 0.13 350)' : '#3a3a3d', transition: 'background .2s' })}"><span style="${S({ position: 'absolute', top: 3, left: on ? 21 : 3, width: 20, height: 20, borderRadius: 10, background: '#f4f3ef', transition: 'left .25s cubic-bezier(.34,1.56,.64,1)' })}"></span></span>`;
         const opt = (k, label, sub, on) => `<button class="kd-hov8" data-on-click="dockOpt" data-arg="${k}" style="min-height:52px;padding:6px 10px 6px 14px;border-radius:16px;display:flex;align-items:center;gap:12px;text-align:left"><span style="flex:1;min-width:0;display:flex;flex-direction:column"><span style="font-size:14px;font-weight:500">${label}</span><span style="font-size:11px;color:#8e8d89">${sub}</span></span>${sw(on)}</button>`;
         const row = (it, i, inDock) => `<div data-key="de-${e(it._k)}" style="min-height:48px;padding:0 6px 0 12px;border-radius:16px;display:flex;align-items:center;gap:12px">
-            <span class="ms" style="font-size:20px;color:${inDock ? '#f2f1ee' : e(it.farge || '#c9c7c2')}">${e(it.ikon || 'circle')}</span>
+            <span class="ms" style="font-size:20px;color:${inDock === true ? '#f2f1ee' : e(it.farge || '#c9c7c2')}">${e(it.ikon || 'circle')}</span>
             <span style="flex:1;min-width:0;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(it.navn || it._k)}</span>
-            ${inDock && i > 0 ? `<button class="kd-press" data-on-click="dockMove" data-arg="${e('opp|' + it._k)}" title="Flytt til venstre" style="width:36px;height:36px;border-radius:18px;display:grid;place-items:center;color:#8e8d89"><span class="ms" style="font-size:20px">arrow_upward</span></button>` : ''}
-            <button class="kd-press" data-on-click="dockMove" data-arg="${e((inDock ? 'ut|' : 'inn|') + it._k)}" title="${inDock ? 'Flytt til «Mer»' : 'Legg i dokken'}" style="${S({ width: 36, height: 36, borderRadius: 18, display: 'grid', placeItems: 'center', color: inDock ? C.red : C.green, opacity: !inDock && LAY.dock.length >= 7 ? 0.3 : 1 })}"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">${inDock ? 'remove_circle' : 'add_circle'}</span></button>
+            ${inDock === true && i > 0 ? `<button class="kd-press" data-on-click="dockMove" data-arg="${e('opp|' + it._k)}" title="Flytt til venstre" style="width:36px;height:36px;border-radius:18px;display:grid;place-items:center;color:#8e8d89"><span class="ms" style="font-size:20px">arrow_upward</span></button>` : ''}
+            ${inDock === 'skjult' ? '' : `<button class="kd-press" data-on-click="dockMove" data-arg="${e((inDock ? 'ut|' : 'inn|') + it._k)}" title="${inDock ? 'Flytt til «Mer»' : 'Legg i dokken'}" style="${S({ width: 36, height: 36, borderRadius: 18, display: 'grid', placeItems: 'center', color: inDock ? C.red : C.green, opacity: !inDock && LAY.dock.length >= 7 ? 0.3 : 1 })}"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">${inDock ? 'remove_circle' : 'add_circle'}</span></button>`}
+            ${it._egen ? `<button class="kd-press" data-on-click="dockMove" data-arg="${e('slett|' + it._k)}" title="Slett knappen" style="width:36px;height:36px;border-radius:18px;display:grid;place-items:center;color:#8e8d89"><span class="ms" style="font-size:20px">delete</span></button>`
+              : `<button class="kd-press" data-on-click="dockMove" data-arg="${e((inDock === 'skjult' ? 'vis|' : 'skjul|') + it._k)}" title="${inDock === 'skjult' ? 'Vis igjen' : 'Skjul helt'}" style="width:36px;height:36px;border-radius:18px;display:grid;place-items:center;color:${inDock === 'skjult' ? 'oklch(0.82 0.1 350)' : '#8e8d89'}"><span class="ms" style="font-size:20px">${inDock === 'skjult' ? 'visibility' : 'visibility_off'}</span></button>`}
           </div>`;
+        const chipB = (on, arg, fn, label, icon) => `<button class="kd-press" data-on-click="${fn}" data-arg="${e(arg)}" style="${S({ display: 'flex', alignItems: 'center', gap: 6, height: 34, padding: '0 12px', borderRadius: 17, fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap', background: on ? 'oklch(0.78 0.13 350 / 0.2)' : 'rgba(255,255,255,0.06)', boxShadow: on ? 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.7)' : 'none', color: on ? '#f2f1ee' : '#a9a7a2' })}">${icon ? `<span class="ms" style="font-size:16px">${e(icon)}</span>` : ''}${e(label)}</button>`;
+        const inp = (k, ph, v) => `<input data-key="ny-${k}" data-keep="1" data-on-input="nyInput" data-arg="${k}" placeholder="${ph}" value="${e(v || '')}" autocomplete="off" style="height:38px;min-width:0;flex:1;padding:0 14px;border-radius:19px;border:none;outline:none;background:#262629;color:#f2f1ee;font:inherit;font-size:13px;box-sizing:border-box">`;
+        const nyT = s.ny, nyV = s.nyVal;
+        const valg = nyT === 'ark' ? Object.keys(TAGS).filter(k => k !== 'rom').map(k => chipB(nyV === k, k, 'nyVal', (HEADS[k] || [])[1] || k, (HEADS[k] || [])[0]))
+          : nyT === 'rom' ? Object.values(this.roomsAll).map(r => chipB(nyV === r.id, r.id, 'nyVal', r.navn, r.ikon))
+          : nyT === 'person' ? this.persons.map(p => chipB(nyV === p.id, p.id, 'nyVal', p.navn, 'person')) : [];
+        const nyHTML = `<div style="padding:12px 14px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">Ny knapp</div>
+      <div style="display:flex;flex-direction:column;gap:8px;padding:4px 8px 8px">
+        <div style="display:flex;flex-wrap:wrap;gap:6px">${[['ark', 'Popup', 'web_asset'], ['rom', 'Rom', 'meeting_room'], ['person', 'Person', 'person'], ['sti', 'Side / URL', 'link']].map(([k, l, ic]) => chipB(nyT === k, k, 'nyType', l, ic)).join('')}</div>
+        ${nyT === 'sti' ? `<div style="display:flex">${inp('sti', '/lovelace/2, #hash eller https://…', (this._ny || {}).sti)}</div>` : valg.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px;max-height:180px;overflow-y:auto">${valg.join('')}</div>` : ''}
+        ${nyT ? `<div style="display:flex;gap:6px">${inp('navn', 'Navn', (this._ny || {}).navn)}${inp('ikon', 'Ikon (f.eks. bolt)', (this._ny || {}).ikon)}</div>
+        <button data-on-click="nyAdd" style="${S({ height: 40, borderRadius: 20, fontSize: 13, fontWeight: 600, background: nyV ? 'linear-gradient(135deg, oklch(0.78 0.13 350), oklch(0.9 0.05 20))' : 'rgba(255,255,255,0.06)', color: nyV ? '#2a1720' : '#6d6c69' })}">Legg til</button>` : ''}
+      </div>`;
         return `<div data-key="de-bd" data-on-click="dockEditClose" style="position:fixed;inset:0;z-index:27;background:rgba(0,0,0,0.35)"></div>
     <div data-key="de-panel" style="position:fixed;left:50%;transform:translateX(-50%);bottom:${MB}px;z-index:28;width:min(400px, calc(100vw - 24px));max-height:calc(100vh - 140px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;box-sizing:border-box;padding:8px;border-radius:26px;background:rgba(40,40,44,0.72);backdrop-filter:blur(26px) saturate(190%);-webkit-backdrop-filter:blur(26px) saturate(190%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.3),inset 0 0 0 0.5px rgba(255,255,255,0.18),0 18px 40px rgba(0,0,0,0.5);display:flex;flex-direction:column;gap:2px">
       <div style="display:flex;align-items:center;gap:8px;padding:6px 6px 6px 14px"><span style="flex:1;font-size:16px;font-weight:600">Tilpass dokken</span>
@@ -1395,6 +1621,8 @@ try {
       ${LAY.dock.map((it, i) => row(it, i, true)).join('') || '<div style="padding:8px 14px;font-size:13px;color:#6d6c69">Ingen – alt ligger i «Mer»</div>'}
       <div style="padding:12px 14px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">Bak de tre prikkene</div>
       ${LAY.menu.map((it, i) => row(it, i, false)).join('') || '<div style="padding:8px 14px;font-size:13px;color:#6d6c69">Tom</div>'}
+      ${LAY.hidden.length ? `<div style="padding:12px 14px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">Skjult</div>${LAY.hidden.map((it, i) => row(it, i, 'skjult')).join('')}` : ''}
+      ${nyHTML}
     </div>`;
       };
 
@@ -1411,7 +1639,7 @@ try {
 
       /* ----- dialoger ----- */
       const quickHTML = () => {
-        const q = s.quickId, p = PERS.find(x => x.id === q); if (!p) return '';
+        const q = s.quickId, p = PALL.find(x => x.id === q); if (!p) return '';
         const qp = this.personState(p);
         const opt = (on, icon, label, col, arg) => `<button data-on-click="quickSet" data-arg="${arg}" style="${S({ height: 48, borderRadius: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 14, fontWeight: 600, background: on ? col : 'transparent', color: on ? '#141416' : '#c9c7c2', transition: 'background .25s, color .25s' })}"><span class="ms" style="${S({ fontSize: 20, fontVariationSettings: `'FILL' ${on ? 1 : 0}` })}">${icon}</span>${label}</button>`;
         const av = { position: 'absolute', left: '50%', top: -48, transform: 'translateX(-50%)', width: 96, height: 96, borderRadius: 48, display: 'grid', placeItems: 'center', fontSize: 36, fontWeight: 600, background: p.farge, boxShadow: `0 0 0 4px #141416, 0 0 0 6px ${qp.home ? GREEN : PURP}` };
@@ -1475,18 +1703,19 @@ try {
       const COLV = COLV0.filter(k => !HSKJUL.has('flis:' + k)), COLH = COLH0.filter(k => !HSKJUL.has('flis:' + k));
       const SEK = {
         personer: () => `    <div data-key="h-personer" style="display:flex;gap:14px;flex-wrap:wrap;margin-top:-6px">
-      ${people.map(({ p, b, avatar }) => `<button data-on-click="openPerson" data-arg="${e(p.id)}" title="${e(p.navn)}" style="position:relative;display:flex;flex-direction:column;align-items:center;gap:5px">
+      ${people.map(({ p, avatar }) => { const pl = this.placeOf(p); return `<button data-key="pers-${e(p.id)}" data-on-click="openPerson" data-hold="quickPerson" data-arg="${e(p.id)}" title="${e(p.navn)} · ${e(pl.navn)}" style="position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;max-width:72px">
           <span style="${S(avatar)}${this.pic(p)}">${e(p.navn[0])}</span>
-          ${b.show ? `<span style="position:absolute;right:-8px;top:-6px;width:24px;height:24px;border-radius:12px;background:#232326;box-shadow:0 0 0 2px #141416;display:grid;place-items:center"><span class="ms" style="${S(b.style)}">${b.icon}</span></span>` : ''}
-          <span style="font-size:11px;color:#8e8d89">${e(p.navn)}</span>
-        </button>`).join('')}
+          <span style="position:absolute;left:30px;top:-5px;width:24px;height:24px;border-radius:12px;background:#232326;box-shadow:0 0 0 2px #141416;display:grid;place-items:center">${this.placeIcon(pl, 15)}</span>
+          <span style="font-size:11px;color:#c9c7c2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:72px">${e(p.navn)}</span>
+          <span style="margin-top:-3px;font-size:10px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:72px">${e(pl.navn)}</span>
+        </button>`; }).join('')}
     </div>`,
         prosa: () => prVis.length ? `<div data-key="h-prosa" style="font-size:22px;font-weight:400;line-height:1.75;letter-spacing:-0.01em;text-wrap:pretty;margin-top:-6px">
       ${prosaTxt}
     </div>` : '',
         rom: () => `  <section data-key="h-rom" style="display:flex;flex-direction:column;gap:12px">
     <div style="display:flex;gap:2px;padding:4px;border-radius:22px;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.14);align-self:flex-start">
-      ${FLOORS.map(([k, label]) => `<button data-on-click="goFloor" data-arg="${k}" style="${S({ height: 38, padding: '0 16px', borderRadius: 19, fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', background: s.floor === k ? PINK : 'transparent', color: s.floor === k ? '#2a1720' : '#c9c7c2' })}">${label}</button>`).join('')}
+      ${FL.map(([k, label]) => `<button data-on-click="goFloor" data-arg="${k}" style="${S({ height: 38, padding: '0 16px', borderRadius: 19, fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', background: floor === k ? PINK : 'transparent', color: floor === k ? '#2a1720' : '#c9c7c2' })}">${e(label)}</button>`).join('')}
     </div>
     <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:start">
       <div style="display:flex;flex-direction:column;gap:8px;min-width:0">${COLV.map(k => TILE[k]()).join('')}</div>
@@ -1505,12 +1734,11 @@ try {
       </div>
     </div>
   </section>` : ''}`,
-        strom: () => `  <section data-key="h-strom" style="display:flex;flex-direction:column;gap:12px">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:0 4px">
-      <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Strømpriser</div>
-      <div style="display:flex;padding:3px;border-radius:14px;background:#1c1c1f;gap:2px">
-        ${pc.modes.map(m => `<button data-on-click="pcMode" data-arg="${m.k}" style="${S(m.style)}">${m.label}</button>`).join('')}
-      </div>
+        strom: () => `  <section data-key="h-strom" style="display:flex;flex-direction:column;gap:12px;margin-bottom:${+(HUR.gap_strom || c.gap_strom || 0)}px">
+    <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:0 4px">Strømpriser</div>
+    <div data-key="pc-seg" style="position:relative;display:grid;grid-template-columns:repeat(${MODES.length},minmax(0,1fr));padding:4px;border-radius:20px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
+      <span style="position:absolute;top:4px;bottom:4px;left:calc(4px + ${Math.max(0, MODES.findIndex(m => m[0] === mode))} * ((100% - 8px) / ${MODES.length}));width:calc((100% - 8px) / ${MODES.length});border-radius:16px;background:${PINK};box-shadow:0 4px 12px rgba(0,0,0,0.25);transition:left .4s cubic-bezier(.34,1.3,.64,1)"></span>
+      ${MODES.map(([k, label]) => { const on = k === mode, ic = { total: 'receipt_long', spot: 'show_chart', norges: 'verified' }[k]; return `<button data-on-click="pcMode" data-arg="${k}" style="position:relative;height:38px;border-radius:16px;display:flex;align-items:center;justify-content:center;gap:6px;min-width:0;font-size:13px;font-weight:600;white-space:nowrap;color:${on ? '#2a1720' : '#a9a7a2'};transition:color .25s"><span class="ms" style="font-size:17px;font-variation-settings:'FILL' ${on ? 1 : 0}">${ic}</span><span style="overflow:hidden;text-overflow:ellipsis">${e(label)}</span></button>`; }).join('')}
     </div>
     <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:12px;padding:0 4px">
       <div style="display:flex;flex-direction:column;gap:3px">
@@ -1566,10 +1794,10 @@ try {
   <header style="display:flex;flex-direction:column;gap:16px">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
       <div style="display:flex;flex-direction:column;gap:6px;min-width:0">
-        <button data-on-click="toggleServer" style="display:flex;align-items:center;gap:4px;font-size:36px;font-weight:600;letter-spacing:-0.03em;line-height:1;white-space:nowrap"><span>${e(CUR.navn || 'Hjem')}</span><span class="ms" style="${S(serverChev)}">arrow_drop_down</span></button>
+        <button data-on-click="toggleServer" data-no-haptic="1" style="display:flex;align-items:center;gap:4px;max-width:100%;font-size:36px;font-weight:600;letter-spacing:-0.03em;line-height:1;white-space:nowrap"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis">${e(KD.ud(this, 'kd_hjem').tittel === 'person' || c.tittel === 'person' ? me.navn : (CUR.navn || 'Hjem'))}</span><span class="ms" style="${S(serverChev)}">arrow_drop_down</span></button>
         <button data-on-click="openWeather" style="font-size:16px;color:#8e8d89;white-space:nowrap;text-align:left">${W.head != null ? Math.round(W.head) : '–'} °C · ${e(W.cond)}</button>
       </div>
-      <button data-on-click="openMe" data-hold="openMeSheet" title="${e(me.navn)}" style="position:relative;width:60px;height:60px;border-radius:30px;flex:none;display:grid;place-items:center;font-size:22px;font-weight:600;background:${e(me.farge)};box-shadow:${meRing};${this.pic(me)}">${e(me.navn[0])}${meB.show ? `<span style="position:absolute;right:-6px;top:-4px;width:24px;height:24px;border-radius:12px;background:#232326;box-shadow:0 0 0 2px #141416;display:grid;place-items:center"><span class="ms" style="${S(meB.style)}">${meB.icon}</span></span>` : ''}</button>
+      <button data-on-click="openMe" data-hold="quickPerson" title="${e(me.navn)} · ${e(this.placeOf(me).navn)}" style="position:relative;width:60px;height:60px;border-radius:30px;flex:none;display:grid;place-items:center;font-size:22px;font-weight:600;background:${e(me.farge)};box-shadow:${meRing};${this.pic(me)}">${e(me.navn[0])}<span style="position:absolute;right:-6px;top:-4px;width:24px;height:24px;border-radius:12px;background:#232326;box-shadow:0 0 0 2px #141416;display:grid;place-items:center">${this.placeIcon(this.placeOf(me), 15)}</span></button>
     </div>
   </header>
 
@@ -6083,6 +6311,10 @@ try {
  *   hoyttalere: [{ entity: media_player.squeezebox_radio, navn: Sonos }, …]
  *   apper: [{ navn: Netflix, kilde: Netflix, ikon: movie, farge: 'oklch(…)' }, …]   # select_source på TV-en
  *   radio: [{ entity: button.squeezebox_radio_preset_1, navn: NRK P1 }, …]           # finnes også automatisk
+ *   volum: media_player.rn602_stue       # volumknappene: entitet, 'fjernkontroll' eller 'skript' (standard: automatisk)
+ *   volum_opp: script.volum_opp          # med volum: skript
+ *   volum_ned: script.volum_ned
+ * TV, volum, høyttalere og synlige apper kan også velges per bruker i «Tilpass oppsett» (brukerdata 'kd_media').
  * Albumbilder vises fra entity_picture. Kildene til musikkspilleren (source_list) vises som valg.
  */
 (() => {
@@ -6123,10 +6355,30 @@ try {
 
     /* ----- data ----- */
     on(id) { return !!id && this.ok(id) && !OFF.includes(this.v(id)); }
+    /** per bruker («Tilpass oppsett»): { tv, hoyttalere: [id…], skjul_apper: [navn…], volum, volum_opp, volum_ned } */
+    U() { return KD.ud(this, 'kd_media') || {}; }
+    uSave(patch) { const v = { ...this.U(), ...patch }; for (const k of Object.keys(v)) if (v[k] == null) delete v[k]; this.haptic('selection'); KD.udSave(this, 'kd_media', v); }
+    tvId() { const u = this.U().tv; return u && this.st(u) ? u : this.config.tv; }
+    cfgSpeakers() { return (Array.isArray(this.config.hoyttalere) ? this.config.hoyttalere : []).map(x => typeof x === 'string' ? { entity: x } : x); }
     speakers() {
-      const list = (Array.isArray(this.config.hoyttalere) ? this.config.hoyttalere : []).map(x => typeof x === 'string' ? { entity: x } : x);
+      const cfg = this.cfgSpeakers(), u = this.U().hoyttalere;
+      const list = Array.isArray(u) ? u.map(id => cfg.find(x => x.entity === id) || { entity: id }) : cfg;
       return list.filter(x => this.st(x.entity)).map(x => ({ ...x, navn: x.navn || this.fname(x.entity) }));
     }
+    /** apper med indeks i config.apper (indeksen brukes av app()), uten de brukeren har skjult */
+    appList() { const hid = new Set(this.U().skjul_apper || []); return (this.config.apper || []).map((x, i) => ({ ...x, i })).filter(x => !hid.has(x.navn)); }
+    /** volumknappene: 'auto' | 'fjernkontroll' | 'skript' | media_player.* */
+    volMode() {
+      const u = this.U(), c = this.config, v = u.volum || c.volum;
+      if (v === 'fjernkontroll' || v === 'skript' || v === 'auto') return v;
+      if (v && /^media_player\./.test(v) && this.st(v)) return v;
+      if (!v && (c.volum_opp || c.volum_ned)) return 'skript';
+      return 'auto';
+    }
+    volScripts() { const u = this.U(), c = this.config; return { opp: u.volum_opp || c.volum_opp || null, ned: u.volum_ned || c.volum_ned || null }; }
+    /** entiteten som volumlinjen viser */
+    volTarget() { const m = this.volMode(); return /^media_player\./.test(m) ? m : this.tvId(); }
+    hasVol(id) { return (Number(this.at(id, 'supported_features', 0)) & (4 | 8 | 1024)) !== 0 || this.at(id, 'volume_level') != null; }
     /** musikkspilleren: den første som spiller, ellers config.musikk */
     player() {
       const sp = this.speakers();
@@ -6157,10 +6409,10 @@ try {
     flash(k) { this.setState({ press: k }); clearTimeout(this._pt); this._pt = setTimeout(() => this.setState({ press: null }), 160); }
     /** fjernkontrollen: config → remote.<tv> → en remote med samme navn som TV-en */
     remoteId() {
-      const c = this.config, tv = String(c.tv || '').split('.')[1] || '';
-      if (c.fjernkontroll && this.st(c.fjernkontroll)) return c.fjernkontroll;
+      const c = this.config, tvE = this.tvId(), tv = String(tvE || '').split('.')[1] || '';
+      if (c.fjernkontroll && this.st(c.fjernkontroll) && tvE === c.tv) return c.fjernkontroll;
       if (tv && this.st('remote.' + tv)) return 'remote.' + tv;
-      const nm = low(this.fname(c.tv));
+      const nm = low(this.fname(tvE));
       return this.find(/^remote\./).find(id => nm && low(this.fname(id)) === nm) || this.find(/^remote\./).find(id => tv && id.includes(tv.split('_')[0])) || null;
     }
     send(cmd) {
@@ -6201,32 +6453,48 @@ try {
       pad.addEventListener('pointercancel', end);
     }
     pad(e, k) { this.flash(k); this.send(k === 'ok' ? 'select' : k); }
-    powerTv() { const id = this.config.tv; this.call('media_player', this.on(id) ? 'turn_off' : 'turn_on', { entity_id: id }); }
+    powerTv() { const id = this.tvId(); this.call('media_player', this.on(id) ? 'turn_off' : 'turn_on', { entity_id: id }); }
     key(e, k) {
       if (k === 'power') return this.powerTv();
       if (k === 'back') { this.flash('back'); return this.send('menu'); }
       if (k === 'home') return this.send('home');
       if (k === 'mic') return this.send('siri');
-      if (k === 'playpause') return this.call('media_player', 'media_play_pause', { entity_id: this.config.tv });
+      if (k === 'playpause') return this.call('media_player', 'media_play_pause', { entity_id: this.tvId() });
     }
     canSet(id) { return (Number(this.at(id, 'supported_features', 0)) & 4) === 4 && this.at(id, 'volume_level') != null; }
-    vol(e, dir) {
-      const id = this.config.tv;
+    volStep(id, dir) {
       if (this.canSet(id)) {
         const v = KD.clamp(Math.round(this.at(id, 'volume_level', 0) * 100) + (dir === 'up' ? 2 : -2), 0, 100);
         return this.call('media_player', 'volume_set', { entity_id: id, volume_level: v / 100 });
       }
-      if (this.config.fjernkontroll && this.st(this.config.fjernkontroll)) return this.send(dir === 'up' ? 'volume_up' : 'volume_down');
+      return this.call('media_player', dir === 'up' ? 'volume_up' : 'volume_down', { entity_id: id });
+    }
+    vol(e, dir) {
+      const m = this.volMode(), id = this.tvId();
+      if (m === 'fjernkontroll') return this.send(dir === 'up' ? 'volume_up' : 'volume_down');
+      if (m === 'skript') {
+        const sc = this.volScripts()[dir === 'up' ? 'opp' : 'ned'];
+        if (!sc) { this.toast('Velg skript for volum ' + (dir === 'up' ? 'opp' : 'ned') + ' i «Tilpass oppsett»'); return; }
+        return this.call('script', 'turn_on', { entity_id: sc });
+      }
+      if (m !== 'auto') return this.volStep(m, dir);
+      if (this.canSet(id)) return this.volStep(id, dir);
+      if (this.config.fjernkontroll && this.st(this.config.fjernkontroll) && id === this.config.tv) return this.send(dir === 'up' ? 'volume_up' : 'volume_down');
       this.call('media_player', dir === 'up' ? 'volume_up' : 'volume_down', { entity_id: id });
     }
-    mute() { const id = this.config.tv; this.call('media_player', 'volume_mute', { entity_id: id, is_volume_muted: !this.at(id, 'is_volume_muted', false) }); }
+    mute() {
+      const m = this.volMode();
+      if (m === 'fjernkontroll') return this.send('mute');
+      const id = this.volTarget();
+      this.call('media_player', 'volume_mute', { entity_id: id, is_volume_muted: !this.at(id, 'is_volume_muted', false) });
+    }
     app(e, i) {
       const x = (this.config.apper || [])[+i]; if (!x) return;
       if (x.skript) return this.call('script', 'turn_on', { entity_id: x.skript });
-      const list = this.at(this.config.tv, 'source_list', []) || [];
+      const list = this.at(this.tvId(), 'source_list', []) || [];
       const want = x.kilde || x.navn;
       const src = list.find(s => low(s) === low(want)) || want;
-      this.call('media_player', 'select_source', { entity_id: this.config.tv, source: src });
+      this.call('media_player', 'select_source', { entity_id: this.tvId(), source: src });
     }
     powerMusic() { const id = this.player(); this.call('media_player', this.v(id) === 'playing' ? 'media_pause' : this.on(id) ? 'turn_off' : 'turn_on', { entity_id: id }); }
     playPause() { this.call('media_player', 'media_play_pause', { entity_id: this.player() }); }
@@ -6251,6 +6519,65 @@ try {
     source(e, src) { this.call('media_player', 'select_source', { entity_id: this.player(), source: src }); }
     openMore(e, id) { this.more(id); }
 
+    /* ----- «Tilpass oppsett»: TV, volumknapper, høyttalere og apper (per bruker, 'kd_media') ----- */
+    mdSet(e, arg) {
+      const i = String(arg).indexOf('|'), k = String(arg).slice(0, i), v = String(arg).slice(i + 1);
+      const cur = k === 'tv' ? this.tvId() : k === 'volum' ? this.volMode() : k === 'volum_opp' ? this.volScripts().opp : k === 'volum_ned' ? this.volScripts().ned : null;
+      if (k === 'tv') return this.uSave({ tv: v === this.config.tv ? null : v });
+      if (k === 'volum') return this.uSave({ volum: v });
+      if (k === 'volum_opp' || k === 'volum_ned') return this.uSave({ [k]: cur === v ? null : v });
+    }
+    mdTog(e, arg) {
+      const i = String(arg).indexOf('|'), k = String(arg).slice(0, i), v = String(arg).slice(i + 1);
+      if (k === 'app') {
+        const hid = new Set(this.U().skjul_apper || []);
+        hid.has(v) ? hid.delete(v) : hid.add(v);
+        return this.uSave({ skjul_apper: hid.size ? [...hid] : null });
+      }
+      if (k === 'spk') {
+        const cur = this.speakers().map(x => x.entity);
+        const nxt = cur.includes(v) ? cur.filter(x => x !== v) : [...cur, v];
+        const def = this.cfgSpeakers().map(x => x.entity).filter(x => this.st(x));
+        return this.uSave({ hoyttalere: nxt.join() === def.join() ? null : nxt });
+      }
+    }
+    mdReset() { this.haptic('selection'); KD.udSave(this, 'kd_media', {}); }
+    tilpassHTML() {
+      const e = KD.e, S = KD.S, P = 'oklch(0.78 0.13 350';
+      const head = (t) => `<div style="padding:10px 12px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">${e(t)}</div>`;
+      const chip = (fn, arg, label, on, icon) => `<button data-on-click="${fn}" data-arg="${e(arg)}" style="${S({ flex: 'none', height: 34, padding: icon ? '0 14px 0 10px' : '0 14px', borderRadius: 17, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, whiteSpace: 'nowrap', color: on ? '#f4f3ef' : '#c9c7c2', background: on ? `${P} / 0.2)` : 'rgba(255,255,255,0.06)', boxShadow: on ? `inset 0 0 0 1.5px ${P} / 0.7)` : 'none' })}">${icon ? `<span class="ms" style="font-size:17px">${icon}</span>` : ''}<span>${e(label)}</span></button>`;
+      const chips = (items) => `<div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 8px 8px">${items.join('')}</div>`;
+      const tog = (on) => `<span style="position:relative;flex:none;width:44px;height:26px;border-radius:13px;background:${on ? `${P})` : '#3a3a3d'};transition:background .2s"><span style="position:absolute;top:3px;left:${on ? 21 : 3}px;width:20px;height:20px;border-radius:10px;background:#f4f3ef;transition:left .2s"></span></span>`;
+      const row = (arg, label, sub, on) => `<button data-on-click="mdTog" data-arg="${e(arg)}" style="width:100%;min-height:44px;padding:0 12px;border-radius:14px;display:flex;align-items:center;gap:10px;text-align:left">
+        <span style="flex:1;min-width:0;display:flex;flex-direction:column"><span style="font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(label)}</span>${sub ? `<span style="font-size:11px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(sub)}</span>` : ''}</span>${tog(on)}</button>`;
+      const mps = this.find(/^media_player\./).filter(id => this.st(id));
+      const isTv = (id) => this.at(id, 'device_class') === 'tv';
+      const tvId = this.tvId();
+      // TV-er: device_class tv først, så resten (valgt/standard alltid med)
+      const tvs = [...mps.filter(isTv), ...mps.filter(id => !isTv(id))];
+      const vm = this.volMode(), sc = this.volScripts();
+      const volOpts = mps.filter(id => id !== tvId && this.hasVol(id));
+      const scripts = this.find(/^script\./).filter(id => this.st(id));
+      const spkOn = new Set(this.speakers().map(x => x.entity));
+      const cfgSp = this.cfgSpeakers();
+      const spkAll = [...cfgSp.map(x => x.entity).filter(id => this.st(id)), ...mps.filter(id => !isTv(id) && id !== tvId && !cfgSp.some(x => x.entity === id))];
+      const spkName = (id) => (cfgSp.find(x => x.entity === id) || {}).navn || this.fname(id);
+      const hidApps = new Set(this.U().skjul_apper || []);
+      const scriptPick = (k, label, cur) => `<div style="padding:6px 12px 0;font-size:12px;color:#a9a7a2">${e(label)}</div>
+        <div data-hscroll="1" style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:4px 8px 8px">${scripts.length ? scripts.map(id => chip('mdSet', k + '|' + id, this.fname(id), cur === id)).join('') : '<span style="font-size:12px;color:#6d6c69;padding:8px 4px">Fant ingen skript</span>'}</div>`;
+      return `<div data-key="kd-md-tilpass" style="display:flex;flex-direction:column">
+        ${head('TV-fanen styrer')}
+        ${chips(tvs.map(id => chip('mdSet', 'tv|' + id, this.fname(id), id === tvId, isTv(id) ? 'tv' : 'speaker')))}
+        ${head('Volumknapper på fjernkontrollen')}
+        ${chips([chip('mdSet', 'volum|auto', 'Automatisk', vm === 'auto', 'auto_mode'), chip('mdSet', 'volum|fjernkontroll', 'Fjernkontroll', vm === 'fjernkontroll', 'settings_remote'),
+          ...volOpts.map(id => chip('mdSet', 'volum|' + id, this.fname(id), vm === id, 'speaker')), chip('mdSet', 'volum|skript', 'Skript', vm === 'skript', 'description')])}
+        ${vm === 'skript' ? scriptPick('volum_opp', 'Volum opp', sc.opp) + scriptPick('volum_ned', 'Volum ned', sc.ned) : ''}
+        ${spkAll.length ? head('Høyttalere i Musikk') + spkAll.map(id => row('spk|' + id, spkName(id), id, spkOn.has(id))).join('') : ''}
+        ${(this.config.apper || []).length ? head('App-snarveier') + this.config.apper.map(x => row('app|' + x.navn, x.navn, x.kilde && x.kilde !== x.navn ? x.kilde : x.skript || '', !hidApps.has(x.navn))).join('') : ''}
+        ${Object.keys(this.U()).length ? `<div style="display:flex;justify-content:flex-end;padding:4px 8px 6px"><button data-on-click="mdReset" style="height:34px;padding:0 12px;border-radius:17px;font-size:12px;color:#a9a7a2;background:rgba(255,255,255,0.06)">Tilbakestill media</button></div>` : ''}
+      </div>`;
+    }
+
     afterRender() {
       this._padInit();
       // oppdater avspillingstiden hvert sekund mens noe spilles
@@ -6260,7 +6587,7 @@ try {
 
     body() {
       const s = this.state, cf = this.config, e = KD.e, S = KD.S;
-      const tvId = cf.tv, tvA = (this.st(tvId) || {}).attributes || {};
+      const tvId = this.tvId(), tvA = (this.st(tvId) || {}).attributes || {};
       const tvOn = this.on(tvId);
       const pl = this.player(), plA = (this.st(pl) || {}).attributes || {};
       const playing = this.v(pl) === 'playing';
@@ -6280,7 +6607,7 @@ try {
           : verb && tvPos ? `${verb} · ${tm(tvPos[0])} av ${tm(tvPos[1])}`
             : verb ? [verb, tvA.media_title ? (app ? app.navn : tvA.app_name) : ''].filter(Boolean).join(' · ')
               : app || tvA.app_name ? (app ? app.navn : tvA.app_name) : 'Velg en app';
-        now = { device: cf.tv_navn || this.fname(tvId), title, sub, icon: app ? app.ikon || 'smart_display' : 'tv', pic: tvOn ? tvA.entity_picture : null };
+        now = { device: (tvId === cf.tv && cf.tv_navn) || this.fname(tvId), title, sub, icon: app ? app.ikon || 'smart_display' : 'tv', pic: tvOn ? tvA.entity_picture : null };
       } else {
         const on = playing || this.v(pl) === 'paused';
         const artist = [plA.media_artist, plA.media_album_name].filter(Boolean).join(' · ');
@@ -6299,11 +6626,12 @@ try {
       const pad = [padBtn('up', 'keyboard_arrow_up', { left: 93, top: 6 }), padBtn('down', 'keyboard_arrow_down', { left: 93, bottom: 6 }), padBtn('left', 'keyboard_arrow_left', { left: 6, top: 93 }), padBtn('right', 'keyboard_arrow_right', { right: 6, top: 93 })];
       const ok = { position: 'absolute', inset: 75, borderRadius: '50%', background: s.press === 'ok' ? '#333336' : '#232326', boxShadow: '0 0 0 1px rgba(255,255,255,0.06), 0 8px 20px rgba(0,0,0,0.3)', fontSize: 15, fontWeight: 600, color: '#c9c7c2', transition: 'background .15s' };
       const keys = [['power_settings_new', 'power', C.red], ['undo', 'back'], ['home', 'home'], ['mic', 'mic'], ['play_pause', 'playpause']].map(([icon, k, col]) => ({ icon, k, iconStyle: { fontSize: 24, color: col || '#f2f1ee' } }));
-      const muted = !!tvA.is_volume_muted;
-      const volN = tvA.volume_level != null ? Math.round(tvA.volume_level * 100) : null;
+      const vA = (this.st(this.volTarget()) || {}).attributes || {};
+      const muted = !!vA.is_volume_muted;
+      const volN = vA.volume_level != null ? Math.round(vA.volume_level * 100) : null;
       const muteIcon = muted ? 'volume_off' : 'volume_mute', volLabel = muted ? 'Dempet' : volN == null ? '–' : `${volN}`;
       const volBar = { width: `${muted || volN == null ? 0 : volN}%`, height: '100%', borderRadius: 2, background: '#f2f1ee', transition: 'width .2s' };
-      const apps = (cf.apper || []).map((x, i) => ({ i, name: x.navn, icon: x.ikon || 'smart_display',
+      const apps = this.appList().map(x => ({ i: x.i, name: x.navn, icon: x.ikon || 'smart_display',
         style: { height: 76, borderRadius: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, background: x.farge || '#2a2a2d', boxShadow: app && app.navn === x.navn ? 'inset 0 0 0 2px #f2f1ee' : 'none', color: '#f2f1ee' } }));
       const playIcon = playing ? 'pause' : 'play_arrow';
       const speakerMeta = `${act.length} av ${speakers.length} i gruppen`;
@@ -7822,6 +8150,7 @@ try {
  *   plex_serier: sensor.d_day_darling_plex_recently_added_show   plex_filmer: sensor.d_day_darling_plex_recently_added_movie
  *   hytter: []                           # sensor.<sted>_oversikt fra KI Hyttebesøk (tom = finnes selv)
  *
+ * Hvilke kalendere som vises kan hver bruker velge i «Tilpass oppsett» (lagres i HA-brukerdata 'kd_kalender' = { kalendere: [id…] }).
  * Farger: kalendere som heter som en person (Rune, Cybele, Sebastian) eller «Familie» får designets farger.
  * Hytta leser KI Hyttebesøk (sensor.<sted>_oversikt: her_naa, dager, opphold, kommende, per_maaned …).
  * Pakker finnes i entitetsregisteret (Norwegian Parcel Tracker).
@@ -7869,13 +8198,26 @@ try {
     }
 
     /* ================= data ================= */
-    _cals() {
-      const c = this.config, ex = new Set(c.ekskluder || []), out = [];
+    /* Alle calendar.* med navn og farge. Standardutvalget (config kalendere + auto, minus ekskluder/hytta) får fargene først
+       (samme som før), resten får farge etterpå, så fargene ikke hopper når brukeren slår kalendere av/på. */
+    _allCals() {
+      const c = this.config, ex = new Set(c.ekskluder || []), hut = this._hutCalIds(), out = [];
       let fi = 0;
       const col = (navn, id) => { const w = WHO.find(x => x[0].test(navn + ' ' + id)); return w ? w[1] : PALETTE[fi++ % PALETTE.length]; };
-      for (const k of (Array.isArray(c.kalendere) ? c.kalendere : [])) { const id = typeof k === 'string' ? k : k && k.entity; if (!id || ex.has(id) || !this.st(id)) continue; const navn = (k && k.navn) || this.fname(id); out.push({ id, navn, col: (k && k.farge) || col(navn, id) }); }
-      if (c.auto !== false) for (const id of this.find(/^calendar\./)) { if (ex.has(id) || out.some(x => x.id === id) || this._hutCalIds().includes(id)) continue; const navn = this.fname(id); out.push({ id, navn, col: col(navn, id) }); }
+      const cfg = new Map();
+      for (const k of (Array.isArray(c.kalendere) ? c.kalendere : [])) { const id = typeof k === 'string' ? k : k && k.entity; if (id && !cfg.has(id)) cfg.set(id, typeof k === 'string' ? {} : k); }
+      for (const [id, k] of cfg) { if (ex.has(id) || !this.st(id)) continue; const navn = k.navn || this.fname(id); out.push({ id, navn, col: k.farge || col(navn, id), std: true }); }
+      const rest = this.find(/^calendar\./).filter(id => !out.some(x => x.id === id));
+      for (const id of rest) { if (ex.has(id) || hut.includes(id) || c.auto === false) continue; const navn = this.fname(id); out.push({ id, navn, col: col(navn, id), std: true }); }
+      for (const id of [...cfg.keys(), ...rest]) { if (out.some(x => x.id === id) || !this.st(id)) continue; const k = cfg.get(id) || {}, navn = k.navn || this.fname(id); out.push({ id, navn, col: k.farge || col(navn, id), std: false }); }
       return out;
+    }
+    /** Brukerens valg (KD.ud 'kd_kalender' → { kalendere: [id…] }), ellers null (= config/auto). */
+    _userCals() { const u = KD.ud(this, 'kd_kalender') || {}; return Array.isArray(u.kalendere) ? u.kalendere : null; }
+    _cals() {
+      const all = this._allCals(), u = this._userCals();
+      if (!u) return all.filter(x => x.std);
+      const set = new Set(u); return all.filter(x => set.has(x.id));
     }
     _events(cals, days, from, key) {
       if (!cals.length) return [];
@@ -7946,6 +8288,31 @@ try {
     }
 
     /* ================= hendelser ================= */
+    _setCals(ids) { this.haptic('selection'); KD.udSave(this, 'kd_kalender', ids ? { ...KD.ud(this, 'kd_kalender'), kalendere: ids } : {}); }
+    kalTog(ev, id) {
+      const all = this._allCals(), on = new Set(this._cals().map(x => x.id));
+      if (on.has(id)) on.delete(id); else on.add(id);
+      this._setCals(all.map(x => x.id).filter(x => on.has(x)));
+    }
+    kalAlle(ev, k) { this._setCals(k === 'alle' ? this._allCals().map(x => x.id) : k === 'ingen' ? [] : null); }
+
+    /* ================= «Tilpass oppsett»: hvilke kalendere som vises ================= */
+    tilpassHTML() {
+      const all = this._allCals(); if (!all.length) return '';
+      const on = new Set(this._cals().map(x => x.id)), user = !!this._userCals();
+      const pill = (k, l, act) => `<button data-on-click="kalAlle" data-arg="${k}" style="height:30px;padding:0 12px;border-radius:15px;font-size:12px;font-weight:500;background:${act ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.06)'};color:${act ? '#f4f3ef' : '#a9a7a2'}">${l}</button>`;
+      const allOn = all.every(x => on.has(x.id)), noneOn = !on.size;
+      return `<div style="padding:10px 12px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">Kalendere</div>
+    <div style="display:flex;align-items:center;gap:6px;padding:2px 8px 6px 12px">
+      <span style="flex:1;font-size:12px;color:#8e8d89">${on.size} av ${all.length} vises${user ? '' : ' · standard'}</span>
+      ${pill('alle', 'Alle', allOn)}${pill('ingen', 'Ingen', noneOn)}${user ? pill('std', 'Standard', false) : ''}
+    </div>
+    ${all.map(k => { const v = on.has(k.id); return `<button data-key="kd-kal-${e(k.id)}" data-on-click="kalTog" data-arg="${e(k.id)}" style="min-height:44px;padding:0 12px;border-radius:14px;display:flex;align-items:center;gap:10px;width:100%;text-align:left">
+      <span style="width:10px;height:10px;border-radius:5px;flex:none;background:${k.col};opacity:${v ? 1 : 0.35}"></span>
+      <span style="flex:1;min-width:0;display:flex;flex-direction:column"><span style="font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:${v ? '#f4f3ef' : '#8e8d89'}">${e(k.navn)}</span><span style="font-size:11px;color:#6d6c69;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(k.id)}</span></span>
+      <span style="position:relative;width:44px;height:26px;border-radius:13px;flex:none;background:${v ? 'oklch(0.78 0.13 350)' : '#3a3a3d'};transition:background .2s"><span style="position:absolute;top:3px;left:${v ? 21 : 3}px;width:20px;height:20px;border-radius:10px;background:#f4f3ef;box-shadow:0 1px 3px rgba(0,0,0,0.35);transition:left .2s"></span></span>
+    </button>`; }).join('')}`;
+    }
     goTab(ev, k) { this.setState({ tab: k }); }
     goView(ev, k) { this.setState({ view: k }); }
     prevMonth() { const [y, m] = this.state.month; this.setState({ month: m === 0 ? [y - 1, 11] : [y, m - 1] }); }

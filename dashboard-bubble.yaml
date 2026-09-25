@@ -38,6 +38,9 @@ views:
           - { <<: *ark, hash: '#alarm', cards: [{ type: custom:kd-sikkerhet-card }] }
           - { <<: *ark, hash: '#kamera', cards: [{ type: custom:kd-kamera-card }] }
           - { <<: *ark, hash: '#personer', cards: [{ type: custom:kd-person-card }] }
+          - { <<: *ark, hash: '#person-sebastian', cards: [{ type: custom:kd-person-card, person: sebastian }] }
+          - { <<: *ark, hash: '#person-cybele', cards: [{ type: custom:kd-person-card, person: cybele }] }
+          - { <<: *ark, hash: '#person-rune', cards: [{ type: custom:kd-person-card, person: rune }] }
           - { <<: *ark, hash: '#vanning', cards: [{ type: custom:kd-vanning-card }] }
           - { <<: *ark, hash: '#planter', cards: [{ type: custom:kd-planter-card }] }
           - { <<: *ark, hash: '#sovn', cards: [{ type: custom:kd-sovn-card }] }

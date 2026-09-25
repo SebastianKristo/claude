@@ -393,14 +393,95 @@ input,select,textarea{font:inherit;color:inherit}
   class KDSheet extends KDCard {
     static get css() { return KD.SHEET_CSS + (this.sheetCss || ''); }
     render() {
-      const body = this.body();
+      const body = this.body() + this._layHTML();
       if (this.config.header === false || this.config.embedded) return body;
       const [icon, title, sub] = this.sheetHead();
       return `<div style="background:#141416;min-height:100%">${KD.sheetTopHTML(icon, this.config.tittel || title, this.config.undertittel || sub)}<div class="kd-sheet-body" style="margin-top:-8px">${body}</div></div>`;
     }
+
+    /* ----- «Tilpass oppsett»: rekkefølge og synlighet for seksjonene i alle popups (per bruker, 'kd_ark') -----
+       Seksjonene er barna til arkets rot-div. De flyttes med CSS order og skjules med display:none (DOM-en røres ikke,
+       så morph fungerer som før). Et kort kan legge til egne innstillinger i panelet med tilpassHTML(). */
+    layKey() { return this.localName; }
+    _layData() { return (KD.ud(this, 'kd_ark') || {})[this.layKey()] || {}; }
+    _laySave(v) { const all = { ...KD.ud(this, 'kd_ark') }; if (v) all[this.layKey()] = v; else delete all[this.layKey()]; this.haptic('selection'); KD.udSave(this, 'kd_ark', all); }
+    layTog() { this.setState({ lay: !this.state.lay }); }
+    layReset() { this._laySave(null); }
+    layOp(ev, arg) {
+      const i = String(arg).lastIndexOf('|'), sig = String(arg).slice(0, i), op = String(arg).slice(i + 1);
+      const list = (this._secs || []).map(x => ({ s: x.sig, n: x.n, h: x.hid }));
+      const k = list.findIndex(x => x.s === sig); if (k < 0) return;
+      if (op === 'skjul') list[k].h = !list[k].h;
+      else { const j = k + (op === 'opp' ? -1 : 1); if (j < 0 || j >= list.length) return; [list[k], list[j]] = [list[j], list[k]]; }
+      this._laySave({ rekkefolge: list.map(x => ({ s: x.s, n: x.n })), skjul: list.filter(x => x.h).map(x => ({ s: x.s, n: x.n })) });
+    }
+    _layRoot() { const b = this._root.querySelector('.kd-sheet-body'); return (b || this._root).firstElementChild; }
+    _applyLay() {
+      if (this.constructor.noLayout) return;
+      const root = this._layRoot(); if (!root) return;
+      const D = this._layData(), edit = !!this.state.lay;
+      const seen = {}, secs = [];
+      for (const el of root.children) {
+        if (el.tagName === 'HEADER' || el.hasAttribute('data-lay-skip') || el.style.position === 'fixed') continue;
+        // signatur: første faste tekst i seksjonen (uten ikon-ligaturer og tall), så den tåler endrede verdier
+        const texts = [], tw = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        for (let n = tw.nextNode(); n && texts.length < 3; n = tw.nextNode()) {
+          if (n.parentElement && n.parentElement.closest('.ms')) continue;
+          const t = n.textContent.replace(/[\d.,:;%°–\-+·/()]+/g, ' ').replace(/\s+/g, ' ').trim();
+          if (t.length > 1) texts.push(t);
+        }
+        let sig = el.getAttribute('data-lay') || (texts[0] || el.tagName.toLowerCase()).slice(0, 28);
+        seen[sig] = (seen[sig] || 0) + 1; if (seen[sig] > 1) sig += ' #' + seen[sig];
+        secs.push({ el, sig, label: el.getAttribute('data-lay-navn') || texts.slice(0, 2).join(' · ').slice(0, 40) || sig });
+      }
+      // lagrede oppføringer {s: signatur, n: naturlig plass}: finn på signatur, ellers på plass (tekst som endrer seg, f.eks. «Borte»/«Hjemme»)
+      secs.forEach((x, n) => { x.n = n; });
+      const R = (D.rekkefolge || []).map(x => typeof x === 'string' ? { s: x } : x), H = (D.skjul || []).map(x => typeof x === 'string' ? { s: x } : x);
+      const bySig = new Set(secs.map(x => x.sig));
+      const keyOf = (e) => bySig.has(e.s) ? e.s : (e.n != null && secs[e.n] && ![...R, ...H].some(o => o.s === secs[e.n].sig) ? secs[e.n].sig : null);
+      const pos = new Map(), skjul = new Set();
+      R.forEach((e, i) => { const k = keyOf(e); if (k && !pos.has(k)) pos.set(k, i); });
+      H.forEach(e => { const k = keyOf(e); if (k) skjul.add(k); });
+      const known = secs.filter(x => pos.has(x.sig)).sort((a, b) => pos.get(a.sig) - pos.get(b.sig));
+      const out = []; let ki = 0;
+      secs.forEach(x => { out.push(pos.has(x.sig) ? known[ki++] : x); });
+      out.forEach((x, i) => {
+        x.el.style.order = String(i);
+        const hid = skjul.has(x.sig);
+        if (hid && !edit) x.el.style.display = 'none';
+        if (edit) { x.el.style.outline = hid ? '1px dashed rgba(255,255,255,0.18)' : '1.5px solid oklch(0.78 0.13 350 / 0.45)'; x.el.style.outlineOffset = '3px'; x.el.style.opacity = hid ? '0.35' : ''; }
+      });
+      const list = out.map(x => ({ sig: x.sig, n: x.n, label: x.label, hid: skjul.has(x.sig) }));
+      const js = JSON.stringify(list);
+      if (js !== this._secsJs) { this._secsJs = js; this._secs = list; if (edit) this._queue(); }
+    }
+    _layHTML() {
+      if (this.constructor.noLayout || this.config.tilpass === false) return '';
+      const s = this.state, e = KD.e, SS = KD.S;
+      if (!s.lay) return `<div data-key="kd-lay-btn" data-lay-skip="1" style="display:flex;justify-content:center;padding:4px var(--kd-kant,10px) calc(28px + env(safe-area-inset-bottom))">
+        <button data-on-click="layTog" style="display:flex;align-items:center;gap:8px;height:40px;padding:0 16px;border-radius:20px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05);color:#8e8d89;font-size:12px;font-weight:500"><span class="ms" style="font-size:17px">dashboard_customize</span>Tilpass oppsett</button></div>`;
+      const secs = this._secs || [];
+      const ib = (arg, icon, title, col, dis) => `<button data-on-click="layOp" data-arg="${e(arg)}" title="${title}" style="${SS({ width: 34, height: 34, borderRadius: 17, flex: 'none', display: 'grid', placeItems: 'center', color: col || '#8e8d89', opacity: dis ? 0.25 : 1, pointerEvents: dis ? 'none' : null })}"><span class="ms" style="font-size:20px">${icon}</span></button>`;
+      const extra = typeof this.tilpassHTML === 'function' ? this.tilpassHTML() : '';
+      return `<div data-key="kd-lay-pad" data-lay-skip="1" style="height:calc(46vh + 110px)"></div>
+  <div data-key="kd-lay-panel" data-lay-skip="1" style="position:fixed;left:var(--kd-kant,10px);right:var(--kd-kant,10px);bottom:calc(100px + env(safe-area-inset-bottom));z-index:30;max-width:620px;margin:0 auto;max-height:46vh;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;box-sizing:border-box;padding:8px;border-radius:26px;background:rgba(38,38,41,0.94);backdrop-filter:blur(22px) saturate(170%);-webkit-backdrop-filter:blur(22px) saturate(170%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.12),0 18px 40px rgba(0,0,0,0.5);display:flex;flex-direction:column;gap:2px">
+    <div style="position:sticky;top:-8px;z-index:1;display:flex;align-items:center;gap:8px;padding:6px 4px 6px 12px;margin:-8px -8px 0;border-radius:26px 26px 0 0;background:rgba(38,38,41,0.98)">
+      <span class="ms" style="font-size:20px;color:oklch(0.82 0.1 350)">dashboard_customize</span><span style="flex:1;font-size:15px;font-weight:600">Tilpass oppsett</span>
+      <button data-on-click="layReset" style="height:34px;padding:0 12px;border-radius:17px;font-size:12px;color:#a9a7a2;background:rgba(255,255,255,0.06)">Nullstill</button>
+      <button data-on-click="layTog" style="height:34px;padding:0 14px;margin-right:8px;border-radius:17px;font-size:13px;font-weight:600;background:linear-gradient(135deg, oklch(0.78 0.13 350), oklch(0.9 0.05 20));color:#2a1720">Ferdig</button></div>
+    ${extra}
+    ${secs.length ? `<div style="padding:10px 12px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">Seksjoner</div>` : ''}
+    ${secs.map((x, i) => `<div data-key="kd-lay-${e(x.sig)}" style="min-height:44px;padding:0 4px 0 12px;border-radius:14px;display:flex;align-items:center;gap:8px;opacity:${x.hid ? 0.45 : 1}">
+      <span style="flex:1;min-width:0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(x.label)}</span>
+      ${ib(x.sig + '|opp', 'arrow_upward', 'Flytt opp', null, i === 0)}${ib(x.sig + '|ned', 'arrow_downward', 'Flytt ned', null, i === secs.length - 1)}
+      ${ib(x.sig + '|skjul', x.hid ? 'visibility_off' : 'visibility', x.hid ? 'Vis' : 'Skjul', x.hid ? '#6d6c69' : 'oklch(0.82 0.1 350)')}
+    </div>`).join('')}
+  </div>`;
+    }
     _render() {
       const first = !this._didFirst;
       super._render();
+      this._applyLay();
       this._root.classList.add('kd-embedded'); // designets <header> skjules alltid i arkmodus
       if (first && this._root.querySelector('[data-bh="pill"]')) { this._didFirst = true; requestAnimationFrame(() => KD.animateSheetTop(this.shadowRoot)); }
     }

@@ -17,6 +17,7 @@
  *   plex_serier: sensor.d_day_darling_plex_recently_added_show   plex_filmer: sensor.d_day_darling_plex_recently_added_movie
  *   hytter: []                           # sensor.<sted>_oversikt fra KI Hyttebesøk (tom = finnes selv)
  *
+ * Hvilke kalendere som vises kan hver bruker velge i «Tilpass oppsett» (lagres i HA-brukerdata 'kd_kalender' = { kalendere: [id…] }).
  * Farger: kalendere som heter som en person (Rune, Cybele, Sebastian) eller «Familie» får designets farger.
  * Hytta leser KI Hyttebesøk (sensor.<sted>_oversikt: her_naa, dager, opphold, kommende, per_maaned …).
  * Pakker finnes i entitetsregisteret (Norwegian Parcel Tracker).
@@ -64,13 +65,26 @@
     }
 
     /* ================= data ================= */
-    _cals() {
-      const c = this.config, ex = new Set(c.ekskluder || []), out = [];
+    /* Alle calendar.* med navn og farge. Standardutvalget (config kalendere + auto, minus ekskluder/hytta) får fargene først
+       (samme som før), resten får farge etterpå, så fargene ikke hopper når brukeren slår kalendere av/på. */
+    _allCals() {
+      const c = this.config, ex = new Set(c.ekskluder || []), hut = this._hutCalIds(), out = [];
       let fi = 0;
       const col = (navn, id) => { const w = WHO.find(x => x[0].test(navn + ' ' + id)); return w ? w[1] : PALETTE[fi++ % PALETTE.length]; };
-      for (const k of (Array.isArray(c.kalendere) ? c.kalendere : [])) { const id = typeof k === 'string' ? k : k && k.entity; if (!id || ex.has(id) || !this.st(id)) continue; const navn = (k && k.navn) || this.fname(id); out.push({ id, navn, col: (k && k.farge) || col(navn, id) }); }
-      if (c.auto !== false) for (const id of this.find(/^calendar\./)) { if (ex.has(id) || out.some(x => x.id === id) || this._hutCalIds().includes(id)) continue; const navn = this.fname(id); out.push({ id, navn, col: col(navn, id) }); }
+      const cfg = new Map();
+      for (const k of (Array.isArray(c.kalendere) ? c.kalendere : [])) { const id = typeof k === 'string' ? k : k && k.entity; if (id && !cfg.has(id)) cfg.set(id, typeof k === 'string' ? {} : k); }
+      for (const [id, k] of cfg) { if (ex.has(id) || !this.st(id)) continue; const navn = k.navn || this.fname(id); out.push({ id, navn, col: k.farge || col(navn, id), std: true }); }
+      const rest = this.find(/^calendar\./).filter(id => !out.some(x => x.id === id));
+      for (const id of rest) { if (ex.has(id) || hut.includes(id) || c.auto === false) continue; const navn = this.fname(id); out.push({ id, navn, col: col(navn, id), std: true }); }
+      for (const id of [...cfg.keys(), ...rest]) { if (out.some(x => x.id === id) || !this.st(id)) continue; const k = cfg.get(id) || {}, navn = k.navn || this.fname(id); out.push({ id, navn, col: k.farge || col(navn, id), std: false }); }
       return out;
+    }
+    /** Brukerens valg (KD.ud 'kd_kalender' → { kalendere: [id…] }), ellers null (= config/auto). */
+    _userCals() { const u = KD.ud(this, 'kd_kalender') || {}; return Array.isArray(u.kalendere) ? u.kalendere : null; }
+    _cals() {
+      const all = this._allCals(), u = this._userCals();
+      if (!u) return all.filter(x => x.std);
+      const set = new Set(u); return all.filter(x => set.has(x.id));
     }
     _events(cals, days, from, key) {
       if (!cals.length) return [];
@@ -141,6 +155,31 @@
     }
 
     /* ================= hendelser ================= */
+    _setCals(ids) { this.haptic('selection'); KD.udSave(this, 'kd_kalender', ids ? { ...KD.ud(this, 'kd_kalender'), kalendere: ids } : {}); }
+    kalTog(ev, id) {
+      const all = this._allCals(), on = new Set(this._cals().map(x => x.id));
+      if (on.has(id)) on.delete(id); else on.add(id);
+      this._setCals(all.map(x => x.id).filter(x => on.has(x)));
+    }
+    kalAlle(ev, k) { this._setCals(k === 'alle' ? this._allCals().map(x => x.id) : k === 'ingen' ? [] : null); }
+
+    /* ================= «Tilpass oppsett»: hvilke kalendere som vises ================= */
+    tilpassHTML() {
+      const all = this._allCals(); if (!all.length) return '';
+      const on = new Set(this._cals().map(x => x.id)), user = !!this._userCals();
+      const pill = (k, l, act) => `<button data-on-click="kalAlle" data-arg="${k}" style="height:30px;padding:0 12px;border-radius:15px;font-size:12px;font-weight:500;background:${act ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.06)'};color:${act ? '#f4f3ef' : '#a9a7a2'}">${l}</button>`;
+      const allOn = all.every(x => on.has(x.id)), noneOn = !on.size;
+      return `<div style="padding:10px 12px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">Kalendere</div>
+    <div style="display:flex;align-items:center;gap:6px;padding:2px 8px 6px 12px">
+      <span style="flex:1;font-size:12px;color:#8e8d89">${on.size} av ${all.length} vises${user ? '' : ' · standard'}</span>
+      ${pill('alle', 'Alle', allOn)}${pill('ingen', 'Ingen', noneOn)}${user ? pill('std', 'Standard', false) : ''}
+    </div>
+    ${all.map(k => { const v = on.has(k.id); return `<button data-key="kd-kal-${e(k.id)}" data-on-click="kalTog" data-arg="${e(k.id)}" style="min-height:44px;padding:0 12px;border-radius:14px;display:flex;align-items:center;gap:10px;width:100%;text-align:left">
+      <span style="width:10px;height:10px;border-radius:5px;flex:none;background:${k.col};opacity:${v ? 1 : 0.35}"></span>
+      <span style="flex:1;min-width:0;display:flex;flex-direction:column"><span style="font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:${v ? '#f4f3ef' : '#8e8d89'}">${e(k.navn)}</span><span style="font-size:11px;color:#6d6c69;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(k.id)}</span></span>
+      <span style="position:relative;width:44px;height:26px;border-radius:13px;flex:none;background:${v ? 'oklch(0.78 0.13 350)' : '#3a3a3d'};transition:background .2s"><span style="position:absolute;top:3px;left:${v ? 21 : 3}px;width:20px;height:20px;border-radius:10px;background:#f4f3ef;box-shadow:0 1px 3px rgba(0,0,0,0.35);transition:left .2s"></span></span>
+    </button>`; }).join('')}`;
+    }
     goTab(ev, k) { this.setState({ tab: k }); }
     goView(ev, k) { this.setState({ view: k }); }
     prevMonth() { const [y, m] = this.state.month; this.setState({ month: m === 0 ? [y - 1, 11] : [y, m - 1] }); }
