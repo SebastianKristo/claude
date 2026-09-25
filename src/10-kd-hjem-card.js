@@ -89,11 +89,28 @@
       bevegelse: ['binary_sensor.stue_g6_turret_motion', 'binary_sensor.mellomgang_g5_turret_ultra_motion', 'binary_sensor.ringeklokke_g6_entry_motion'],
       gjoremal: 'todo.gjoremal',
       soppel: ['sensor.restavfall', 'sensor.papir_og_papp', 'sensor.plastemballasje', 'sensor.glass_og_metallemballasje'],
-      stovsuger_varsel: ['binary_sensor.sir_sweeps_a_lot_water_shortage'],
-      stovsuger_vannboks: 'binary_sensor.sir_sweeps_a_lot_water_box_attached',
       hjem: { venstre: ['stue', 'inngang', 'ute'], hoyre: ['pult', 'kjokken'] },
       etasjer: { '1': ['stue', 'kjokken', 'inngang', 'do', 'vaskegang'], '2': ['pult', 'soverom', 'bad', 'cybele_soverom', 'rune_soverom', 'rune_kontor'] },
       sover_nar: 'on',
+      kant: 16,
+      dokk: [
+        { ikon: 'cleaning_services', navn: 'Støvsuger', ark: 'vac', prikk: ['binary_sensor.sir_sweeps_a_lot_water_shortage'], prikk_av: ['binary_sensor.sir_sweeps_a_lot_water_box_attached'] },
+        { ikon: 'power', navn: 'Strøm', ark: 'strom' },
+        { ikon: 'music_note', navn: 'Musikk', ark: 'media' },
+        { ikon: 'directions_car', navn: 'Bil', ark: 'car' },
+        { ikon: 'dns', navn: 'Server', ark: 'server' },
+        { ikon: 'tune', navn: 'Innstillinger', ark: 'settings' },
+      ],
+      meny: [
+        { ikon: 'thermostat', navn: 'Klima', ark: 'klima', farge: 'oklch(0.72 0.15 25)' },
+        { ikon: 'delete', navn: 'Søppel', ark: 'trash', farge: '#c9c7c2' },
+        { ikon: 'sprinkler', navn: 'Vanning', ark: 'vann', farge: 'oklch(0.8 0.12 235)' },
+        { ikon: 'calendar_month', navn: 'Kalender', ark: 'cal', farge: 'oklch(0.78 0.13 350)' },
+        { ikon: 'potted_plant', navn: 'Planter', ark: 'plants', farge: 'oklch(0.8 0.12 150)' },
+        { ikon: 'bedtime', navn: 'Søvn', ark: 'sleep', farge: 'oklch(0.72 0.1 275)' },
+        { ikon: 'print', navn: '3D-printer', ark: 'printer', farge: 'oklch(0.82 0.12 75)' },
+        { ikon: 'checklist', navn: 'Gjøremål', ark: 'todo', farge: '#c9c7c2' },
+      ],
       bilde: true,
     };
     static getStubConfig() { return {}; }
@@ -308,13 +325,26 @@
     pcMove(ev, arg, el) { const r = el.getBoundingClientRect(); const i = KD.clamp(Math.floor((ev.clientX - r.left) / r.width * 48), 0, 47); if (i !== this.state.pcHour) this.setState({ pcHour: i }); }
     pcLeave() { this.setState({ pcHour: null }); }
     closeMenu() { this.setState({ menu: false }); }
-    menuGo(ev, k) { this.openSheet(k); }
+    menuGo(ev, i) { this.setState({ menu: false }); this.runItem((this.config.meny || [])[+i]); }
+    /** Utfør en dokk-/menyknapp: ark | hash | sti | url | entity (+ handling: toggle/more-info) */
+    runItem(it) {
+      if (!it) return;
+      if (it.ark) return this.openSheet(it.ark, it.ark === 'rom' ? { roomId: it.rom } : it.ark === 'person' ? { personId: it.person } : {});
+      if (it.hash) return this.nav(it.hash.startsWith('#') ? it.hash : '#' + it.hash);
+      if (it.sti) return this.nav(it.sti);
+      if (it.url) return window.open(it.url);
+      if (it.entity) return it.handling === 'more-info' || it.handling === 'mer-info' ? this.more(it.entity) : this.toggle(it.entity);
+    }
+    dockItems() { return (this.config.dokk || []).filter(Boolean); }
     navMove(ev, arg, el) { const r = el.getBoundingClientRect(); this.setState({ lx: (ev.clientX - r.left) / r.width * 100 }); }
     navLeave() { this.setState({ lx: null }); }
     dockGo(ev, i) {
       i = +i;
-      if (i === 6) return this.setState({ menu: !this.state.menu });
-      this.pickTab(i); this.openSheet(['vac', 'strom', 'media', 'car', 'server', 'settings'][i]);
+      const items = this.dockItems();
+      if (i >= items.length) return this.setState({ menu: !this.state.menu });
+      const it = items[i];
+      if (it.ark || it.hash) this.pickTab(i);
+      this.runItem(it);
     }
     pickTab(i) {
       if (i === this.state.tab) return this.setState({ compact: false });
@@ -517,8 +547,10 @@
 
       /* ----- dokk ----- */
       const tab = s.tab ?? 0, compact = !!s.compact, moving = !!s.moving;
-      const vacDot = (c.stovsuger_varsel || []).some(id => this.v(id) === 'on') || (c.stovsuger_vannboks && this.v(c.stovsuger_vannboks) === 'off');
-      const ITEMS = [['cleaning_services', 'Støvsuger', vacDot], ['power', 'Stikkontakter'], ['music_note', 'Musikk'], ['directions_car', 'Bil'], ['dns', 'Server'], ['tune', 'Innstillinger'], ['more_horiz', 'Mer']];
+      const arr = x => Array.isArray(x) ? x : x ? [x] : [];
+      const dotOf = it => arr(it.prikk).some(id => ['on', 'open', 'unlocked', 'problem', 'playing'].includes(this.v(id))) || arr(it.prikk_av).some(id => this.v(id) === 'off');
+      const ITEMS = this.dockItems().map(it => [it.ikon || 'circle', it.navn || '', dotOf(it)]);
+      if ((c.meny || []).length) ITEMS.push(['more_horiz', 'Mer']);
       const SZ = 44, GAP = 2, PAD = 6, dist = Math.abs(tab - (s.prevTab ?? tab)), lx = s.lx;
       const navStyle = {
         position: 'fixed', left: '50%', bottom: 18, zIndex: 24, display: 'flex', gap: GAP, padding: PAD, borderRadius: 30, overflow: 'hidden', isolation: 'isolate',
@@ -540,7 +572,7 @@
         style: { position: 'relative', zIndex: 1, width: SZ, height: SZ, borderRadius: 22, display: 'grid', placeItems: 'center', color: '#f2f1ee', transition: 'transform .35s cubic-bezier(.34,1.8,.64,1)' },
         iconStyle: { fontSize: 22, opacity: act ? 1 : 0.72, transform: act ? 'scale(1.08)' : 'scale(1)', fontVariationSettings: `'FILL' ${act ? 1 : 0}`, transition: 'transform .4s cubic-bezier(.34,1.8,.64,1), opacity .2s', textShadow: '0 1px 2px rgba(0,0,0,0.3)' },
         dot: { position: 'absolute', right: 9, top: 9, width: 7, height: 7, borderRadius: 4, background: dot ? C.red : 'transparent', boxShadow: dot ? '0 0 0 1.5px rgba(30,30,34,0.6)' : 'none' } }; });
-      const menuItems = [['thermostat', 'Klima', 'klima', 'oklch(0.72 0.15 25)'], ['delete', 'Søppel', 'trash', '#c9c7c2'], ['sprinkler', 'Vanning', 'vann', 'oklch(0.8 0.12 235)'], ['calendar_month', 'Kalender', 'cal', 'oklch(0.78 0.13 350)'], ['potted_plant', 'Planter', 'plants', 'oklch(0.8 0.12 150)'], ['bedtime', 'Søvn', 'sleep', 'oklch(0.72 0.1 275)'], ['print', '3D-printer', 'printer', 'oklch(0.82 0.12 75)'], ['checklist', 'Gjøremål', 'todo', '#c9c7c2']];
+      const menuItems = (c.meny || []).map((m, i) => [m.ikon || 'circle', m.navn || '', i, m.farge || '#c9c7c2']);
 
       /* ----- servere ----- */
       const SERV = this.servers();
@@ -608,7 +640,7 @@
     </div>`;
       };
 
-      return `<div style="position:relative;box-sizing:border-box;width:100%;max-width:520px;min-height:100vh;margin:0 auto;background:#141416;padding:20px 18px 120px;display:flex;flex-direction:column;gap:22px">
+      return `<div style="position:relative;box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 120px;display:flex;flex-direction:column;gap:22px">
 
   <header style="display:flex;flex-direction:column;gap:16px">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">

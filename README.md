@@ -101,9 +101,21 @@ Entitetsnøkler (med standard): `vaer` weather.forecast_home · `ute_temp` senso
 `effekt` sensor.strommaler_effekt · `lys_totalt` sensor.hele_huset_lys · `kalender_sensor` sensor.alle_kalendere · `las` lock.dorlas_blatann ·
 `las_batteri` sensor.dorlas_wifi_battery · `las_sist` sensor.ansiktsgjenkjenning_dorlas_sist_last_opp_av · `autolas` (finnes automatisk) ·
 `alarm` alarm_control_panel.alarm · `bevegelse` [kamerasensorene] · `gjoremal` todo.gjoremal · `soppel` [avfallssensorene] ·
-`stovsuger_varsel` / `stovsuger_vannboks` (rød prikk på dokken) · `sover_nar` on.
+`sover_nar` on · `kant` (16 – avstand til skjermkanten i px, gjelder også alle popups).
 
-Automatisk: personen som hører til innlogget bruker blir «meg»; romdata hentes fra KI Rom (`sensor.<rom>_oversikt`/`_lys`) når det finnes;
+Liquid Glass-dokken og «Mer»-menyen kan settes opp selv (standard er designets knapper):
+```yaml
+dokk:                       # knappene i dokken; «Mer» legges alltid til sist
+  - { ikon: cleaning_services, ark: vac, prikk: binary_sensor.x_water_shortage }
+  - { ikon: bolt, ark: strom }
+  - { ikon: lightbulb, entity: light.stue }      # entity: slå av/på (hold = mer info)
+  - { ikon: tv, hash: '#media' }                 # eller sti: /lovelace/2 · url: https://…
+meny:                       # «Mer»-menyen
+  - { navn: Klima, ikon: thermostat, ark: klima, farge: 'oklch(0.8 0.12 60)' }
+```
+`prikk` viser rød prikk når entiteten er «på», `prikk_av` når den er «av».
+
+Automatisk: personen som hører til innlogget bruker blir «meg»; romdata (temperatur, fukt, lys) hentes fra KI Rom-sensorene når de finnes;
 antall lys på faller tilbake til å telle `light.*`; hendelser i dag faller tilbake til kalender-API-et.
 
 ## Arkene – konfig
@@ -131,6 +143,8 @@ Dokumentasjonen for hver nøkkel står øverst i hver fil i `src/`. Kort oppsumm
 - **Søppel** – `fraksjoner`, `auto`, `dager_attributt`, `dato_attributt`, `intervall` (14), `varsel`.
 - **Lys** – `fane`, utelys-entitetene (KI Utelys), `etasjer`, `skjul`.
 - **Rom** – `rom`, `navn`, `ikon`, `farge`, `temp`, `fukt`, `sett`, `lys`, `skjul`, `effekt_par`. Innhold fra KI Rom eller HA-områder.
+  «Tilpass rommet» nederst i rom-popupen: trykk på elementer for å skjule/vise, og velg hvilken KI Rom-sensor rommet skal hente
+  temperatur og fukt fra. Valget lagres per bruker i HA og brukes både i popupen og på romkortene i Hjem.
 
 ## Bevisste avvik fra designet
 

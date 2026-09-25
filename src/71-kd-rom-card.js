@@ -84,6 +84,11 @@
       const L = KD.roomLive(this, r);
       if (!L.tempId && o && o.temperatur[0]) { L.tempId = o.temperatur[0]; L.temp = this.n(L.tempId); }
       if (!L.humId && o && o.fuktighet[0]) { L.humId = o.fuktighet[0]; L.hum = this.n(L.humId); }
+      const ids = xs => xs.map(x => typeof x === 'string' ? x : x && x.entity).filter(Boolean);
+      if (o) {
+        L.tempValg = [...new Set([...(L.tempValg || []), ...ids(o.temperatur)])];
+        L.humValg = [...new Set([...(L.humValg || []), ...ids(o.fuktighet)])];
+      }
       return L;
     }
     /** romoversikt i ki_rom-format, med skjul og effekt-par brukt */
@@ -152,9 +157,32 @@
       H.saveUserHide(this, ud);
       this._queue();
     }
+    /** velg hvilken sensor rommet henter temperatur/fukt fra (lagres per bruker, brukes også i Hjem) */
+    sensorPick(ev, arg) {
+      const [k, id] = String(arg).split('|'); if (!k || !id) return;
+      const r = this._room(), ud = JSON.parse(JSON.stringify(KD.userData(this) || {}));
+      const row = ud[r.id] = ud[r.id] || {};
+      if (row[k] === id) delete row[k]; else row[k] = id;
+      this.haptic('selection');
+      KD.saveUserData(this, ud);
+      this._queue();
+    }
     editReset() {
       const r = this._room(), ud = JSON.parse(JSON.stringify(H.userHideNow(this) || {}));
       delete ud[r.id]; H.saveUserHide(this, ud); this._queue();
+    }
+    _sensorPicker(r, L) {
+      const U = KD.userRoom(this, r.id);
+      const row = (k, title, icon, list, cur, unit) => list.length ? `<div style="display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:#8e8d89"><span class="ms" style="font-size:16px">${icon}</span><span>${title}</span></div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">${list.map(id => {
+        const sel = id === cur, fixed = U[k] === id, v = this.n(id);
+        return `<button class="kdr-a92" data-key="kd-sv-${k}-${E(id)}" data-on-click="sensorPick" data-arg="${E(k + '|' + id)}" style="${S({ display: 'flex', alignItems: 'center', gap: 6, maxWidth: '100%', minWidth: 0, height: 34, padding: '0 12px', borderRadius: 17, fontSize: 12, fontWeight: 500, background: sel ? 'oklch(0.78 0.13 350 / 0.2)' : 'rgba(255,255,255,0.06)', boxShadow: sel ? 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.7)' : 'none', color: sel ? '#f2f1ee' : '#a9a7a2' })}">${fixed ? '<span class="ms" style="font-size:14px">push_pin</span>' : ''}<span style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(this.fname(id))}</span><span style="color:#8e8d89;white-space:nowrap">${v != null ? E(nf(v, unit === '%' ? 0 : 1) + (unit === '%' ? ' %' : '°')) : '–'}</span></button>`;
+      }).join('')}</div></div>` : '';
+      const t = row('temp', 'Temperatur fra', 'device_thermostat', L.tempValg || [], L.tempId, '°');
+      const f = row('fukt', 'Fukt fra', 'humidity_percentage', L.humValg || [], L.humId, '%');
+      if (!t && !f) return '';
+      return `<section data-key="kd-sensorvalg" style="display:flex;flex-direction:column;gap:14px;padding:14px 16px;border-radius:24px;background:#1c1c1f">${t}${f}</section>`;
     }
     afterRender() {
       const root = this.$('.kd-root > div, .kd-sheet-body > div');
@@ -341,7 +369,7 @@
       const setVal = k ? (Number.isInteger(k.set) ? String(k.set) : nf(k.set, 1)) : '';
       this._headVals = [r.ikon, r.navn, `${temp != null ? nf(temp, 1) : '–'}° · ${hum != null ? nf(hum, 0) : '–'} %`];
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:420px;min-height:100vh;margin:0 auto;background:#141416;padding:20px 14px 40px;display:flex;flex-direction:column;gap:18px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:18px">
   <header style="display:flex;align-items:center;gap:12px;padding:0 4px">
     <span style="${S(headIcon)}"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">${E(r.ikon)}</span></span>
     <div style="flex:1;font-size:26px;font-weight:500;letter-spacing:-0.02em">${E(r.navn)}</div>
@@ -455,6 +483,7 @@
       <path d="${line}" fill="none" stroke="oklch(0.82 0.12 75)" stroke-width="1.5" vector-effect="non-scaling-stroke"></path>
     </svg>
   </section>
+  ${s.edit ? this._sensorPicker(r, L) : ''}
   ${s.edit ? '' : `<button class="kdr-a97" data-key="kd-edit-btn" data-on-click="editTog" style="display:flex;align-items:center;justify-content:center;gap:8px;height:48px;border-radius:24px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);color:#a9a7a2;font-size:13px;font-weight:500"><span class="ms" style="font-size:18px">tune</span>Tilpass rommet</button>`}
 </div>`;
     }

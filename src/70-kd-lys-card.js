@@ -229,14 +229,9 @@
 
   /* ----- Skjul/vis valgt i UI (lagres som HA-brukerdata, følger brukeren på alle enheter) -----
    * { <rom>: { skjul: [entity_id], vis: [entity_id] } }  – «vis» opphever standard-/config-skjul. */
-  H.UD_KEY = 'kd_rom_skjul';
-  H.userHide = (card) => card.cached('kd-ud-' + H.UD_KEY, 5 * 60e3,
-    () => card.ws({ type: 'frontend/get_user_data', key: H.UD_KEY }).then(r => (r && r.value) || {}).catch(() => ({})), {});
-  H.saveUserHide = (card, map) => {
-    KD._udOverride = map; card.invalidate('kd-ud-');
-    return card.ws({ type: 'frontend/set_user_data', key: H.UD_KEY, value: map }).catch(e => card.toast('Kunne ikke lagre: ' + (e.message || e)));
-  };
-  H.userHideNow = (card) => KD._udOverride || H.userHide(card);
+  H.userHide = (card) => KD.userData(card);
+  H.saveUserHide = (card, map) => KD.saveUserData(card, map);
+  H.userHideNow = (card) => KD.userData(card);
   /** Kombiner standard/config-skjul med brukerens valg for ett rom (eller alle rom når romId mangler) */
   H.hideFn = (card, base, romId) => {
     const ud = H.userHideNow(card), rows = romId ? [ud[romId] || {}] : Object.values(ud);
@@ -482,7 +477,7 @@ a:hover{color:oklch(0.86 0.12 95)}`;
       else if (tab === 'f1' || tab === 'f2') inner = this._floor(tab, fl[tab]);
       else inner = this._on(fl);
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:420px;min-height:100vh;margin:0 auto;background:#141416;padding:20px 14px 40px;display:flex;flex-direction:column;gap:12px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:12px">
   <header style="display:flex;align-items:center;gap:12px;padding:0 4px">
     <span style="width:40px;height:40px;border-radius:20px;background:#e9e8e4;color:#141416;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">lightbulb</span></span>
     <div style="flex:1;font-size:26px;font-weight:500;letter-spacing:-0.02em">Lys</div>
