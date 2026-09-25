@@ -7,7 +7,7 @@ views:
     path: hjem
     icon: mdi:home
     type: panel
-    background: '#0f0f10'
+    background: '#141416'
     theme: KI Hjem Design
     cards:
       - type: vertical-stack

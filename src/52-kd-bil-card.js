@@ -306,7 +306,7 @@
   </div>
 
   ${s.tab === 'charge' ? `
-    <section style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+    <section style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
       <button data-on-click="toggleCharge" style="${S(chargeCard)}">
         <div style="display:flex;justify-content:space-between;width:100%;align-items:center">
           <span class="ms" style="font-size:24px;font-variation-settings:'FILL' 1">ev_station</span>
@@ -363,7 +363,7 @@
     </section>` : ''}` : ''}
 
   ${s.tab === 'save' ? `
-    <section style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+    <section style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
       ${saveCards.map(c => `
         <div data-on-click="openMore" data-arg="${e(c.id)}" style="position:relative;overflow:hidden;display:flex;flex-direction:column;gap:6px;padding:16px 16px 30px;border-radius:26px;background:#1c1c1f">
           <span style="width:44px;height:44px;border-radius:22px;background:#262629;display:grid;place-items:center;margin-bottom:26px"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">savings</span></span>
@@ -372,7 +372,7 @@
           <span style="position:absolute;left:0;right:0;bottom:0;height:22px;display:flex"><span style="${S(c.fill)}"></span><span style="${S(c.hatch)}"></span></span>
         </div>`).join('')}
     </section>
-    <section style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+    <section style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
       ${saveStats.map(x => `
         <div data-on-click="openMore" data-arg="${e(x.id)}" style="display:flex;align-items:center;gap:10px;height:60px;padding:0 12px 0 5px;border-radius:30px;background:#1c1c1f">
           <span style="width:50px;height:50px;border-radius:25px;flex:none;background:#262629;display:grid;place-items:center"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1"><span>${x.icon}</span></span></span>

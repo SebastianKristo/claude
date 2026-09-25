@@ -44,7 +44,11 @@
 
   class KDRomCard extends KD.KDSheet {
     static get sheetCss() {
-      return `.kdr-a97:active{transform:scale(0.97)}.kdr-a92:active{transform:scale(0.92)}`;
+      return `.kdr-a97:active{transform:scale(0.97)}.kdr-a92:active{transform:scale(0.92)}
+.kd-editing .kd-ent{position:relative;padding-right:36px!important;box-shadow:inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.55)!important;transition:opacity .2s}
+.kd-editing .kd-ent.kd-hid{opacity:.38;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.12)!important}
+.kd-editing .kd-ent::after{content:'visibility';font-family:'Material Symbols Rounded';font-size:18px;line-height:1;position:absolute;right:10px;top:50%;transform:translateY(-50%);color:oklch(0.82 0.1 350);pointer-events:none;-webkit-font-feature-settings:'liga';font-feature-settings:'liga'}
+.kd-editing .kd-ent.kd-hid::after{content:'visibility_off';color:#f2f1ee}`;
     }
     /** registeret (områder/enheter) kan komme eller endres uten at noen state endres */
     set hass(h) { const old = this._hass; super.hass = h; if (old && h && (old.entities !== h.entities || old.devices !== h.devices || old.areas !== h.areas)) this._queue(); }
@@ -87,7 +91,10 @@
       const c = this.config, h = this.hass;
       const st = H.ov(this, r.id);
       const src = st ? st.attributes : H.areaOverview(h, r.id);
-      const hide = H.matcher(c.skjul != null ? c.skjul : (H.SKJUL[r.id] || []));
+      const baseHide = H.matcher(c.skjul != null ? c.skjul : (H.SKJUL[r.id] || []));
+      const hideAll = H.hideFn(this, baseHide, r.id);
+      this._hideNow = hideAll;
+      const hide = this.state.edit ? (id => /_child_lock$|_status_led$/.test(id) && baseHide(id)) : hideAll; // i tilpass-modus vises alt
       const o = {};
       for (const k of LIST_KEYS) o[k] = [].concat(src[k] || []).filter(x => eid(x) && h.states[eid(x)] && !hide(eid(x))).map(x => typeof x === 'string' ? x : { ...x });
       o.lys = H.lights(this, r, hide);
@@ -125,11 +132,41 @@
       return this.call('cover', 'set_cover_position', { entity_id: id, position: inv ? 100 - nv : nv });
     }
     mediaTog(ev, id) {
+      if (this.state.edit) return this.hideTog(ev, id);
       const s = this.v(id);
       return this.call('media_player', ['off', 'standby', 'unavailable'].includes(s) ? 'turn_on' : 'media_play_pause', { entity_id: id });
     }
-    moreInfo(ev, id) { this.more(id); }
-    devTog(ev, id) { this.toggle(id); }
+    moreInfo(ev, id) { if (this.state.edit && id && id.includes('.')) return this.hideTog(ev, id); this.more(id); }
+    devTog(ev, id) { if (this.state.edit) return this.hideTog(ev, id); this.toggle(id); }
+    /* ----- tilpass rommet (skjul/vis i UI) ----- */
+    editTog() { this.setState({ edit: !this.state.edit }); }
+    hideTog(ev, id) {
+      if (!id) return;
+      const r = this._room(), ud = JSON.parse(JSON.stringify(H.userHideNow(this) || {}));
+      const row = ud[r.id] = ud[r.id] || { skjul: [], vis: [] };
+      row.skjul = row.skjul || []; row.vis = row.vis || [];
+      const hidden = this._hideNow ? this._hideNow(id) : row.skjul.includes(id);
+      row.skjul = row.skjul.filter(x => x !== id); row.vis = row.vis.filter(x => x !== id);
+      if (!hidden) row.skjul.push(id); else row.vis.push(id);
+      this.haptic('selection');
+      H.saveUserHide(this, ud);
+      this._queue();
+    }
+    editReset() {
+      const r = this._room(), ud = JSON.parse(JSON.stringify(H.userHideNow(this) || {}));
+      delete ud[r.id]; H.saveUserHide(this, ud); this._queue();
+    }
+    afterRender() {
+      const root = this.$('.kd-root > div, .kd-sheet-body > div');
+      const edit = !!this.state.edit, hide = this._hideNow;
+      this.$$('[data-key]').forEach(el => {
+        const k = el.getAttribute('data-key');
+        const ent = /^[a-z_]+\.[a-z0-9_]+$/.test(k) && !/^(button|script|scene)\./.test(k);
+        el.classList.toggle('kd-ent', edit && ent);
+        el.classList.toggle('kd-hid', edit && ent && !!hide && hide(k));
+      });
+      this._root.classList.toggle('kd-editing', edit);
+    }
     sceneGo(ev, key) {
       const sc = (this._scenes || []).find(x => x.key === key); if (!sc) return;
       if (sc.ent) this.toggle(sc.ent);
@@ -149,11 +186,14 @@
       return this.setNum(k.id, nv);
     }
     /* volum: dra på streken */
-    mDown(ev, id, el) { try { el.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ } this._md = { id, x: ev.clientX, moved: false, el }; }
+    mDown(ev, id, el) { this._md = { id, x: ev.clientX, y: ev.clientY, moved: false, scroll: false, el, pid: ev.pointerId }; }
     mMove(ev, id) {
-      const d = this._md; if (!d || d.id !== id) return;
-      if (Math.abs(ev.clientX - d.x) > 5) d.moved = true;
-      if (!d.moved) return;
+      const d = this._md; if (!d || d.id !== id || d.scroll) return;
+      const dx = ev.clientX - d.x, dy = ev.clientY - d.y;
+      if (!d.moved) {
+        if (Math.abs(dy) > 8 && Math.abs(dy) >= Math.abs(dx)) { d.scroll = true; return; }
+        if (Math.abs(dx) > 6 && Math.abs(dx) > Math.abs(dy)) { d.moved = true; try { d.el.setPointerCapture(d.pid); } catch (e) { /* ok */ } } else return;
+      }
       const r = d.el.getBoundingClientRect(), v = Math.round(KD.clamp((ev.clientX - r.left) / r.width, 0, 1) * 100);
       if (!this.state.vol || this.state.vol.v !== v) this.setState({ vol: { id, v } });
     }
@@ -274,7 +314,7 @@
         style: { position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', gap: 10, height: 66, padding: '0 12px 0 8px', borderRadius: 33, background: '#1c1c1f', boxShadow: actv ? `inset 0 0 0 1px ${a(cc, 0.35)}` : 'none', transition: 'box-shadow .3s, transform .2s' },
         fill: { position: 'absolute', left: 0, top: 0, bottom: 0, width: `${fillPct ?? (actv ? 100 : 0)}%`, background: a(cc, 0.16), transition: 'width .5s cubic-bezier(.34,1.2,.64,1)' },
         iconWrap: { position: 'relative', width: 50, height: 50, borderRadius: 25, flex: 'none', display: 'grid', placeItems: 'center', background: actv ? cc : '#2a2a2d', color: actv ? '#141416' : '#a9a7a2', transition: 'background .3s' },
-        subStyle: { fontSize: 12, color: actv ? '#e6e4df' : '#8e8d89', whiteSpace: 'nowrap' } });
+        subStyle: { fontSize: 12, color: actv ? '#e6e4df' : '#8e8d89', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } });
       const presOn = sensors.some(z => z.pres && z.hot);
       const tStrom = () => tile('strom', 'bolt', 'Strøm', `${watt} W nå`, C.amber, watt > 0, 'moreInfo', o.effekt[0] || '');
       const tiles = [
@@ -322,12 +362,12 @@
     </div>
   </section>
 
-  <section style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+  <section style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
     ${tiles.map(t => `<button class="kdr-a97" data-key="${t.key}" data-on-click="${t.go}" data-arg="${E(t.arg)}" data-hold="moreInfo" style="${S(t.style)}">
         <span style="${S(t.fill)}"></span>
         <span style="${S(t.iconWrap)}"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">${t.icon}</span></span>
         <span style="position:relative;display:flex;flex-direction:column;gap:1px;min-width:0;text-align:left">
-          <span style="font-size:14px;font-weight:500;white-space:nowrap">${E(t.label)}</span>
+          <span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(t.label)}</span>
           <span style="${S(t.subStyle)}">${E(t.sub)}</span>
         </span>
       </button>`).join('')}
@@ -344,14 +384,14 @@
 
   ${lightRows.length ? `<section style="display:flex;flex-direction:column;gap:8px">
     <div style="display:flex;justify-content:space-between;padding:0 6px"><span style="font-size:15px;font-weight:500">Lys</span><span style="font-size:12px;color:#8e8d89">${on} på · dra for å dimme</span></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+    <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
       ${lightRows.map(l => H.pill(this, l.id, l.name, true)).join('')}
     </div>
   </section>` : ''}
 
   ${devices.length ? `<section style="display:flex;flex-direction:column;gap:8px">
     <div style="display:flex;justify-content:space-between;padding:0 6px"><span style="font-size:15px;font-weight:500">Enheter</span><span style="font-size:12px;color:#8e8d89">${watt} W</span></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+    <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
       ${devices.map(d => {
         const pill = { display: 'flex', alignItems: 'center', gap: 8, height: 56, padding: '0 12px 0 6px', borderRadius: 28, background: d.on ? a(C.amber, 0.12) : '#1c1c1f', transition: 'background .25s, transform .2s' };
         const iw = { width: 44, height: 44, borderRadius: 22, flex: 'none', display: 'grid', placeItems: 'center', background: d.on ? C.amber : '#2a2a2d', color: d.on ? '#141416' : '#6d6c69', transition: 'background .25s' };
@@ -385,7 +425,7 @@
     <span data-on-click="moreInfo" data-arg="${E(m.id)}" style="${S(art)}"><span class="ms" style="font-size:24px;font-variation-settings:'FILL' 1">${m.tv ? 'tv' : 'speaker'}</span></span>
     <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px">
       <span data-on-click="moreInfo" data-arg="${E(m.id)}" style="display:flex;flex-direction:column"><span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(m.name)}</span><span style="font-size:12px;color:#8e8d89">${E(m.sub)}</span></span>
-      <span data-arg="${E(m.id)}" data-on-pointerdown="mDown" data-on-pointermove="mMove" data-on-pointerup="mUp" data-on-pointercancel="mCancel" style="position:relative;display:block;height:6px;border-radius:3px;background:rgba(255,255,255,0.12);touch-action:none;cursor:pointer"><span style="${S(fill)}"></span></span>
+      <span data-arg="${E(m.id)}" data-on-pointerdown="mDown" data-on-pointermove="mMove" data-on-pointerup="mUp" data-on-pointercancel="mCancel" style="position:relative;display:block;height:6px;border-radius:3px;background:rgba(255,255,255,0.12);touch-action:pan-y;cursor:pointer"><span style="${S(fill)}"></span></span>
     </span>
     <button class="kdr-a92" data-on-click="mediaTog" data-arg="${E(m.id)}" style="width:48px;height:48px;border-radius:24px;flex:none;background:#f2f1ee;color:#141416;display:grid;place-items:center"><span class="ms" style="font-size:26px;font-variation-settings:'FILL' 1">${m.playing ? 'pause' : 'play_arrow'}</span></button>
   </section>`; }).join('')}
@@ -401,6 +441,13 @@
     </div>
   </section>` : ''}
 
+  ${s.edit ? `<div data-key="kd-edit-bar" style="position:sticky;bottom:96px;z-index:4;display:flex;align-items:center;gap:10px;padding:8px 8px 8px 16px;border-radius:30px;background:rgba(38,38,41,0.92);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.07),0 8px 24px rgba(0,0,0,0.35)">
+    <span class="ms" style="font-size:20px;color:oklch(0.82 0.1 350)">visibility</span>
+    <span style="flex:1;min-width:0;display:flex;flex-direction:column"><span style="font-size:14px;font-weight:500">Tilpass rommet</span><span style="font-size:11px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Trykk for å skjule eller vise</span></span>
+    <button class="kdr-a92" data-on-click="editReset" style="height:40px;padding:0 14px;border-radius:20px;background:rgba(255,255,255,0.08);font-size:13px;font-weight:500">Nullstill</button>
+    <button class="kdr-a92" data-on-click="editTog" style="height:40px;padding:0 16px;border-radius:20px;background:linear-gradient(135deg, oklch(0.78 0.13 350), oklch(0.9 0.05 20));color:#2a1720;font-size:13px;font-weight:600">Ferdig</button>
+  </div>` : ''}
+
   <section data-on-click="moreInfo" data-arg="${E(L.tempId || '')}" style="display:flex;flex-direction:column;gap:6px;padding:14px 16px;border-radius:24px;background:#1c1c1f">
     <div style="display:flex;justify-content:space-between;font-size:12px;color:#8e8d89"><span>Temperatur siste døgn</span><span>${E(tempRange)}</span></div>
     <svg viewBox="0 0 384 60" preserveAspectRatio="none" style="width:100%;height:56px;display:block">
@@ -408,6 +455,7 @@
       <path d="${line}" fill="none" stroke="oklch(0.82 0.12 75)" stroke-width="1.5" vector-effect="non-scaling-stroke"></path>
     </svg>
   </section>
+  ${s.edit ? '' : `<button class="kdr-a97" data-key="kd-edit-btn" data-on-click="editTog" style="display:flex;align-items:center;justify-content:center;gap:8px;height:48px;border-radius:24px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);color:#a9a7a2;font-size:13px;font-weight:500"><span class="ms" style="font-size:18px">tune</span>Tilpass rommet</button>`}
 </div>`;
     }
   }

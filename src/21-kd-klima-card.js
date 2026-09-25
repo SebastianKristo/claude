@@ -474,7 +474,7 @@
     </section>
     ${bedL.length ? `<section style="display:flex;flex-direction:column;gap:10px">
       <div style="display:flex;justify-content:space-between;padding:0 6px"><span style="font-size:15px;font-weight:500">Leggetid</span><span style="font-size:12px;color:#8e8d89">trykk når noen legger seg</span></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
         ${bedL.map((l) => {
           const on = !!l.leggetid;
           const pill = { display: 'flex', alignItems: 'center', gap: 10, height: 62, padding: '0 12px 0 6px', borderRadius: 31, background: on ? PINK : '#1c1c1f', color: on ? '#2a1720' : '#f2f1ee', transition: 'background .25s, transform .2s' };
@@ -522,7 +522,7 @@
       </section>`;
       }
       return `${detail}
-    <section style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+    <section style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
       ${Z.map((l) => {
         const act = s.zone === l.key, man = this.isMan(l), over = l.overstyrt ? (this.remaining(l) || { t: 'Manuell' }).t : null;
         const goalV = s.set[l.key] != null ? s.set[l.key] : l.overstyrt && l.overstyrt_temp != null ? Number(l.overstyrt_temp) : l.mal;
@@ -625,9 +625,9 @@
       ${this.pillRow('switch.ki_vvb_prisstyring', 'savings', 'VVB prisstyring', 'Velger de billigste timene', G)}
       ${this.pillRow('switch.ki_vvb_legionella_aktiv', 'coronavirus', 'Legionellasikring', 'Kan ikke blokkeres av sparing', G)}
     </section>
-    ${bryter ? `<section style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${btn('bolt', 'Boost nå', 'boost', boost)}${btn('sync', 'Tving syklus', 'force', this.isOn('switch.ki_vvb_tvungen_syklus_aktiv'))}</section>` : ''}`;
+    ${bryter ? `<section style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">${btn('bolt', 'Boost nå', 'boost', boost)}${btn('sync', 'Tving syklus', 'force', this.isOn('switch.ki_vvb_tvungen_syklus_aktiv'))}</section>` : ''}`;
       }
-      return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:2px;padding:4px;border-radius:26px;background:#1c1c1f">${seg}</div>${ber}`;
+      return `<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:2px;padding:4px;border-radius:26px;background:#1c1c1f">${seg}</div>${ber}`;
     }
 
     /* ----- Tanker ----- */

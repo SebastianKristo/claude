@@ -23,7 +23,7 @@ Fontene (Space Grotesk og Material Symbols Rounded) lastes automatisk fra Google
 
 ## Tema
 
-`themes/ki-hjem-design.yaml` er et Home Assistant-tema med designets farger (nesten svart, rosa aksent), Space Grotesk,
+`themes/ki-hjem-design.yaml` er et Home Assistant-tema (kun mørk modus, så HA bruker mørk grunnpalett overalt) med designets farger (nesten svart, rosa aksent), Space Grotesk,
 runde kort og dialoger. Det farger også HAs egne deler (topp, sidepanel, mer-info, skjemaer) og setter `--gray*`,
 `--active-big` m.fl., så de eldre ki-*/button-card-kortene dine følger samme palett.
 
@@ -38,6 +38,20 @@ entitetsvelgere med riktig domene, tall, brytere og tekst, og lister/objekter (s
 Standardverdien står under hvert felt; et tomt felt betyr «bruk standard», så konfigen forblir kort.
 I `kd-hjem-card` finnes en **Popups**-seksjon med et eget skjema for hvert av de 20 arkene, pluss «Rom – per rom»
 (lagres som `ark_config` / `ark_config.rom_per`).
+
+## Tilpass rom (skjul/vis uten entitets-ID-er)
+
+Nederst i hver rompopup: **Tilpass rommet**. Trykk på lys, enheter, mediespillere eller sensorer for å skjule eller vise dem, og **Ferdig** når du er ferdig.
+Valgene lagres som Home Assistant-brukerdata (følger brukeren på alle enheter) og brukes også i Lys-arket. **Nullstill** går tilbake til standard.
+
+## Servervelger
+
+Trykk på stedsnavnet øverst (Oslo / Strömstad / Toten) for å bytte Home Assistant-server i companion-appen – samme mekanisme som familiekortet
+(`homeassistant://navigate/<sti>?server=<navn>`). Gjeldende server finnes fra installasjonens navn. Konfig: `servere`, `server_sti`, `server_navn`.
+
+## Haptikk
+
+Alle trykk gir vibrasjon i HA-appen (hendelsen `haptic`). Slå av med `haptikk: false` på kortet.
 
 ## Kortene
 

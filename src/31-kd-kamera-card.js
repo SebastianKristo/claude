@@ -324,7 +324,7 @@
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
   </header>
 
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px;padding:4px;border-radius:22px;background:#1c1c1f">
+  <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:2px;padding:4px;border-radius:22px;background:#1c1c1f">
     ${tabs.map(x => `<button data-on-click="go" data-arg="tab:${x.k}" style="${S(x.style)}">${t(x.label)}</button>`).join('')}
   </div>
 
@@ -332,7 +332,7 @@
     ${chips.map(c => `<button data-on-click="go" data-arg="view:${e(c.k)}" style="${S(c.style)}"><span class="ms" style="font-size:16px">${t(c.icon)}</span>${t(c.label)}<span style="${S(c.dot)}"></span></button>`).join('')}
   </nav>
 
-  ${isLive && s.view === 'alle' ? `<section style="display:grid;grid-template-columns:1fr;gap:8px">
+  ${isLive && s.view === 'alle' ? `<section style="display:grid;grid-template-columns:minmax(0,1fr);gap:8px">
       ${feeds.map(f => `<div data-key="${e(f.key)}" style="position:relative;aspect-ratio:16/9;border-radius:20px;overflow:hidden;background:#0c0c0d">
           ${this.slotHTML(f.src, f.ph)}
           <div style="position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(0,0,0,0.35),transparent 30%,transparent 70%,rgba(0,0,0,0.45))"></div>
