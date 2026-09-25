@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>html,body{margin:0;background:#0f0f10}</style>
+<script src="mock-hass.js"></script>
+<script>
+// mock-filer: ?mock=hjem,strom (standard: alle i test/mock/index.json)
+</script>
+</head><body>
+<div id="host"></div>
+<script>
+(async () => {
+  const q = new URLSearchParams(location.search);
+  const list = await fetch('mock/index.json').then(r => r.json()).catch(() => []);
+  for (const m of list) await new Promise(r => { const s = document.createElement('script'); s.src = 'mock/' + m; s.onload = r; s.onerror = r; document.head.appendChild(s); });
+  await new Promise(r => { const s = document.createElement('script'); s.src = '../dist/ki-hjem-design.js?' + Date.now(); s.onload = r; document.head.appendChild(s); });
+  const tag = q.get('card') || 'kd-hjem-card';
+  const cfg = JSON.parse(q.get('cfg') || '{}');
+  if (location.hash === '' && q.get('hash')) history.replaceState(null, '', '#' + q.get('hash'));
+  await customElements.whenDefined(tag);
+  const el = document.createElement(tag);
+  el.setAttribute('data-kd-card', '');
+  el.setConfig({ type: 'custom:' + tag, ...cfg });
+  MOCK.hass = MOCK.make();
+  el.hass = MOCK.hass;
+  const wrap = document.getElementById('host');
+  if (q.get('wrap') === 'sheet') { wrap.style.cssText = 'max-width:420px;margin:0 auto;background:#141416;min-height:100vh'; }
+  wrap.appendChild(el);
+  window.__ready = true;
+})();
+</script>
+</body></html>
