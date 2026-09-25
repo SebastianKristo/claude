@@ -65,17 +65,14 @@
     return out;
   };
   const dayKey = (d) => d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
-  const isOre = (u) => /øre|ore/i.test(u || '');
+  const isOre = (u, A) => KD.isOre(u, A);
 
   class KDHjem extends KD.KDCard {
     static defaults = {
       ark: 'intern',
       vaer: 'weather.forecast_home',
       ute_temp: 'sensor.vaervarsel_temperature',
-      pris: 'sensor.norgespris_total_strompris_norgespris',
-      pris_total: 'sensor.totalpris_inkludert_grid_el_company_og_stromstotte',
-      pris_spot: 'sensor.nordpool_kwh_no1_nok_3_10_025',
-      pris_norges: 'sensor.norgespris_pris_na',
+      strom_profil: 'auto',   // no | se | auto (landet i HA / sensorene som finnes). pris, pris_total, pris_spot, pris_norges overstyrer profilen
       effekt: 'sensor.strommaler_effekt',
       lys_totalt: 'sensor.hele_huset_lys',
       kalender_sensor: 'sensor.alle_kalendere',
@@ -482,19 +479,24 @@
       const cond = COND[w && w.state] || [w ? w.state : '–', 'cloud'];
       return { t, head: isNaN(wt) ? t : wt, cond: cond[0], icon: cond[1] };
     }
-    priceKr(id) { const v = this.n(id); if (v == null) return null; return isOre(this.unit(id)) ? v / 100 : v; }
+    priceKr(id) { const v = this.n(id); if (v == null) return null; return isOre(this.unit(id), this.st(id).attributes) ? v / 100 : v; }
+    /** strømprofil + eventuelle overstyringer i config */
+    sp() {
+      const c = this.config, P = KD.stromProfil(this);
+      return { ...P, pris: c.pris || P.pris, pris_total: c.pris_total || P.pris_total, pris_spot: c.pris_spot || P.pris_spot, pris_fast: c.pris_norges || P.pris_fast };
+    }
     priceSeries() {
-      const c = this.config, now = new Date(), tmr = new Date(now.getTime() + 86400e3);
+      const c = this.sp(), now = new Date(), tmr = new Date(now.getTime() + 86400e3);
       const get = (id, attrs, forceMul) => {
         const s = this.st(id); if (!s) return null;
-        const mul = forceMul != null ? forceMul : isOre(s.attributes.unit_of_measurement) ? 1 : 100; // alt i øre
+        const mul = forceMul != null ? forceMul : isOre(s.attributes.unit_of_measurement, s.attributes) ? 1 : 100; // alt i øre
         const A = s.attributes;
         const all = hourly([...(A[attrs[0]] || []), ...(A[attrs[1]] || [])], mul);
         return [...(all[dayKey(now)] || Array(24).fill(null)), ...(all[dayKey(tmr)] || Array(24).fill(null))];
       };
       const tot = get(c.pris_total, ['raw_today', 'raw_tomorrow']);
       const spot = get(c.pris_spot, ['raw_today', 'raw_tomorrow']);
-      const norges = get(c.pris_norges, ['today', 'tomorrow']);
+      const norges = c.pris_fast ? get(c.pris_fast, ['today', 'tomorrow']) : null;
       return { tot, spot, norges };
     }
     events() {
@@ -534,7 +536,8 @@
       const people = PERS.filter(p => p.id !== meId).map(p => { const ps = this.personState(p); return { p, ps, b: badge(ps), avatar: { width: 46, height: 46, borderRadius: 23, display: 'grid', placeItems: 'center', fontSize: 16, fontWeight: 600, background: p.farge, opacity: ps.home ? 1 : 0.6, transition: 'opacity .3s' } }; });
 
       const W = this.weather();
-      const pNow = this.priceKr(c.pris);
+      const SP = this.sp();
+      const pNow = this.priceKr(SP.pris) ?? this.priceKr(SP.pris_total);
       const lvl = p => p > 1.5 ? C.red : p > 1.1 ? C.yellow : C.green;
       const pl = lvl(pNow ?? 0);
       const pricePill = { display: 'inline-flex', alignItems: 'center', gap: 6, height: 32, padding: '0 11px', borderRadius: 16, background: a(pl, 0.16), boxShadow: `inset 0 0 0 1px ${a(pl, 0.4)}`, fontSize: 22, fontWeight: 500, verticalAlign: 'middle', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' };
@@ -612,7 +615,8 @@
       /* ----- strømgraf ----- */
       const NOW_H = new Date().getHours();
       const ser = this.priceSeries();
-      const mode = s.pcMode || 'total';
+      const MODES = [['total', 'Total', ser.tot], ['spot', 'Spot', ser.spot], ['norges', SP.fast_navn || 'Fastpris', ser.norges]].filter(([k, , v], i) => i === 0 || v);
+      const mode = MODES.some(m => m[0] === s.pcMode) ? s.pcMode : 'total';
       const tot48 = ser.tot || Array(48).fill(null);
       const spot48 = ser.spot || Array(48).fill(null);
       const norges48 = ser.norges || Array(48).fill(null);
@@ -630,9 +634,9 @@
         yl: Array.from({ length: 5 }, (_, i) => Math.round(top - i * top / 4)), grid: Array.from({ length: 5 }, (_, i) => i * 37.5),
         line: ln, area: areaPath(all48), thrA: KD.clamp((Y(thrV) - 8) / 150, 0, 1), thrB: KD.clamp((Y(thrV) + 8) / 150, 0, 1),
         cmp: mode === 'norges' ? stepPath(tot48) : 'M0,0',
-        caption: mode === 'spot' ? 'Nord Pool NO1 · øre/kWh eks. mva' : mode === 'norges' ? 'Norgespris 50 øre + nettleie · øre/kWh' : 'Totalpris inkl. mva, påslag og nettleie · øre',
+        caption: mode === 'spot' ? `Nord Pool${SP.region ? ' ' + SP.region : ''} · ${SP.ore}/kWh${SP.spot_mva == null ? '' : SP.spot_mva ? ' inkl. ' + SP.mva : ' eks. ' + SP.mva}` : mode === 'norges' ? `${SP.fast_tekst || SP.fast_navn || 'Fastpris'} · ${SP.ore}/kWh` : `Totalpris inkl. ${SP.mva}, påslag og nettleie · ${SP.ore}`,
         legend: { display: mode === 'norges' ? 'flex' : 'none', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' },
-        modes: [['total', 'Total'], ['spot', 'Spot'], ['norges', 'Norgespris']].map(([k, label]) => ({ k, label, style: { height: 28, padding: '0 10px', borderRadius: 11, fontSize: 11, fontWeight: 500, whiteSpace: 'nowrap', background: mode === k ? PINK : 'transparent', color: mode === k ? '#2a1720' : '#a9a7a2', transition: 'background .2s' } })),
+        modes: MODES.map(([k, label]) => ({ k, label, style: { height: 28, padding: '0 10px', borderRadius: 11, fontSize: 11, fontWeight: 500, whiteSpace: 'nowrap', background: mode === k ? PINK : 'transparent', color: mode === k ? '#2a1720' : '#a9a7a2', transition: 'background .2s' } })),
         pastW: NOW_H * 10,
         selBand: { position: 'absolute', top: 0, bottom: 0, left: `${selI / 48 * 100}%`, width: `${100 / 48}%`, background: 'rgba(255,255,255,0.12)', borderRadius: 2, pointerEvents: 'none', transition: 'left .15s' },
         halo: { position: 'absolute', left: `${(selI + 0.5) / 48 * 100}%`, top: `${(selV != null ? Y(selV) : 150) / 150 * 100}%`, width: 34, height: 34, margin: -17, borderRadius: 17, background: selV > thrV ? 'oklch(0.74 0.17 55 / 0.3)' : 'oklch(0.78 0.13 175 / 0.3)', pointerEvents: 'none', transition: 'left .15s, top .15s', display: selV == null ? 'none' : null },
@@ -644,7 +648,7 @@
         const i = selI;
         const save = tot48.slice(NOW_H, 48).reduce((t, v, k) => t + ((v != null && norges48[NOW_H + k] != null) ? v - norges48[NOW_H + k] : 0), 0);
         const tmrSpot = valid(spot48.slice(24));
-        priceHead = { label: s.pcHour != null ? slot(i) : mode === 'spot' ? 'Spot nå' : 'Norgespris nå', v: all48[i] != null ? nf(all48[i] / 100) : '–', meta: mode === 'norges' ? `${save >= 0 ? 'Sparer' : 'Taper'} ca. ${nf(Math.abs(save) / 100)} kr/kWh-time mot spot` : tmrSpot.length ? `Snitt i morgen ${nf(tmrSpot.reduce((x, y) => x + y, 0) / tmrSpot.length / 100)} kr` : '' };
+        priceHead = { label: s.pcHour != null ? slot(i) : mode === 'spot' ? 'Spot nå' : `${SP.fast_navn || 'Fastpris'} nå`, v: all48[i] != null ? nf(all48[i] / 100) : '–', meta: mode === 'norges' ? `${save >= 0 ? 'Sparer' : 'Taper'} ca. ${nf(Math.abs(save) / 100)} kr/kWh-time mot spot` : tmrSpot.length ? `Snitt i morgen ${nf(tmrSpot.reduce((x, y) => x + y, 0) / tmrSpot.length / 100)} kr` : '' };
       } else if (s.pcHour != null) {
         priceHead = { label: slot(s.pcHour), v: tot48[s.pcHour] != null ? nf(tot48[s.pcHour] / 100) : '–', meta: s.pcHour < NOW_H ? 'Tidligere i dag' : '' };
       } else {

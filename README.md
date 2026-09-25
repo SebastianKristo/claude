@@ -96,9 +96,18 @@ servere: [{ navn: Strømstad, sub: Lokal · tilkoblet, ikon: home, url: ... }]
 rom: { stue: { navn: Stue, ikon: weekend, farge: 'oklch(0.8 0.12 150)', temp: sensor..., fukt: sensor..., sett: input_number..., lys: light... } }
 ark_config: { strom: {...}, rom_per: { stue: {...} } }
 ```
-Entitetsnøkler (med standard): `vaer` weather.forecast_home · `ute_temp` sensor.vaervarsel_temperature · `pris` sensor.norgespris_total_strompris_norgespris ·
-`pris_total` sensor.totalpris_inkludert_grid_el_company_og_stromstotte · `pris_spot` sensor.nordpool_kwh_no1_nok_3_10_025 · `pris_norges` sensor.norgespris_pris_na ·
-`effekt` sensor.strommaler_effekt · `lys_totalt` sensor.hele_huset_lys · `kalender_sensor` sensor.alle_kalendere · `las` lock.dorlas_blatann ·
+**Strømprofiler:** `strom_profil: auto | no | se` (også på `kd-strom-card`). `auto` velger ut fra landet i HA og hvilke sensorer som finnes.
+- `no` – Norgespris/NOK: totalpris `sensor.totalpris_inkludert_grid_el_company_og_stromstotte`, spot `sensor.nordpool_kwh_no1_nok_3_10_025`, Norgespris `sensor.norgespris_pris_na`.
+- `se` – Sverige/SEK: pris nå `sensor.stromstad_totalpris_kwh_sek`, totalpris `sensor.stromstad_totalpris_kwh_ore`, spot `sensor.nordpool_kwh_se3_sek_3_10_0` (ingen fastpris-fane).
+
+Öre/øre/cent og Nord Pool sin `price_in_cents` tolkes riktig, og 15-minutterspriser slås sammen til timer. Egne profiler eller andre sensorer:
+```yaml
+strom_profil: se
+strom_profiler: { se: { pris_spot: sensor.nordpool_kwh_se4_sek_3_10_025 } }
+```
+`pris`, `pris_total`, `pris_spot` og `pris_norges` i config overstyrer profilen.
+
+Entitetsnøkler (med standard): `vaer` weather.forecast_home · `ute_temp` sensor.vaervarsel_temperature · `effekt` sensor.strommaler_effekt · `lys_totalt` sensor.hele_huset_lys · `kalender_sensor` sensor.alle_kalendere · `las` lock.dorlas_blatann ·
 `las_batteri` sensor.dorlas_wifi_battery · `las_sist` sensor.ansiktsgjenkjenning_dorlas_sist_last_opp_av · `autolas` (finnes automatisk) ·
 `alarm` alarm_control_panel.alarm · `bevegelse` [kamerasensorene] · `gjoremal` todo.gjoremal · `soppel` [avfallssensorene] ·
 `sover_nar` on · `kant` (10 – avstand til skjermkanten i px, gjelder også alle popups) · `dokk_stil` (`bred` som Apple Music | `kompakt` designets glassdokk).
@@ -128,7 +137,7 @@ antall lys på faller tilbake til å telle `light.*`; hendelser i dag faller til
 Alle nøkler er valgfrie; standardverdiene er dine entiteter (se `docs/entiteter.md`) og resten finnes automatisk.
 Dokumentasjonen for hver nøkkel står øverst i hver fil i `src/`. Kort oppsummert:
 
-- **Strøm** – `effekt`, `energi_i_dag`, `pris`, `spotpris`, `norgespris`, `spart_i_dag`, `bereder`, `varmtvann`, `effekt_grense_kw`, `dyr` (1.5), `middels` (1.1), `rom`, `enheter`, `skjul`. Rom/enheter fra KI Rom, forbruk per time fra langtidsstatistikken, hendelser fra loggboken.
+- **Strøm** – `strom_profil`, `effekt`, `energi_i_dag`, `pris`, `spotpris`, `norgespris`, `spart_i_dag`, `bereder`, `varmtvann`, `effekt_grense_kw`, `dyr` (1.5), `middels` (1.1), `rom`, `enheter`, `skjul`. Rom/enheter fra KI Rom, forbruk per time fra langtidsstatistikken, hendelser fra loggboken.
 - **Klima** – KI Energi-sensorene (`status`, `laster`, `logg`, `prognose`, `nettleie`, `bereder` …), `fane`. Soner, personer, lysregler og bereder oppdages som i ki-klima-strom-kort; handlinger via `ki_energi.*`-tjenestene.
 - **Sikkerhet** – `entity` (alarm_control_panel.alarm), `kode_lengde` (6), `batteri_grense` (20), `ansikt`, `zones` (standard: dine dører, vinduer, bevegelse og låser). Hold inne modus 0,9 s; kode tastes på tastaturet når alarmen krever det.
 - **Kamera** – `kameraer` (standard: dine fem UniFi/Frigate-kameraer), `auto`, `skjul`, `oppdater` (10 s), `direkte`, `sirene`, `frigate`.

@@ -51,8 +51,12 @@
   const ROOM_OPTS = () => Object.entries(KD.ROOMS || {}).map(([k, r]) => ({ value: k, label: r.navn || k }));
   const PERSON_OPTS = [{ value: 'sebastian', label: 'Sebastian' }, { value: 'cybele', label: 'Cybele' }, { value: 'rune', label: 'Rune' }];
   const sel = (opts, custom = false) => ({ select: { options: opts, mode: 'dropdown', custom_value: custom } });
+  const PROFIL = sel([{ value: 'auto', label: 'Automatisk (landet i HA)' }, { value: 'no', label: 'Norge – Norgespris, NOK' }, { value: 'se', label: 'Sverige – SE3, SEK' }]);
+  const PRIS = { entity: { domain: 'sensor' } };
   const EXTRA = {
+    'kd-strom-card': { strom_profil: PROFIL, pris: PRIS, spotpris: PRIS, norgespris: PRIS, spart_i_dag: PRIS },
     'kd-hjem-card': {
+      strom_profil: PROFIL, pris: PRIS, pris_total: PRIS, pris_spot: PRIS, pris_norges: PRIS,
       ark: sel([{ value: 'intern', label: 'Intern – kortets eget bunnark' }, { value: 'bubble', label: 'Bubble-card – bare #hash' }]),
       meg: sel(PERSON_OPTS, true), sover_nar: sel([{ value: 'on', label: 'på (on)' }, { value: 'off', label: 'av (off)' }]),
       autolas: { entity: { domain: ['switch', 'select'] } },

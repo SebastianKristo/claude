@@ -466,6 +466,39 @@ input,select,textarea{font:inherit;color:inherit}
   };
   /* ----- Brukervalg per rom (lagres som HA-brukerdata, følger brukeren på alle enheter) -----
    * { <rom>: { skjul: [id], vis: [id], temp: id, fukt: id } } */
+  /* ----- Strømprofiler (Norge / Sverige) ----- */
+  // pris: pris nå (kr/kWh eller øre) · pris_total: totalpris med raw_today/raw_tomorrow · pris_spot: Nord Pool
+  // pris_fast: fastpris med today/tomorrow (Norgespris) · spart: spart i dag (kr)
+  KD.STROM_PROFILER = {
+    no: { navn: 'Norge', land: 'NO', ore: 'øre', mva: 'mva',
+      pris: 'sensor.norgespris_total_strompris_norgespris', pris_total: 'sensor.totalpris_inkludert_grid_el_company_og_stromstotte',
+      pris_spot: 'sensor.nordpool_kwh_no1_nok_3_10_025', pris_fast: 'sensor.norgespris_pris_na', fast_navn: 'Norgespris', fast_tekst: 'Norgespris 50 øre + nettleie', spart: 'sensor.norgespris_besparelse_dag' },
+    se: { navn: 'Sverige', land: 'SE', ore: 'öre', mva: 'moms',
+      pris: 'sensor.stromstad_totalpris_kwh_sek', pris_total: 'sensor.stromstad_totalpris_kwh_ore',
+      pris_spot: 'sensor.nordpool_kwh_se3_sek_3_10_0', pris_fast: null, fast_navn: null, fast_tekst: null, spart: null },
+  };
+  /** Aktiv strømprofil: config.strom_profil (no | se | auto) + config.strom_profiler (egne/overstyrte profiler) */
+  KD.stromProfil = (card) => {
+    const c = card.config || {}, h = card.hass || {}, P = { ...KD.STROM_PROFILER };
+    for (const [k, v] of Object.entries(c.strom_profiler || {})) P[k] = { ...(P[k] || {}), ...v };
+    let key = String(c.strom_profil || 'auto').toLowerCase();
+    if (!P[key]) {
+      const land = String((h.config && h.config.country) || '').toLowerCase();
+      const has = k => P[k] && [P[k].pris_total, P[k].pris_spot, P[k].pris].some(id => id && h.states && h.states[id]);
+      const order = [land, ...Object.keys(P)].filter((k, i, a) => P[k] && a.indexOf(k) === i);
+      key = order.find(has) || (P[land] ? land : 'no');
+    }
+    const out = { key, ...P[key] };
+    // Nord Pool-sensorens navn: nordpool_kwh_<område>_<valuta>_<presisjon>_<lav>_<mva>
+    const m = String(out.pris_spot || '').match(/nordpool_kwh_([a-z]{2}\d?)_([a-z]{3})(?:_\d+_\d+_(\d+))?/i);
+    const A = (h.states && h.states[out.pris_spot] || {}).attributes || {};
+    out.region = String(A.region || (m && m[1]) || '').toUpperCase();
+    out.spot_mva = m && m[3] != null ? /[1-9]/.test(m[3]) : null;
+    return out;
+  };
+  /** Er verdien i øre/öre/cent? (enhet eller Nord Pool sin price_in_cents) */
+  KD.isOre = (unit, attrs) => (attrs && attrs.price_in_cents === true) || /øre|öre|\bore\b|cent/i.test(String(unit || ''));
+
   KD.UD_KEY = 'kd_rom_skjul';
   KD.userData = (card) => KD._udOverride || card.cached('kd-ud-' + KD.UD_KEY, 5 * 60e3,
     () => card.ws({ type: 'frontend/get_user_data', key: KD.UD_KEY }).then(r => (r && r.value) || {}).catch(() => ({})), {});

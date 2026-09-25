@@ -54,10 +54,11 @@
     static defaults = {
       effekt: 'sensor.strommaler_effekt',                                   // W nå
       energi_i_dag: 'sensor.strommaler_powercalc_energy_daily',            // kWh i dag (timeforbruk fra statistikk)
-      pris: 'sensor.totalpris_inkludert_grid_el_company_og_stromstotte',  // totalpris per time (raw_today/raw_tomorrow)
-      spotpris: 'sensor.nordpool_kwh_no1_nok_3_10_025',                   // Nord Pool (reserve for ringen + spotvarsel)
-      norgespris: 'sensor.norgespris_pris_na',                             // kr/kWh
-      spart_i_dag: 'sensor.norgespris_besparelse_dag',                     // kr
+      strom_profil: 'auto',                                                // no | se | auto – sensorene under kommer fra profilen
+      pris: null,                                                          // totalpris per time (raw_today/raw_tomorrow)
+      spotpris: null,                                                      // Nord Pool (reserve for ringen + spotvarsel)
+      norgespris: null,                                                    // fastpris kr/kWh (Norgespris) – finnes ikke i Sverige
+      spart_i_dag: null,                                                   // kr
       bereder: 'sensor.ki_bereder',                                        // KI Energi (attr bryter)
       varmtvann: '',                                                       // tom = fra KI Energi, ellers switch.varmtvannsbereder
       effekt_grense_kw: null,                                              // tom = number.ki_mal_trinn_kw, ellers 5
@@ -100,11 +101,16 @@
       if (!cnt.some(Boolean)) return null;
       const vals = out.map((v, h) => (cnt[h] ? v / cnt[h] : null));
       const known = vals.filter((v) => v != null).sort((x, y) => x - y);
-      const ore = unit.includes('øre') || unit.includes('ore') || (!unit.includes('kr') && !unit.includes('nok') && known[Math.floor(known.length / 2)] > 10);
+      const ore = KD.isOre(unit, at) || (!/kr|nok|sek|dkk|eur/.test(unit) && known[Math.floor(known.length / 2)] > 10);
       return vals.map((v) => (v == null ? null : ore ? v / 100 : v));
     }
-    _prices(which) { const c = this.config; return this._series(c.pris, which) || this._series(c.spotpris, which); }
-    _kr(id) { const v = this.n(id); if (v == null) return null; const u = String(this.unit(id)).toLowerCase(); return u.includes('øre') ? v / 100 : v; }
+    /** sensorene fra strømprofilen (Norge/Sverige), overstyrt av config */
+    get P() {
+      const c = this.config, P = KD.stromProfil(this);
+      return { ...P, pris: c.pris || P.pris_total, spotpris: c.spotpris || P.pris_spot, fast: c.norgespris || P.pris_fast, spart: c.spart_i_dag || P.spart, prisNa: P.pris };
+    }
+    _prices(which) { const P = this.P; return this._series(P.pris, which) || this._series(P.spotpris, which); }
+    _kr(id) { const v = this.n(id); if (v == null) return null; return KD.isOre(this.unit(id), (this.st(id) || {}).attributes) ? v / 100 : v; }
 
     /** Forbruk per time i dag (kWh) fra langtidsstatistikken, med inneværende time regnet fra dagens total */
     _use(nowH) {
@@ -184,7 +190,7 @@
       const raw = ids.length ? this.cached(key, 60e3, () => this.ws({ type: 'logbook/get_events', start_time: start.toISOString(), end_time: end.toISOString(), entity_ids: ids }), []) : [];
       const ev = [], lastOn = {};
       const list = (Array.isArray(raw) ? raw : []).slice().sort((x, y) => (x.when > y.when ? 1 : -1));
-      const NORGES = this._kr(c.norgespris);
+      const NORGES = this._kr(this.P.fast);
       for (const e0 of list) {
         // Termostater: alt annet enn «off» (heat/auto …) regnes som på
         const e = /^climate\./.test(e0.entity_id) && e0.state && e0.state !== 'off' && !KD.BAD.has(e0.state) ? { ...e0, state: 'on' } : e0;
@@ -222,7 +228,7 @@
         for (let h = nowH; h >= 0; h--) {
           if (spot[h] != null && spot[h] > lim && (h === 0 || spot[h - 1] == null || spot[h - 1] <= lim)) {
             const d = this.now(); d.setHours(h, 0, 0, 0);
-            const sid = c.spotpris; const reg = String(this.at(sid, 'region', '') || (String(sid).match(/_(no\d|se\d|dk\d|fi)_/i) || [])[1] || '').toUpperCase();
+            const sid = this.P.spotpris; const reg = String(this.at(sid, 'region', '') || (String(sid).match(/_(no\d|se\d|dk\d|fi)_/i) || [])[1] || '').toUpperCase();
             ev.push({ t: d, text: `Spotpris over ${nfk(lim)} kr`, who: `Nord Pool${reg ? ' · ' + reg : ''}`, kind: 'alert' });
             break;
           }
@@ -258,14 +264,14 @@
       const USE = U && U.use ? U.use : Array(24).fill(null);
       const usedSum = U ? U.total : null;
       const maxU = Math.max(0.01, ...USE.filter((v) => v != null));
-      const NORGES = this._kr(c.norgespris);
+      const NORGES = this._kr(this.P.fast);
       const watt = this.n(c.effekt);
-      const pNow = (today && today[NOW_H] != null) ? today[NOW_H] : this._kr(c.pris);
+      const pNow = (today && today[NOW_H] != null) ? today[NOW_H] : this._kr(this.P.prisNa) ?? this._kr(this.P.pris);
       const idx = prices.map((p, h) => [p, h]).filter(([p, h]) => p != null && (!isToday || h > NOW_H));
       const cheapest = idx.length ? idx.reduce((m, x) => (x[0] < m[0] ? x : m)) : [prices[0], 0];
       const upcoming = [...(today || []).map((p, h) => [p, h, 0]).filter(([p, h]) => p != null && h > NOW_H), ...(tmr || []).map((p, h) => [p, h, 1]).filter(([p]) => p != null)];
       const nextCheap = upcoming.length ? upcoming.reduce((m, x) => (x[0] < m[0] ? x : m)) : null;
-      let saved = this.n(c.spart_i_dag);
+      let saved = this.P.spart ? this.n(this.P.spart) : null;
       if (saved == null && today && NORGES != null && U && U.use) saved = U.use.reduce((t, k, h) => t + (k != null && today[h] != null ? (today[h] - NORGES) * k : 0), 0);
       const sel = s.sel;
       const tier = watt != null ? watt / 1000 : null;
@@ -283,12 +289,14 @@
         if (isUse) { coreValue = USE[sel] != null ? nf(USE[sel], 1) : '–'; coreUnit = 'kWh'; } else { coreValue = prices[sel] != null ? nf(prices[sel]) : '–'; coreUnit = 'kr'; }
         coreSub = `Kl. ${hh(sel)}–${hh((sel + 1) % 24)}${isToday ? '' : ' i morgen'}`;
       } else if (isUse) { coreValue = usedSum != null ? nf(usedSum, 1) : '–'; coreUnit = 'kWh'; coreSub = 'Brukt i dag'; coreIconName = 'bolt'; coreCol = C.amber; }
-      else { coreValue = watt != null ? intl(watt) : '–'; coreUnit = 'W'; coreSub = isToday ? `Nå · ${nf(NORGES)} kr/kWh` : 'Bruker nå'; coreIconName = 'bolt'; coreCol = C.amber; }
+      else { coreValue = watt != null ? intl(watt) : '–'; coreUnit = 'W'; coreSub = isToday ? `Nå · ${nf(NORGES ?? pNow)} kr/kWh` : 'Bruker nå'; coreIconName = 'bolt'; coreCol = C.amber; }
 
       const noTmr = s.view === 'morgen' && !tmr;
       const maxP = prices.filter((p) => p != null);
       const headline = isUse ? `${nf(usedSum, 1)} kWh så langt i dag` : noTmr ? 'Ingen priser for i morgen ennå' : isToday ? (pNow == null ? 'Ingen strømpris' : pNow > c.dyr ? 'Strømmen er dyr nå' : pNow > c.middels ? 'Strømmen er middels dyr' : 'Strømmen er billig nå') : `Billigst kl. ${hh(cheapest[1])} i morgen`;
-      const subline = isUse ? `${NORGES != null && usedSum != null ? nf(usedSum * NORGES) : '–'} kr med Norgespris` : noTmr ? 'Nord Pool publiserer morgendagen rundt kl. 13' : isToday ? (idx.length ? `Billigst kl. ${hh(cheapest[1])} · ${nf(cheapest[0])} kr/kWh` : '–') : `${nf(cheapest[0])} kr · dyrest kl. ${hh(prices.indexOf(Math.max(...maxP)))}`;
+      const FAST = this.P.fast_navn || 'Norgespris';
+      const costToday = U && U.use && today ? U.use.reduce((t, k, h) => t + (k != null && today[h] != null ? k * today[h] : 0), 0) : null;
+      const subline = isUse ? (NORGES != null ? `${usedSum != null ? nf(usedSum * NORGES) : '–'} kr med ${FAST}` : `${costToday != null ? nf(costToday) : '–'} kr så langt i dag`) : noTmr ? 'Nord Pool publiserer morgendagen rundt kl. 13' : isToday ? (idx.length ? `Billigst kl. ${hh(cheapest[1])} · ${nf(cheapest[0])} kr/kWh` : '–') : `${nf(cheapest[0])} kr · dyrest kl. ${hh(prices.indexOf(Math.max(...maxP)))}`;
 
       const ring = prices.map((p, h) => {
         const deg = h * 15 + 7.5;
@@ -313,8 +321,8 @@
       }).join('');
 
       const stats = [
-        ['Norgespris', NORGES != null ? `${nf(NORGES)} kr` : '–', '#f2f1ee'],
-        ['Spart i dag', saved != null ? `${nf(saved, 0)} kr` : '–', C.green],
+        ...(NORGES != null || this.P.fast ? [[FAST, NORGES != null ? `${nf(NORGES)} kr` : '–', '#f2f1ee'], ['Spart i dag', saved != null ? `${nf(saved, 0)} kr` : '–', C.green]]
+          : [['Pris nå', pNow != null ? `${nf(pNow)} kr` : '–', '#f2f1ee'], ['Kostet i dag', costToday != null ? `${nf(costToday, costToday < 10 ? 1 : 0)} kr` : '–', C.green]]),
         ['Effekt', tier != null ? `${nf(tier, 1)} kW` : '–', tier != null && tier > tierLim ? C.amber : '#f2f1ee'],
       ].map(([label, v, col]) => `<div style="display:flex;flex-direction:column;gap:4px;padding:12px 14px;border-radius:18px;background:#1c1c1f">
         <div style="font-size:11px;color:#8e8d89;white-space:nowrap">${E(label)}</div>
@@ -346,7 +354,7 @@
       </div>`;
       }).join('');
 
-      const spot = this._series(c.spotpris, 'today');
+      const spot = this._series(this.P.spotpris, 'today');
       const log = this._log(devices, spot, NOW_H, today);
       const logHtml = log.map((e, i, arr) => {
         const col = e.kind === 'alert' ? C.red : e.kind === 'on' ? C.amber : e.kind === 'off' ? C.blue : C.green;
