@@ -1,4 +1,4 @@
-/* KI Hjem Design – pikselkopi av Claude Design «Home Assistant sikkerhetspanel». Bygget 2026-09-25T22:35Z. */
+/* KI Hjem Design – pikselkopi av Claude Design «Home Assistant sikkerhetspanel». Bygget 2026-09-25T22:54Z. */
 
 /* ===== 00-kd-base.js ===== */
 try {
@@ -470,6 +470,39 @@ input,select,textarea{font:inherit;color:inherit}
   };
   /* ----- Brukervalg per rom (lagres som HA-brukerdata, følger brukeren på alle enheter) -----
    * { <rom>: { skjul: [id], vis: [id], temp: id, fukt: id } } */
+  /* ----- Strømprofiler (Norge / Sverige) ----- */
+  // pris: pris nå (kr/kWh eller øre) · pris_total: totalpris med raw_today/raw_tomorrow · pris_spot: Nord Pool
+  // pris_fast: fastpris med today/tomorrow (Norgespris) · spart: spart i dag (kr)
+  KD.STROM_PROFILER = {
+    no: { navn: 'Norge', land: 'NO', ore: 'øre', mva: 'mva',
+      pris: 'sensor.norgespris_total_strompris_norgespris', pris_total: 'sensor.totalpris_inkludert_grid_el_company_og_stromstotte',
+      pris_spot: 'sensor.nordpool_kwh_no1_nok_3_10_025', pris_fast: 'sensor.norgespris_pris_na', fast_navn: 'Norgespris', fast_tekst: 'Norgespris 50 øre + nettleie', spart: 'sensor.norgespris_besparelse_dag' },
+    se: { navn: 'Sverige', land: 'SE', ore: 'öre', mva: 'moms',
+      pris: 'sensor.stromstad_totalpris_kwh_sek', pris_total: 'sensor.stromstad_totalpris_kwh_ore',
+      pris_spot: 'sensor.nordpool_kwh_se3_sek_3_10_0', pris_fast: null, fast_navn: null, fast_tekst: null, spart: null },
+  };
+  /** Aktiv strømprofil: config.strom_profil (no | se | auto) + config.strom_profiler (egne/overstyrte profiler) */
+  KD.stromProfil = (card) => {
+    const c = card.config || {}, h = card.hass || {}, P = { ...KD.STROM_PROFILER };
+    for (const [k, v] of Object.entries(c.strom_profiler || {})) P[k] = { ...(P[k] || {}), ...v };
+    let key = String(c.strom_profil || 'auto').toLowerCase();
+    if (!P[key]) {
+      const land = String((h.config && h.config.country) || '').toLowerCase();
+      const has = k => P[k] && [P[k].pris_total, P[k].pris_spot, P[k].pris].some(id => id && h.states && h.states[id]);
+      const order = [land, ...Object.keys(P)].filter((k, i, a) => P[k] && a.indexOf(k) === i);
+      key = order.find(has) || (P[land] ? land : 'no');
+    }
+    const out = { key, ...P[key] };
+    // Nord Pool-sensorens navn: nordpool_kwh_<område>_<valuta>_<presisjon>_<lav>_<mva>
+    const m = String(out.pris_spot || '').match(/nordpool_kwh_([a-z]{2}\d?)_([a-z]{3})(?:_\d+_\d+_(\d+))?/i);
+    const A = (h.states && h.states[out.pris_spot] || {}).attributes || {};
+    out.region = String(A.region || (m && m[1]) || '').toUpperCase();
+    out.spot_mva = m && m[3] != null ? /[1-9]/.test(m[3]) : null;
+    return out;
+  };
+  /** Er verdien i øre/öre/cent? (enhet eller Nord Pool sin price_in_cents) */
+  KD.isOre = (unit, attrs) => (attrs && attrs.price_in_cents === true) || /øre|öre|\bore\b|cent/i.test(String(unit || ''));
+
   KD.UD_KEY = 'kd_rom_skjul';
   KD.userData = (card) => KD._udOverride || card.cached('kd-ud-' + KD.UD_KEY, 5 * 60e3,
     () => card.ws({ type: 'frontend/get_user_data', key: KD.UD_KEY }).then(r => (r && r.value) || {}).catch(() => ({})), {});
@@ -594,17 +627,14 @@ try {
     return out;
   };
   const dayKey = (d) => d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
-  const isOre = (u) => /øre|ore/i.test(u || '');
+  const isOre = (u, A) => KD.isOre(u, A);
 
   class KDHjem extends KD.KDCard {
     static defaults = {
       ark: 'intern',
       vaer: 'weather.forecast_home',
       ute_temp: 'sensor.vaervarsel_temperature',
-      pris: 'sensor.norgespris_total_strompris_norgespris',
-      pris_total: 'sensor.totalpris_inkludert_grid_el_company_og_stromstotte',
-      pris_spot: 'sensor.nordpool_kwh_no1_nok_3_10_025',
-      pris_norges: 'sensor.norgespris_pris_na',
+      strom_profil: 'auto',   // no | se | auto (landet i HA / sensorene som finnes). pris, pris_total, pris_spot, pris_norges overstyrer profilen
       effekt: 'sensor.strommaler_effekt',
       lys_totalt: 'sensor.hele_huset_lys',
       kalender_sensor: 'sensor.alle_kalendere',
@@ -621,8 +651,9 @@ try {
       hjem: { venstre: ['stue', 'inngang', 'ute'], hoyre: ['pult', 'kjokken'] },
       etasjer: { '1': ['stue', 'kjokken', 'inngang', 'do', 'vaskegang'], '2': ['pult', 'soverom', 'bad', 'cybele_soverom', 'rune_soverom', 'rune_kontor'] },
       sover_nar: 'on',
-      kant: 16,
-      dokk_navn: false,   // vis navn under ikonene i dokken (kan også slås av/på i «Tilpass dokken»)
+      kant: 10,
+      dokk_stil: 'bred',  // bred (fyller bredden, som Apple Music) | kompakt (designets glassdokk)
+      dokk_navn: true,    // vis navn under ikonene i dokken (kan også slås av/på i «Tilpass dokken»)
       dokk_krymp: true,   // krymp dokken når man scroller nedover
       dokk: [
         { ikon: 'cleaning_services', navn: 'Støvsuger', ark: 'vac', prikk: ['binary_sensor.sir_sweeps_a_lot_water_shortage'], prikk_av: ['binary_sensor.sir_sweeps_a_lot_water_box_attached'] },
@@ -896,7 +927,7 @@ try {
     }
     dockOpts() {
       const u = this.dockUd(), c = this.config;
-      return { navn: u.navn != null ? !!u.navn : !!c.dokk_navn, krymp: u.krymp != null ? !!u.krymp : c.dokk_krymp !== false };
+      return { bred: u.bred != null ? !!u.bred : c.dokk_stil !== 'kompakt', navn: u.navn != null ? !!u.navn : c.dokk_navn !== false, krymp: u.krymp != null ? !!u.krymp : c.dokk_krymp !== false };
     }
     dockLayout() {
       const pool = this.dockPool(), u = this.dockUd();
@@ -956,7 +987,7 @@ try {
           d.moved = true;
           const g = geo(); if (!g) return;
           try { g.nav.setPointerCapture(ev.pointerId); } catch (e) { }
-          if (g.ind) { g.ind.style.transition = 'left .14s cubic-bezier(.3,1.3,.6,1), transform .3s cubic-bezier(.34,1.8,.64,1), top .3s, height .3s'; g.ind.style.transform = 'scale(1.18)'; }
+          if (g.ind) { g.ind.style.transition = 'left .14s cubic-bezier(.3,1.3,.6,1), transform .3s cubic-bezier(.34,1.8,.64,1), top .3s, height .3s'; g.ind.style.transform = g.ind.offsetWidth > 64 ? 'scale(1.06, 1.1)' : 'scale(1.18)'; }
           g.nav.style.transform = g.nav.style.transform.replace(/scale\([^)]*\)/, 'scale(1.03)');
         }
         const g = geo(); if (!g || !g.ind) return;
@@ -1010,19 +1041,24 @@ try {
       const cond = COND[w && w.state] || [w ? w.state : '–', 'cloud'];
       return { t, head: isNaN(wt) ? t : wt, cond: cond[0], icon: cond[1] };
     }
-    priceKr(id) { const v = this.n(id); if (v == null) return null; return isOre(this.unit(id)) ? v / 100 : v; }
+    priceKr(id) { const v = this.n(id); if (v == null) return null; return isOre(this.unit(id), this.st(id).attributes) ? v / 100 : v; }
+    /** strømprofil + eventuelle overstyringer i config */
+    sp() {
+      const c = this.config, P = KD.stromProfil(this);
+      return { ...P, pris: c.pris || P.pris, pris_total: c.pris_total || P.pris_total, pris_spot: c.pris_spot || P.pris_spot, pris_fast: c.pris_norges || P.pris_fast };
+    }
     priceSeries() {
-      const c = this.config, now = new Date(), tmr = new Date(now.getTime() + 86400e3);
+      const c = this.sp(), now = new Date(), tmr = new Date(now.getTime() + 86400e3);
       const get = (id, attrs, forceMul) => {
         const s = this.st(id); if (!s) return null;
-        const mul = forceMul != null ? forceMul : isOre(s.attributes.unit_of_measurement) ? 1 : 100; // alt i øre
+        const mul = forceMul != null ? forceMul : isOre(s.attributes.unit_of_measurement, s.attributes) ? 1 : 100; // alt i øre
         const A = s.attributes;
         const all = hourly([...(A[attrs[0]] || []), ...(A[attrs[1]] || [])], mul);
         return [...(all[dayKey(now)] || Array(24).fill(null)), ...(all[dayKey(tmr)] || Array(24).fill(null))];
       };
       const tot = get(c.pris_total, ['raw_today', 'raw_tomorrow']);
       const spot = get(c.pris_spot, ['raw_today', 'raw_tomorrow']);
-      const norges = get(c.pris_norges, ['today', 'tomorrow']);
+      const norges = c.pris_fast ? get(c.pris_fast, ['today', 'tomorrow']) : null;
       return { tot, spot, norges };
     }
     events() {
@@ -1062,7 +1098,8 @@ try {
       const people = PERS.filter(p => p.id !== meId).map(p => { const ps = this.personState(p); return { p, ps, b: badge(ps), avatar: { width: 46, height: 46, borderRadius: 23, display: 'grid', placeItems: 'center', fontSize: 16, fontWeight: 600, background: p.farge, opacity: ps.home ? 1 : 0.6, transition: 'opacity .3s' } }; });
 
       const W = this.weather();
-      const pNow = this.priceKr(c.pris);
+      const SP = this.sp();
+      const pNow = this.priceKr(SP.pris) ?? this.priceKr(SP.pris_total);
       const lvl = p => p > 1.5 ? C.red : p > 1.1 ? C.yellow : C.green;
       const pl = lvl(pNow ?? 0);
       const pricePill = { display: 'inline-flex', alignItems: 'center', gap: 6, height: 32, padding: '0 11px', borderRadius: 16, background: a(pl, 0.16), boxShadow: `inset 0 0 0 1px ${a(pl, 0.4)}`, fontSize: 22, fontWeight: 500, verticalAlign: 'middle', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' };
@@ -1140,7 +1177,8 @@ try {
       /* ----- strømgraf ----- */
       const NOW_H = new Date().getHours();
       const ser = this.priceSeries();
-      const mode = s.pcMode || 'total';
+      const MODES = [['total', 'Total', ser.tot], ['spot', 'Spot', ser.spot], ['norges', SP.fast_navn || 'Fastpris', ser.norges]].filter(([k, , v], i) => i === 0 || v);
+      const mode = MODES.some(m => m[0] === s.pcMode) ? s.pcMode : 'total';
       const tot48 = ser.tot || Array(48).fill(null);
       const spot48 = ser.spot || Array(48).fill(null);
       const norges48 = ser.norges || Array(48).fill(null);
@@ -1158,9 +1196,9 @@ try {
         yl: Array.from({ length: 5 }, (_, i) => Math.round(top - i * top / 4)), grid: Array.from({ length: 5 }, (_, i) => i * 37.5),
         line: ln, area: areaPath(all48), thrA: KD.clamp((Y(thrV) - 8) / 150, 0, 1), thrB: KD.clamp((Y(thrV) + 8) / 150, 0, 1),
         cmp: mode === 'norges' ? stepPath(tot48) : 'M0,0',
-        caption: mode === 'spot' ? 'Nord Pool NO1 · øre/kWh eks. mva' : mode === 'norges' ? 'Norgespris 50 øre + nettleie · øre/kWh' : 'Totalpris inkl. mva, påslag og nettleie · øre',
+        caption: mode === 'spot' ? `Nord Pool${SP.region ? ' ' + SP.region : ''} · ${SP.ore}/kWh${SP.spot_mva == null ? '' : SP.spot_mva ? ' inkl. ' + SP.mva : ' eks. ' + SP.mva}` : mode === 'norges' ? `${SP.fast_tekst || SP.fast_navn || 'Fastpris'} · ${SP.ore}/kWh` : `Totalpris inkl. ${SP.mva}, påslag og nettleie · ${SP.ore}`,
         legend: { display: mode === 'norges' ? 'flex' : 'none', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' },
-        modes: [['total', 'Total'], ['spot', 'Spot'], ['norges', 'Norgespris']].map(([k, label]) => ({ k, label, style: { height: 28, padding: '0 10px', borderRadius: 11, fontSize: 11, fontWeight: 500, whiteSpace: 'nowrap', background: mode === k ? PINK : 'transparent', color: mode === k ? '#2a1720' : '#a9a7a2', transition: 'background .2s' } })),
+        modes: MODES.map(([k, label]) => ({ k, label, style: { height: 28, padding: '0 10px', borderRadius: 11, fontSize: 11, fontWeight: 500, whiteSpace: 'nowrap', background: mode === k ? PINK : 'transparent', color: mode === k ? '#2a1720' : '#a9a7a2', transition: 'background .2s' } })),
         pastW: NOW_H * 10,
         selBand: { position: 'absolute', top: 0, bottom: 0, left: `${selI / 48 * 100}%`, width: `${100 / 48}%`, background: 'rgba(255,255,255,0.12)', borderRadius: 2, pointerEvents: 'none', transition: 'left .15s' },
         halo: { position: 'absolute', left: `${(selI + 0.5) / 48 * 100}%`, top: `${(selV != null ? Y(selV) : 150) / 150 * 100}%`, width: 34, height: 34, margin: -17, borderRadius: 17, background: selV > thrV ? 'oklch(0.74 0.17 55 / 0.3)' : 'oklch(0.78 0.13 175 / 0.3)', pointerEvents: 'none', transition: 'left .15s, top .15s', display: selV == null ? 'none' : null },
@@ -1172,7 +1210,7 @@ try {
         const i = selI;
         const save = tot48.slice(NOW_H, 48).reduce((t, v, k) => t + ((v != null && norges48[NOW_H + k] != null) ? v - norges48[NOW_H + k] : 0), 0);
         const tmrSpot = valid(spot48.slice(24));
-        priceHead = { label: s.pcHour != null ? slot(i) : mode === 'spot' ? 'Spot nå' : 'Norgespris nå', v: all48[i] != null ? nf(all48[i] / 100) : '–', meta: mode === 'norges' ? `${save >= 0 ? 'Sparer' : 'Taper'} ca. ${nf(Math.abs(save) / 100)} kr/kWh-time mot spot` : tmrSpot.length ? `Snitt i morgen ${nf(tmrSpot.reduce((x, y) => x + y, 0) / tmrSpot.length / 100)} kr` : '' };
+        priceHead = { label: s.pcHour != null ? slot(i) : mode === 'spot' ? 'Spot nå' : `${SP.fast_navn || 'Fastpris'} nå`, v: all48[i] != null ? nf(all48[i] / 100) : '–', meta: mode === 'norges' ? `${save >= 0 ? 'Sparer' : 'Taper'} ca. ${nf(Math.abs(save) / 100)} kr/kWh-time mot spot` : tmrSpot.length ? `Snitt i morgen ${nf(tmrSpot.reduce((x, y) => x + y, 0) / tmrSpot.length / 100)} kr` : '' };
       } else if (s.pcHour != null) {
         priceHead = { label: slot(s.pcHour), v: tot48[s.pcHour] != null ? nf(tot48[s.pcHour] / 100) : '–', meta: s.pcHour < NOW_H ? 'Tidligere i dag' : '' };
       } else {
@@ -1190,32 +1228,38 @@ try {
       const tab = s.tab ?? 0, compact = !!s.compact, moving = !!s.moving;
       const arr = x => Array.isArray(x) ? x : x ? [x] : [];
       const dotOf = it => arr(it.prikk).some(id => ['on', 'open', 'unlocked', 'problem', 'playing'].includes(this.v(id))) || arr(it.prikk_av).some(id => this.v(id) === 'off');
-      const LAY = this.dockLayout(), OPT = this.dockOpts(), NAVN = OPT.navn;
+      const LAY = this.dockLayout(), OPT = this.dockOpts(), NAVN = OPT.navn, BRED = OPT.bred, ACC = 'oklch(0.8 0.13 350)';
       const ITEMS = LAY.dock.map(it => [it.ikon || 'circle', it.navn || '', dotOf(it)]);
       ITEMS.push(['more_horiz', 'Mer', LAY.menu.some(dotOf)]);
       const GAP = 2, PAD = 6, AVAIL = Math.min(window.innerWidth || 460, 560) - 16 - 2 * PAD, FIT = Math.floor((AVAIL - GAP * (ITEMS.length - 1)) / ITEMS.length);
-      const SZ = Math.max(38, Math.min(NAVN ? 58 : 44, FIT)), SH = NAVN ? 52 : 44, dist = Math.abs(tab - (s.prevTab ?? tab)), lx = s.lx;
+      const SZ = Math.max(38, Math.min(NAVN ? 58 : 44, FIT)), SH = BRED ? (NAVN ? 58 : 50) : NAVN ? 52 : 44, N = ITEMS.length, MB = 18 + SH + 2 * PAD + 10;
+      const CELL = `((100% - ${2 * PAD}px - ${(N - 1) * GAP}px) / ${N})`, dist = Math.abs(tab - (s.prevTab ?? tab)), lx = s.lx;
       const navStyle = {
-        position: 'fixed', left: '50%', bottom: 18, zIndex: 24, display: 'flex', gap: GAP, touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none', maxWidth: 'calc(100vw - 16px)', padding: PAD, borderRadius: NAVN ? 32 : 30, overflow: 'hidden', isolation: 'isolate',
-        background: 'rgba(40,40,44,0.38)', backdropFilter: 'blur(22px) saturate(190%) brightness(1.1)', WebkitBackdropFilter: 'blur(22px) saturate(190%) brightness(1.1)',
-        boxShadow: '0 18px 40px rgba(0,0,0,0.45), 0 2px 6px rgba(0,0,0,0.25)',
+        position: 'fixed', left: '50%', bottom: 18, zIndex: 24, display: 'flex', gap: GAP, touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none', maxWidth: 'calc(100vw - 16px)', padding: PAD, borderRadius: BRED ? (SH + 2 * PAD) / 2 : NAVN ? 32 : 30, overflow: 'hidden', isolation: 'isolate',
+        ...(BRED ? { width: 'calc(min(100vw, var(--kd-bredde,560px)) - 2 * var(--kd-kant,10px))', boxSizing: 'border-box' } : {}),
+        background: BRED ? 'rgba(36,36,39,0.72)' : 'rgba(40,40,44,0.38)', backdropFilter: 'blur(22px) saturate(190%) brightness(1.1)', WebkitBackdropFilter: 'blur(22px) saturate(190%) brightness(1.1)',
+        boxShadow: BRED ? 'inset 0 0 0 0.5px rgba(255,255,255,0.14), inset 0 1px 0 rgba(255,255,255,0.1), 0 18px 40px rgba(0,0,0,0.5)' : '0 18px 40px rgba(0,0,0,0.45), 0 2px 6px rgba(0,0,0,0.25)',
         transform: `translateX(-50%) scale(${compact ? 0.8 : 1}) translateY(${compact ? 8 : 0}px)`, transformOrigin: 'bottom center',
         transition: 'transform .55s cubic-bezier(.34,1.56,.64,1)',
       };
       const navSheen = { position: 'absolute', inset: 0, borderRadius: 'inherit', pointerEvents: 'none', opacity: lx == null ? 0 : 1, transition: 'opacity .3s', background: `radial-gradient(120px 60px at ${lx ?? 50}% 0%, rgba(255,255,255,0.28), transparent 70%)` };
       const indicator = {
-        position: 'absolute', top: PAD, left: PAD + Math.min(tab, ITEMS.length - 1) * (SZ + GAP), width: SZ, height: SH, borderRadius: NAVN ? 26 : 22, pointerEvents: 'none',
-        background: 'linear-gradient(180deg, rgba(255,255,255,0.34), rgba(255,255,255,0.14))',
-        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.6), inset 0 -1px 1px rgba(255,255,255,0.15), 0 4px 14px rgba(0,0,0,0.25)',
+        position: 'absolute', top: PAD, pointerEvents: 'none',
+        ...(BRED ? { left: `calc(${PAD}px + ${Math.min(tab, N - 1)} * (${CELL} + ${GAP}px))`, width: `calc(${CELL})`, height: SH, borderRadius: SH / 2,
+          background: 'rgba(0,0,0,0.42)', boxShadow: 'inset 0 0 0 0.5px rgba(255,255,255,0.06), inset 0 1px 2px rgba(0,0,0,0.3)' }
+          : { left: PAD + Math.min(tab, N - 1) * (SZ + GAP), width: SZ, height: SH, borderRadius: NAVN ? 26 : 22,
+          background: 'linear-gradient(180deg, rgba(255,255,255,0.34), rgba(255,255,255,0.14))',
+          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.6), inset 0 -1px 1px rgba(255,255,255,0.15), 0 4px 14px rgba(0,0,0,0.25)' }),
         backdropFilter: 'blur(6px) saturate(200%)', WebkitBackdropFilter: 'blur(6px) saturate(200%)',
         transform: moving ? `scaleX(${1 + Math.min(dist, 4) * 0.12}) scaleY(${1 - Math.min(dist, 4) * 0.04})` : 'scale(1)',
         transition: 'left .5s cubic-bezier(.34,1.4,.64,1), transform .45s cubic-bezier(.34,1.8,.64,1)',
       };
       const dock = ITEMS.map(([icon, title, dot], i) => { const act = i === tab; return { i, icon, title,
-        style: { position: 'relative', zIndex: 1, flex: 'none', width: SZ, height: SH, borderRadius: 22, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, color: '#f2f1ee', transition: 'transform .35s cubic-bezier(.34,1.8,.64,1)', WebkitTapHighlightColor: 'transparent' },
-        label: { maxWidth: SZ - 6, fontSize: 10, fontWeight: 500, lineHeight: '12px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', opacity: act ? 1 : 0.62, transition: 'opacity .2s' },
-        iconStyle: { fontSize: 22, opacity: act ? 1 : 0.72, transform: act ? 'scale(1.08)' : 'scale(1)', fontVariationSettings: `'FILL' ${act ? 1 : 0}`, transition: 'transform .4s cubic-bezier(.34,1.8,.64,1), opacity .2s', textShadow: '0 1px 2px rgba(0,0,0,0.3)' },
-        dot: { position: 'absolute', right: NAVN ? 13 : 9, top: NAVN ? 5 : 9, width: 7, height: 7, borderRadius: 4, background: dot ? C.red : 'transparent', boxShadow: dot ? '0 0 0 1.5px rgba(30,30,34,0.6)' : 'none' } }; });
+        style: { position: 'relative', zIndex: 1, ...(BRED ? { flex: '1 1 0', minWidth: 0 } : { flex: 'none', width: SZ }), height: SH, borderRadius: 22, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, color: '#f2f1ee', transition: 'transform .35s cubic-bezier(.34,1.8,.64,1)', WebkitTapHighlightColor: 'transparent' },
+        label: BRED ? { maxWidth: 'calc(100% - 6px)', fontSize: 11, fontWeight: 600, lineHeight: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: act ? ACC : '#f2f1ee', transition: 'color .25s' }
+          : { maxWidth: SZ - 6, fontSize: 10, fontWeight: 500, lineHeight: '12px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', opacity: act ? 1 : 0.62, transition: 'opacity .2s' },
+        iconStyle: BRED ? { fontSize: 24, color: act ? ACC : '#f2f1ee', transform: act ? 'scale(1.06)' : 'scale(1)', fontVariationSettings: "'FILL' 1", transition: 'transform .4s cubic-bezier(.34,1.8,.64,1), color .25s' } : { fontSize: 22, opacity: act ? 1 : 0.72, transform: act ? 'scale(1.08)' : 'scale(1)', fontVariationSettings: `'FILL' ${act ? 1 : 0}`, transition: 'transform .4s cubic-bezier(.34,1.8,.64,1), opacity .2s', textShadow: '0 1px 2px rgba(0,0,0,0.3)' },
+        dot: { position: 'absolute', right: BRED ? 'calc(50% - 16px)' : NAVN ? 13 : 9, top: NAVN ? 5 : 9, width: 7, height: 7, borderRadius: 4, background: dot ? C.red : 'transparent', boxShadow: dot ? '0 0 0 1.5px rgba(30,30,34,0.6)' : 'none' } }; });
       const menuItems = LAY.menu.map((m, i) => [m.ikon || 'circle', m.navn || '', i, m.farge || '#c9c7c2', dotOf(m)]);
       const dockEditHTML = () => {
         const sw = on => `<span style="${S({ width: 44, height: 26, borderRadius: 13, flex: 'none', position: 'relative', background: on ? 'oklch(0.78 0.13 350)' : '#3a3a3d', transition: 'background .2s' })}"><span style="${S({ position: 'absolute', top: 3, left: on ? 21 : 3, width: 20, height: 20, borderRadius: 10, background: '#f4f3ef', transition: 'left .25s cubic-bezier(.34,1.56,.64,1)' })}"></span></span>`;
@@ -1227,10 +1271,11 @@ try {
             <button class="kd-press" data-on-click="dockMove" data-arg="${e((inDock ? 'ut|' : 'inn|') + it._k)}" title="${inDock ? 'Flytt til «Mer»' : 'Legg i dokken'}" style="${S({ width: 36, height: 36, borderRadius: 18, display: 'grid', placeItems: 'center', color: inDock ? C.red : C.green, opacity: !inDock && LAY.dock.length >= 7 ? 0.3 : 1 })}"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">${inDock ? 'remove_circle' : 'add_circle'}</span></button>
           </div>`;
         return `<div data-key="de-bd" data-on-click="dockEditClose" style="position:fixed;inset:0;z-index:27;background:rgba(0,0,0,0.35)"></div>
-    <div data-key="de-panel" style="position:fixed;left:50%;transform:translateX(-50%);bottom:${NAVN ? 92 : 84}px;z-index:28;width:min(400px, calc(100vw - 24px));max-height:calc(100vh - 140px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;box-sizing:border-box;padding:8px;border-radius:26px;background:rgba(40,40,44,0.72);backdrop-filter:blur(26px) saturate(190%);-webkit-backdrop-filter:blur(26px) saturate(190%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.3),inset 0 0 0 0.5px rgba(255,255,255,0.18),0 18px 40px rgba(0,0,0,0.5);display:flex;flex-direction:column;gap:2px">
+    <div data-key="de-panel" style="position:fixed;left:50%;transform:translateX(-50%);bottom:${MB}px;z-index:28;width:min(400px, calc(100vw - 24px));max-height:calc(100vh - 140px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;box-sizing:border-box;padding:8px;border-radius:26px;background:rgba(40,40,44,0.72);backdrop-filter:blur(26px) saturate(190%);-webkit-backdrop-filter:blur(26px) saturate(190%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.3),inset 0 0 0 0.5px rgba(255,255,255,0.18),0 18px 40px rgba(0,0,0,0.5);display:flex;flex-direction:column;gap:2px">
       <div style="display:flex;align-items:center;gap:8px;padding:6px 6px 6px 14px"><span style="flex:1;font-size:16px;font-weight:600">Tilpass dokken</span>
         <button class="kd-hov8" data-on-click="dockReset" style="height:34px;padding:0 12px;border-radius:17px;font-size:12px;color:#a9a7a2">Nullstill</button>
         <button data-on-click="dockEditClose" style="height:34px;padding:0 14px;border-radius:17px;font-size:13px;font-weight:600;background:linear-gradient(135deg, oklch(0.78 0.13 350), oklch(0.9 0.05 20));color:#2a1720">Ferdig</button></div>
+      ${opt('bred', 'Bred dokk', 'Fyller bredden, som Apple Music', OPT.bred)}
       ${opt('navn', 'Vis navn', 'Navn under ikonene i dokken', OPT.navn)}
       ${opt('krymp', 'Krymp ved scrolling', 'Dokken blir mindre når du scroller ned', OPT.krymp)}
       <div style="padding:12px 14px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">I dokken</div>
@@ -1306,7 +1351,7 @@ try {
     </div>`;
       };
 
-      return `<div style="position:relative;box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 120px;display:flex;flex-direction:column;gap:22px">
+      return `<div style="position:relative;box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) calc(${MB + 24}px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:22px">
 
   <header style="display:flex;flex-direction:column;gap:16px">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
@@ -1413,7 +1458,7 @@ try {
   </section>
 
   ${s.menu ? `<div data-key="menu-bd" data-on-click="closeMenu" style="position:fixed;inset:0;z-index:25"></div>
-    <div style="position:fixed;right:max(12px, calc(50% - 198px));bottom:${NAVN ? 92 : 84}px;z-index:26;min-width:180px;max-height:calc(100vh - 120px);overflow-y:auto;scrollbar-width:none;box-sizing:border-box;padding:6px;border-radius:22px;background:rgba(40,40,44,0.5);backdrop-filter:blur(22px) saturate(190%);-webkit-backdrop-filter:blur(22px) saturate(190%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.3),inset 0 0 0 0.5px rgba(255,255,255,0.18),0 18px 40px rgba(0,0,0,0.45);display:flex;flex-direction:column;gap:2px">
+    <div style="position:fixed;right:max(12px, calc(50% - 198px));bottom:${MB}px;z-index:26;min-width:180px;max-height:calc(100vh - 120px);overflow-y:auto;scrollbar-width:none;box-sizing:border-box;padding:6px;border-radius:22px;background:rgba(40,40,44,0.5);backdrop-filter:blur(22px) saturate(190%);-webkit-backdrop-filter:blur(22px) saturate(190%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.3),inset 0 0 0 0.5px rgba(255,255,255,0.18),0 18px 40px rgba(0,0,0,0.45);display:flex;flex-direction:column;gap:2px">
       ${menuItems.map(([icon, label, k, col, dot]) => `<button class="kd-hov" data-on-click="menuGo" data-arg="${k}" style="height:44px;padding:0 14px 0 10px;border-radius:16px;display:flex;align-items:center;gap:10px;font-size:14px;font-weight:500;white-space:nowrap"><span class="ms" style="font-size:20px;color:${e(col)}">${e(icon)}</span><span style="flex:1;text-align:left">${e(label)}</span>${dot ? `<span style="width:7px;height:7px;border-radius:4px;background:${C.red}"></span>` : ''}</button>`).join('')}
       ${menuItems.length ? '<div style="height:1px;margin:4px 10px;background:rgba(255,255,255,0.08)"></div>' : ''}
       <button class="kd-hov" data-on-click="dockEditOpen" style="height:44px;padding:0 14px 0 10px;border-radius:16px;display:flex;align-items:center;gap:10px;font-size:14px;font-weight:500;white-space:nowrap;color:#a9a7a2"><span class="ms" style="font-size:20px">edit</span>Tilpass dokken</button>
@@ -1550,10 +1595,11 @@ try {
     static defaults = {
       effekt: 'sensor.strommaler_effekt',                                   // W nå
       energi_i_dag: 'sensor.strommaler_powercalc_energy_daily',            // kWh i dag (timeforbruk fra statistikk)
-      pris: 'sensor.totalpris_inkludert_grid_el_company_og_stromstotte',  // totalpris per time (raw_today/raw_tomorrow)
-      spotpris: 'sensor.nordpool_kwh_no1_nok_3_10_025',                   // Nord Pool (reserve for ringen + spotvarsel)
-      norgespris: 'sensor.norgespris_pris_na',                             // kr/kWh
-      spart_i_dag: 'sensor.norgespris_besparelse_dag',                     // kr
+      strom_profil: 'auto',                                                // no | se | auto – sensorene under kommer fra profilen
+      pris: null,                                                          // totalpris per time (raw_today/raw_tomorrow)
+      spotpris: null,                                                      // Nord Pool (reserve for ringen + spotvarsel)
+      norgespris: null,                                                    // fastpris kr/kWh (Norgespris) – finnes ikke i Sverige
+      spart_i_dag: null,                                                   // kr
       bereder: 'sensor.ki_bereder',                                        // KI Energi (attr bryter)
       varmtvann: '',                                                       // tom = fra KI Energi, ellers switch.varmtvannsbereder
       effekt_grense_kw: null,                                              // tom = number.ki_mal_trinn_kw, ellers 5
@@ -1596,11 +1642,16 @@ try {
       if (!cnt.some(Boolean)) return null;
       const vals = out.map((v, h) => (cnt[h] ? v / cnt[h] : null));
       const known = vals.filter((v) => v != null).sort((x, y) => x - y);
-      const ore = unit.includes('øre') || unit.includes('ore') || (!unit.includes('kr') && !unit.includes('nok') && known[Math.floor(known.length / 2)] > 10);
+      const ore = KD.isOre(unit, at) || (!/kr|nok|sek|dkk|eur/.test(unit) && known[Math.floor(known.length / 2)] > 10);
       return vals.map((v) => (v == null ? null : ore ? v / 100 : v));
     }
-    _prices(which) { const c = this.config; return this._series(c.pris, which) || this._series(c.spotpris, which); }
-    _kr(id) { const v = this.n(id); if (v == null) return null; const u = String(this.unit(id)).toLowerCase(); return u.includes('øre') ? v / 100 : v; }
+    /** sensorene fra strømprofilen (Norge/Sverige), overstyrt av config */
+    get P() {
+      const c = this.config, P = KD.stromProfil(this);
+      return { ...P, pris: c.pris || P.pris_total, spotpris: c.spotpris || P.pris_spot, fast: c.norgespris || P.pris_fast, spart: c.spart_i_dag || P.spart, prisNa: P.pris };
+    }
+    _prices(which) { const P = this.P; return this._series(P.pris, which) || this._series(P.spotpris, which); }
+    _kr(id) { const v = this.n(id); if (v == null) return null; return KD.isOre(this.unit(id), (this.st(id) || {}).attributes) ? v / 100 : v; }
 
     /** Forbruk per time i dag (kWh) fra langtidsstatistikken, med inneværende time regnet fra dagens total */
     _use(nowH) {
@@ -1680,7 +1731,7 @@ try {
       const raw = ids.length ? this.cached(key, 60e3, () => this.ws({ type: 'logbook/get_events', start_time: start.toISOString(), end_time: end.toISOString(), entity_ids: ids }), []) : [];
       const ev = [], lastOn = {};
       const list = (Array.isArray(raw) ? raw : []).slice().sort((x, y) => (x.when > y.when ? 1 : -1));
-      const NORGES = this._kr(c.norgespris);
+      const NORGES = this._kr(this.P.fast);
       for (const e0 of list) {
         // Termostater: alt annet enn «off» (heat/auto …) regnes som på
         const e = /^climate\./.test(e0.entity_id) && e0.state && e0.state !== 'off' && !KD.BAD.has(e0.state) ? { ...e0, state: 'on' } : e0;
@@ -1718,7 +1769,7 @@ try {
         for (let h = nowH; h >= 0; h--) {
           if (spot[h] != null && spot[h] > lim && (h === 0 || spot[h - 1] == null || spot[h - 1] <= lim)) {
             const d = this.now(); d.setHours(h, 0, 0, 0);
-            const sid = c.spotpris; const reg = String(this.at(sid, 'region', '') || (String(sid).match(/_(no\d|se\d|dk\d|fi)_/i) || [])[1] || '').toUpperCase();
+            const sid = this.P.spotpris; const reg = String(this.at(sid, 'region', '') || (String(sid).match(/_(no\d|se\d|dk\d|fi)_/i) || [])[1] || '').toUpperCase();
             ev.push({ t: d, text: `Spotpris over ${nfk(lim)} kr`, who: `Nord Pool${reg ? ' · ' + reg : ''}`, kind: 'alert' });
             break;
           }
@@ -1754,14 +1805,14 @@ try {
       const USE = U && U.use ? U.use : Array(24).fill(null);
       const usedSum = U ? U.total : null;
       const maxU = Math.max(0.01, ...USE.filter((v) => v != null));
-      const NORGES = this._kr(c.norgespris);
+      const NORGES = this._kr(this.P.fast);
       const watt = this.n(c.effekt);
-      const pNow = (today && today[NOW_H] != null) ? today[NOW_H] : this._kr(c.pris);
+      const pNow = (today && today[NOW_H] != null) ? today[NOW_H] : this._kr(this.P.prisNa) ?? this._kr(this.P.pris);
       const idx = prices.map((p, h) => [p, h]).filter(([p, h]) => p != null && (!isToday || h > NOW_H));
       const cheapest = idx.length ? idx.reduce((m, x) => (x[0] < m[0] ? x : m)) : [prices[0], 0];
       const upcoming = [...(today || []).map((p, h) => [p, h, 0]).filter(([p, h]) => p != null && h > NOW_H), ...(tmr || []).map((p, h) => [p, h, 1]).filter(([p]) => p != null)];
       const nextCheap = upcoming.length ? upcoming.reduce((m, x) => (x[0] < m[0] ? x : m)) : null;
-      let saved = this.n(c.spart_i_dag);
+      let saved = this.P.spart ? this.n(this.P.spart) : null;
       if (saved == null && today && NORGES != null && U && U.use) saved = U.use.reduce((t, k, h) => t + (k != null && today[h] != null ? (today[h] - NORGES) * k : 0), 0);
       const sel = s.sel;
       const tier = watt != null ? watt / 1000 : null;
@@ -1779,12 +1830,14 @@ try {
         if (isUse) { coreValue = USE[sel] != null ? nf(USE[sel], 1) : '–'; coreUnit = 'kWh'; } else { coreValue = prices[sel] != null ? nf(prices[sel]) : '–'; coreUnit = 'kr'; }
         coreSub = `Kl. ${hh(sel)}–${hh((sel + 1) % 24)}${isToday ? '' : ' i morgen'}`;
       } else if (isUse) { coreValue = usedSum != null ? nf(usedSum, 1) : '–'; coreUnit = 'kWh'; coreSub = 'Brukt i dag'; coreIconName = 'bolt'; coreCol = C.amber; }
-      else { coreValue = watt != null ? intl(watt) : '–'; coreUnit = 'W'; coreSub = isToday ? `Nå · ${nf(NORGES)} kr/kWh` : 'Bruker nå'; coreIconName = 'bolt'; coreCol = C.amber; }
+      else { coreValue = watt != null ? intl(watt) : '–'; coreUnit = 'W'; coreSub = isToday ? `Nå · ${nf(NORGES ?? pNow)} kr/kWh` : 'Bruker nå'; coreIconName = 'bolt'; coreCol = C.amber; }
 
       const noTmr = s.view === 'morgen' && !tmr;
       const maxP = prices.filter((p) => p != null);
       const headline = isUse ? `${nf(usedSum, 1)} kWh så langt i dag` : noTmr ? 'Ingen priser for i morgen ennå' : isToday ? (pNow == null ? 'Ingen strømpris' : pNow > c.dyr ? 'Strømmen er dyr nå' : pNow > c.middels ? 'Strømmen er middels dyr' : 'Strømmen er billig nå') : `Billigst kl. ${hh(cheapest[1])} i morgen`;
-      const subline = isUse ? `${NORGES != null && usedSum != null ? nf(usedSum * NORGES) : '–'} kr med Norgespris` : noTmr ? 'Nord Pool publiserer morgendagen rundt kl. 13' : isToday ? (idx.length ? `Billigst kl. ${hh(cheapest[1])} · ${nf(cheapest[0])} kr/kWh` : '–') : `${nf(cheapest[0])} kr · dyrest kl. ${hh(prices.indexOf(Math.max(...maxP)))}`;
+      const FAST = this.P.fast_navn || 'Norgespris';
+      const costToday = U && U.use && today ? U.use.reduce((t, k, h) => t + (k != null && today[h] != null ? k * today[h] : 0), 0) : null;
+      const subline = isUse ? (NORGES != null ? `${usedSum != null ? nf(usedSum * NORGES) : '–'} kr med ${FAST}` : `${costToday != null ? nf(costToday) : '–'} kr så langt i dag`) : noTmr ? 'Nord Pool publiserer morgendagen rundt kl. 13' : isToday ? (idx.length ? `Billigst kl. ${hh(cheapest[1])} · ${nf(cheapest[0])} kr/kWh` : '–') : `${nf(cheapest[0])} kr · dyrest kl. ${hh(prices.indexOf(Math.max(...maxP)))}`;
 
       const ring = prices.map((p, h) => {
         const deg = h * 15 + 7.5;
@@ -1809,8 +1862,8 @@ try {
       }).join('');
 
       const stats = [
-        ['Norgespris', NORGES != null ? `${nf(NORGES)} kr` : '–', '#f2f1ee'],
-        ['Spart i dag', saved != null ? `${nf(saved, 0)} kr` : '–', C.green],
+        ...(NORGES != null || this.P.fast ? [[FAST, NORGES != null ? `${nf(NORGES)} kr` : '–', '#f2f1ee'], ['Spart i dag', saved != null ? `${nf(saved, 0)} kr` : '–', C.green]]
+          : [['Pris nå', pNow != null ? `${nf(pNow)} kr` : '–', '#f2f1ee'], ['Kostet i dag', costToday != null ? `${nf(costToday, costToday < 10 ? 1 : 0)} kr` : '–', C.green]]),
         ['Effekt', tier != null ? `${nf(tier, 1)} kW` : '–', tier != null && tier > tierLim ? C.amber : '#f2f1ee'],
       ].map(([label, v, col]) => `<div style="display:flex;flex-direction:column;gap:4px;padding:12px 14px;border-radius:18px;background:#1c1c1f">
         <div style="font-size:11px;color:#8e8d89;white-space:nowrap">${E(label)}</div>
@@ -1842,7 +1895,7 @@ try {
       </div>`;
       }).join('');
 
-      const spot = this._series(c.spotpris, 'today');
+      const spot = this._series(this.P.spotpris, 'today');
       const log = this._log(devices, spot, NOW_H, today);
       const logHtml = log.map((e, i, arr) => {
         const col = e.kind === 'alert' ? C.red : e.kind === 'on' ? C.amber : e.kind === 'off' ? C.blue : C.green;
@@ -1864,7 +1917,7 @@ try {
       }).join('');
 
       const coreIcon = { fontSize: 26, color: coreCol, fontVariationSettings: "'FILL' 1" };
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 28px;display:flex;flex-direction:column;gap:22px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 28px;display:flex;flex-direction:column;gap:22px">
 
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Strøm</div>
@@ -2333,7 +2386,7 @@ try {
       else if (tabK === 'ta') main = this._ta();
       else if (tabK === 'op') main = this._op();
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:16px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:16px">
   <header style="display:flex;align-items:center;gap:12px;padding:0 4px">
     <span style="width:40px;height:40px;border-radius:20px;background:#e9e8e4;color:#141416;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">thermostat</span></span>
     <div style="flex:1;font-size:26px;font-weight:500;letter-spacing:-0.02em">Klima</div>
@@ -2932,7 +2985,7 @@ try {
         return { text, who, time, dot: { width: 9, height: 9, borderRadius: 5, marginTop: 5, background: col, flex: 'none' }, line: { flex: 1, width: 1, background: i < arr.length - 1 ? 'rgba(255,255,255,0.1)' : 'transparent', marginTop: 4 } };
       });
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 28px;display:flex;flex-direction:column;gap:22px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 28px;display:flex;flex-direction:column;gap:22px">
 
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Sikkerhet</div>
@@ -3343,7 +3396,7 @@ try {
         star: { fontSize: 20, color: fav ? C.amber : '#48474a', fontVariationSettings: `'FILL' ${fav ? 1 : 0}` } }; });
       const n = CAMS.length;
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:14px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:14px">
   <header style="display:flex;align-items:center;gap:12px;padding:0 4px">
     <span style="width:40px;height:40px;border-radius:20px;background:#e9e8e4;color:#141416;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">videocam</span></span>
     <div style="flex:1;font-size:26px;font-weight:500;letter-spacing:-0.02em">Kamera</div>
@@ -3655,7 +3708,7 @@ try {
       if (pic) Object.assign(vals.avatar, { backgroundImage: `url('${KD.e(String(this._hass.hassUrl ? this._hass.hassUrl(pic) : pic).replace(/'/g, '%27'))}')`, backgroundSize: 'cover', backgroundPosition: 'center', color: 'transparent' });
       const v = vals;
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:22px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:22px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Tilstedeværelse</div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -4369,7 +4422,7 @@ try {
       }
 
       return `
-<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 28px;display:flex;flex-direction:column;gap:16px">
+<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 28px;display:flex;flex-direction:column;gap:16px">
 
   <header style="display:flex;align-items:center;gap:10px">
     <div style="flex:1;font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Vanning</div>
@@ -4556,7 +4609,7 @@ try {
       </div>`;
       }).join('');
       return `
-<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:22px">
+<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:22px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Planter</div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -4783,7 +4836,7 @@ try {
       }).join('');
 
       return `
-<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:22px">
+<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:22px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Søvn</div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -5057,7 +5110,7 @@ try {
       const pollen = this.pollen();
 
       return `
-<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:22px">
+<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:22px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Vær · <span>${e(cfg.sted || '')}</span></div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -5532,7 +5585,7 @@ try {
         : { icon: 'play_arrow', label: st === 'paused' ? 'Fortsett' : zone ? `Støvsug ${zone.navn.toLowerCase()}` : sel.length ? `Støvsug ${sel.length} rom` : 'Støvsug alt', style: { height: 64, borderRadius: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontSize: 16, fontWeight: 600, background: C.green, color: '#10231a' } };
       const e = KD.e, S = KD.S;
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:22px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:22px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89"><span>${e(cf.navn || 'Sir Sweeps')}</span></div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -5740,9 +5793,50 @@ try {
     /* ----- handlinger ----- */
     tab(e, k) { this.setState({ tab: k }); }
     flash(k) { this.setState({ press: k }); clearTimeout(this._pt); this._pt = setTimeout(() => this.setState({ press: null }), 160); }
+    /** fjernkontrollen: config → remote.<tv> → en remote med samme navn som TV-en */
+    remoteId() {
+      const c = this.config, tv = String(c.tv || '').split('.')[1] || '';
+      if (c.fjernkontroll && this.st(c.fjernkontroll)) return c.fjernkontroll;
+      if (tv && this.st('remote.' + tv)) return 'remote.' + tv;
+      const nm = low(this.fname(c.tv));
+      return this.find(/^remote\./).find(id => nm && low(this.fname(id)) === nm) || this.find(/^remote\./).find(id => tv && id.includes(tv.split('_')[0])) || null;
+    }
     send(cmd) {
-      const r = this.config.fjernkontroll;
-      if (r && this.st(r)) return this.call('remote', 'send_command', { entity_id: r, command: cmd, hold_secs: 0 });
+      const r = this.remoteId();
+      if (!r) { this.toast('Fant ingen fjernkontroll (remote.*) – sett «fjernkontroll» i kortet'); return; }
+      const go = () => this.call('remote', 'send_command', { entity_id: r, command: cmd, hold_secs: 0 });
+      if (this.v(r) === 'off' && cmd !== 'wakeup') { // Apple TV i dvale: vekk den først
+        const now = Date.now(); if (now - (this._woke || 0) < 4000) return go();
+        this._woke = now;
+        return this.call('remote', 'turn_on', { entity_id: r }).then(() => new Promise(res => setTimeout(res, 600))).then(go);
+      }
+      return go();
+    }
+    /** Styreflaten: trykk på pil/midten, eller sveip (som ki-fjernkontroll-card) */
+    _padInit() {
+      const pad = this.$('[data-key="kd-pad"]'); if (!pad || pad._kd) return; pad._kd = true;
+      const DIR = { up: 'up', down: 'down', left: 'left', right: 'right' }, ROT = 26, STEG = 46;
+      let x0 = 0, y0 = 0, on = false, steg = 0, ret = null, moved = false;
+      const zone = (x, y) => { const r = pad.getBoundingClientRect(), dx = x - (r.left + r.width / 2), dy = y - (r.top + r.height / 2); if (Math.hypot(dx, dy) < r.width * 0.2) return 'ok'; return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'); };
+      pad.addEventListener('pointerdown', ev => { if (ev.button > 0) return; x0 = ev.clientX; y0 = ev.clientY; on = true; steg = 0; ret = null; moved = false; try { pad.setPointerCapture(ev.pointerId); } catch (e) { } });
+      pad.addEventListener('pointermove', ev => {
+        if (!on) return;
+        const dx = ev.clientX - x0, dy = ev.clientY - y0, l = Math.hypot(dx, dy);
+        if (l > 8) moved = true;
+        if (l < ROT) return;
+        const ny = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+        if (ny !== ret) { ret = ny; steg = 0; x0 = ev.clientX; y0 = ev.clientY; }
+        const vil = Math.max(1, Math.floor(Math.abs(Math.abs(dx) > Math.abs(dy) ? dx : dy) / STEG));
+        while (steg < vil) { steg++; this.flash(ny); this.haptic('selection'); this.send(DIR[ny]); }
+      });
+      const end = ev => {
+        if (!on) return; on = false;
+        if (ev.type === 'pointercancel') return;
+        if (!moved) { const z = zone(ev.clientX, ev.clientY); this.flash(z); this.haptic('light'); this.send(z === 'ok' ? 'select' : DIR[z]); }
+        else if (ret && steg === 0) { this.flash(ret); this.send(DIR[ret]); }
+      };
+      pad.addEventListener('pointerup', end);
+      pad.addEventListener('pointercancel', end);
     }
     pad(e, k) { this.flash(k); this.send(k === 'ok' ? 'select' : k); }
     powerTv() { const id = this.config.tv; this.call('media_player', this.on(id) ? 'turn_off' : 'turn_on', { entity_id: id }); }
@@ -5796,6 +5890,7 @@ try {
     openMore(e, id) { this.more(id); }
 
     afterRender() {
+      this._padInit();
       // oppdater avspillingstiden hvert sekund mens noe spilles
       clearTimeout(this._tick);
       if (this._connected && this._playingPos) this._tick = setTimeout(() => this._queue(), 1000);
@@ -5870,7 +5965,7 @@ try {
       const secHead = (t) => `<div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:0 4px"><span>${e(t)}</span></div>`;
       const chipRow = (items, fn) => `<div data-hscroll="1" style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -18px;padding:0 18px">${items.map(fn).join('')}</div>`;
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:20px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Media</div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -5892,9 +5987,9 @@ try {
 
   ${tv ? `
     <section style="display:flex;justify-content:center">
-      <div style="position:relative;width:250px;height:250px;border-radius:50%;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05)">
-        ${pad.map(p => `<button data-on-click="pad" data-arg="${p.k}" style="${S(p.style)}"><span class="ms" style="font-size:28px"><span>${p.icon}</span></span></button>`).join('')}
-        <button data-on-click="pad" data-arg="ok" style="${S(ok)}">OK</button>
+      <div data-key="kd-pad" role="group" aria-label="Styreflate" style="position:relative;width:250px;height:250px;border-radius:50%;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05);touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;cursor:pointer">
+        ${pad.map(p => `<span data-arg="${p.k}" style="${S({ ...p.style, pointerEvents: 'none' })}"><span class="ms" style="font-size:28px"><span>${p.icon}</span></span></span>`).join('')}
+        <span data-arg="ok" style="${S({ ...ok, display: 'grid', placeItems: 'center', pointerEvents: 'none' })}">OK</span>
       </div>
     </section>
     <section style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px">
@@ -6222,7 +6317,7 @@ try {
       const pill = 'display:inline-flex;align-items:center;height:30px;padding:0 11px;border-radius:15px;background:#232326;font-weight:500;vertical-align:middle;white-space:nowrap';
       const pill2 = 'display:inline-block;padding:0 10px;border-radius:14px;background:#f2f1ee;color:#141416;font-weight:500;line-height:1.6';
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:20px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89"><span>${e(cf.navn)}</span></div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -6544,7 +6639,7 @@ try {
           bar: { width: `${pct || 0}%`, height: '100%', background: pct != null && pct < 15 ? AMBER : '#c9c7c2' } };
       });
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:20px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89"><span>${e(cf.navn)}</span></div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -7034,7 +7129,7 @@ try {
       const statusStyle = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 500, color: '#c9c7c2' };
       const statusDot = { width: 8, height: 8, borderRadius: 4, flex: 'none', background: V.ok, boxShadow: `0 0 10px ${V.ok}` };
       const tl = tabs.map(t => tab(...t));
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:20px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
   <header style="display:flex;align-items:center;gap:12px">
     <span style="width:40px;height:40px;border-radius:20px;background:#e9e8e4;color:#141416;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">dns</span></span>
     <div style="flex:1;font-size:26px;font-weight:500;letter-spacing:-0.02em">Server</div>
@@ -7301,7 +7396,7 @@ try {
       const items = (L[s.tab] || []).map((r, i) => { const w = sw(r.on); return { ...r, track: w.track, knob: w.knob,
         row: { display: 'flex', alignItems: 'center', gap: 12, padding: '12px 4px', width: '100%', borderTop: i ? '1px solid rgba(255,255,255,0.05)' : 'none' },
         iconWrap: { width: 40, height: 40, borderRadius: 20, flex: 'none', display: 'grid', placeItems: 'center', background: '#1c1c1f', color: r.on ? '#f2f1ee' : '#6d6c69' } }; });
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:20px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Innstillinger</div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -7676,7 +7771,7 @@ try {
             steps: [1, 2, 3, 4].map(k => ({ flex: 1, height: 4, borderRadius: 2, background: k <= p.step ? C.red : '#2a2a2d' })) })) };
       }
 
-      html = `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:20px">
+      html = `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Kalender</div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -8019,7 +8114,7 @@ try {
         box: { width: 26, height: 26, borderRadius: 9, flex: 'none', marginTop: 1, display: 'grid', placeItems: 'center', background: x.done ? GREEN : 'transparent', boxShadow: x.done ? 'none' : 'inset 0 0 0 1.5px #5d5c5a', transition: 'background .2s' },
         check: { fontSize: 18, color: '#141416', opacity: x.done ? 1 : 0, fontVariationSettings: "'wght' 600" },
         textStyle: { fontSize: 14, lineHeight: 1.4, textWrap: 'pretty', textDecoration: x.done ? 'line-through' : 'none' } }));
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:20px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Gjøremål</div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -8178,7 +8273,7 @@ try {
           style: { aspectRatio: '1', borderRadius: 14, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, background: hits.length ? '#262629' : 'transparent', boxShadow: t ? 'inset 0 0 0 1.5px #f2f1ee' : 'none', opacity: inM ? 1 : 0.25 },
           num: { fontSize: 13, fontWeight: t ? 600 : 500, fontVariantNumeric: 'tabular-nums' } }; });
       const legend = F.map(f => ({ name: f.name.split(' ')[0], dot: { width: 8, height: 8, borderRadius: 4, background: f.col } }));
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:16px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:16px">
   <header style="display:flex;align-items:center;gap:12px">
     <span style="width:40px;height:40px;border-radius:20px;background:#e9e8e4;color:#141416;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">delete</span></span>
     <div style="flex:1;font-size:26px;font-weight:500;letter-spacing:-0.02em">Søppel</div>
@@ -8732,7 +8827,7 @@ a:hover{color:oklch(0.86 0.12 95)}`;
       else if (tab === 'f1' || tab === 'f2') inner = this._floor(tab, fl[tab]);
       else inner = this._on(fl);
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:12px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:12px">
   <header style="display:flex;align-items:center;gap:12px;padding:0 4px">
     <span style="width:40px;height:40px;border-radius:20px;background:#e9e8e4;color:#141416;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">lightbulb</span></span>
     <div style="flex:1;font-size:26px;font-weight:500;letter-spacing:-0.02em">Lys</div>
@@ -9307,7 +9402,7 @@ try {
       const setVal = k ? (Number.isInteger(k.set) ? String(k.set) : nf(k.set, 1)) : '';
       this._headVals = [r.ikon, r.navn, `${temp != null ? nf(temp, 1) : '–'}° · ${hum != null ? nf(hum, 0) : '–'} %`];
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:18px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:18px">
   <header style="display:flex;align-items:center;gap:12px;padding:0 4px">
     <span style="${S(headIcon)}"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">${E(r.ikon)}</span></span>
     <div style="flex:1;font-size:26px;font-weight:500;letter-spacing:-0.02em">${E(r.navn)}</div>
@@ -9494,8 +9589,12 @@ try {
   const ROOM_OPTS = () => Object.entries(KD.ROOMS || {}).map(([k, r]) => ({ value: k, label: r.navn || k }));
   const PERSON_OPTS = [{ value: 'sebastian', label: 'Sebastian' }, { value: 'cybele', label: 'Cybele' }, { value: 'rune', label: 'Rune' }];
   const sel = (opts, custom = false) => ({ select: { options: opts, mode: 'dropdown', custom_value: custom } });
+  const PROFIL = sel([{ value: 'auto', label: 'Automatisk (landet i HA)' }, { value: 'no', label: 'Norge – Norgespris, NOK' }, { value: 'se', label: 'Sverige – SE3, SEK' }]);
+  const PRIS = { entity: { domain: 'sensor' } };
   const EXTRA = {
+    'kd-strom-card': { strom_profil: PROFIL, pris: PRIS, spotpris: PRIS, norgespris: PRIS, spart_i_dag: PRIS },
     'kd-hjem-card': {
+      strom_profil: PROFIL, pris: PRIS, pris_total: PRIS, pris_spot: PRIS, pris_norges: PRIS,
       ark: sel([{ value: 'intern', label: 'Intern – kortets eget bunnark' }, { value: 'bubble', label: 'Bubble-card – bare #hash' }]),
       meg: sel(PERSON_OPTS, true), sover_nar: sel([{ value: 'on', label: 'på (on)' }, { value: 'off', label: 'av (off)' }]),
       autolas: { entity: { domain: ['switch', 'select'] } },
