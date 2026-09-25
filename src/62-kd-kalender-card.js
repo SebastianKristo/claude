@@ -447,9 +447,7 @@
 ${isCalTab ? `
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 4px">
       <span style="font-size:15px;font-weight:500"><span>${e(CV.calHead)}</span></span>
-      <div style="display:flex;gap:2px;padding:3px;border-radius:16px;background:#1c1c1f">
-        ${CV.calViews.map(v => `<button data-on-click="goView" data-arg="${v.k}" title="${e(v.label)}" style="${S(v.style)}"><span class="ms" style="font-size:18px">${e(v.icon)}</span><span>${e(v.label)}</span></button>`).join('')}
-      </div>
+      <div style="width:210px;max-width:60%;flex:none">${KD.segHTML('kal-view', CV.calViews.map(v => [v.k, v.label, v.icon]), s.view, 'goView', { pink: true, small: true })}</div>
     </div>` : ''}
 ${isCal ? `
     <section style="display:flex;flex-direction:column">
@@ -526,9 +524,7 @@ ${H ? `
     </div>
 
     <div style="display:flex;align-items:center;justify-content:center;gap:8px">
-      <div style="display:flex;gap:2px;padding:4px;border-radius:22px;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.12)">
-        ${H.subs.map(t => `<button data-on-click="goSub" data-arg="${t.k}" style="${S(t.style)}"><span>${e(t.label)}</span></button>`).join('')}
-      </div>
+      <div style="flex:1;min-width:0">${KD.segHTML('kal-hsub', H.subs.map(t => [t.k, t.label]), s.hsub, 'goSub', { pink: true })}</div>
       <button data-on-click="toggleSearch" style="${S(H.searchBtn)}"><span class="ms" style="font-size:20px">search</span></button>
     </div>
     ${H.searching ? `<input data-on-input="setQ" value="${e(H.q)}" placeholder="Søk etter person eller sted" style="height:46px;border-radius:23px;border:0;outline:none;padding:0 18px;background:#1c1c1f;color:#f2f1ee;font:inherit;font-size:14px">` : ''}
@@ -577,9 +573,7 @@ ${H ? `
           <span style="display:flex;flex-direction:column;align-items:flex-end"><span style="font-size:24px;font-weight:300;letter-spacing:-0.02em"><span>${e(p.nights)}</span></span><span style="font-size:11px;color:#8e8d89">netter</span></span>
         </section>`).join('')}` : ''}` : ''}
 ${up ? `
-    <div style="display:flex;gap:6px">
-      ${up.filters.map(f => `<button data-on-click="goFilter" data-arg="${f.k}" style="${S(f.style)}"><span>${e(f.label)}</span></button>`).join('')}
-    </div>
+    ${KD.segHTML('kal-upf', up.filters.map(f => [f.k, f.label]), s.filter, 'goFilter', { small: true })}
     ${up.featured ? `<section style="${S(up.featured.card)}">
         <div style="${S(up.featured.poster)}"><span style="font-size:22px;font-weight:600;letter-spacing:-0.02em;text-align:center;line-height:1"><span>${e(up.featured.initials)}</span></span></div>
         <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px">

@@ -377,13 +377,25 @@
         subStyle: { fontSize: 12, color: actv ? '#e6e4df' : '#8e8d89', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } });
       const presOn = sensors.some(z => z.pres && z.hot);
       const tStrom = () => tile('strom', 'bolt', 'Strøm', `${watt} W nå`, C.amber, watt > 0, 'moreInfo', o.effekt[0] || '');
-      const tiles = [
-        tile('lys', 'lightbulb', 'Lys', on ? `${on} av ${o.lys.length} på` : 'Alle av', C.yellow, on > 0, 'lightsAll', ''),
-        cover ? tile('gardin', 'curtains', 'Gardiner', cv ? `${cv} % åpen` : 'Lukket', C.pink, cv > 0, 'curtain', cover, cv) : tStrom(),
-        m0 ? tile('media', m0.tv ? 'tv' : 'speaker', 'Media', m0.playing ? 'Spiller' : 'Pauset', C.green, m0.playing, 'mediaTog', m0.id)
-          : tile('tilstede', 'sensor_occupied', 'Tilstede', presOn ? 'Noen her' : 'Tomt', C.blue, act > 0, 'moreInfo', (sensors.find(z => z.pres) || {}).id || ''),
-        cover ? tStrom() : tile('fukt', 'water_drop', 'Fukt', `${hum != null ? nf(hum, 0) : '–'} %`, C.blue, false, 'moreInfo', L.humId || ''),
-      ];
+      const presS = sensors.find(z => z.pres);
+      const TF = { // alle mulige fliser (nøkkel → bygger)
+        lys: () => tile('lys', 'lightbulb', 'Lys', on ? `${on} av ${o.lys.length} på` : 'Alle av', C.yellow, on > 0, 'lightsAll', ''),
+        gardin: cover ? () => tile('gardin', 'curtains', 'Gardiner', cv ? `${cv} % åpen` : 'Lukket', C.pink, cv > 0, 'curtain', cover, cv) : null,
+        media: m0 ? () => tile('media', m0.tv ? 'tv' : 'speaker', 'Media', m0.playing ? 'Spiller' : 'Pauset', C.green, m0.playing, 'mediaTog', m0.id) : null,
+        tilstede: presS || !m0 ? () => tile('tilstede', 'sensor_occupied', 'Tilstede', presOn ? 'Noen her' : 'Tomt', C.blue, act > 0, 'moreInfo', (presS || {}).id || '') : null,
+        strom: tStrom,
+        fukt: () => tile('fukt', 'water_drop', 'Fukt', `${hum != null ? nf(hum, 0) : '–'} %`, C.blue, false, 'moreInfo', L.humId || ''),
+        klima: k ? () => tile('klima', 'heat', 'Klima', `${Number.isInteger(k.set) ? k.set : nf(k.set, 1)}° · ${k.heating ? 'varmer' : 'holder'}`, C.red, !!k.heating, 'moreInfo', k.power || k.id) : null,
+      };
+      const U = KD.userRoom(this, r.id), UF = U.fliser || {}, US = U.scener || {};
+      const tDef = ['lys', cover ? 'gardin' : 'strom', m0 ? 'media' : 'tilstede', cover ? 'strom' : 'fukt'];
+      const tAll = [...tDef, ...Object.keys(TF).filter(x => !tDef.includes(x))].filter(x => TF[x]);
+      const ordered = (all, rek) => [...(rek || []).filter(x => all.includes(x)), ...all.filter(x => !(rek || []).includes(x))].filter((x, i, arr) => arr.indexOf(x) === i);
+      const tOrder = this._tileOrder = ordered(tAll, UF.rekkefolge);
+      const tHid = x => (UF.skjul || []).includes(x) || (!tDef.includes(x) && !(UF.vis || []).includes(x));
+      this._tileHid = tHid;
+      const tilesAll = tOrder.map(x => { const t = TF[x](); t.def = t.label; if (UF.navn && UF.navn[x]) t.label = UF.navn[x]; t.hid = tHid(x); return t; });
+      const tiles = s.edit ? tilesAll : tilesAll.filter(t => !t.hid);
 
       // scener
       const lo = H.lysOv(this, r.id);
@@ -392,7 +404,12 @@
       else for (const id of Object.keys(KI_SC)) { const b = `button.${r.id}_lys_${id}`; if (this._has(b)) scenes.push({ key: b, ent: b, label: KI_SC[id][0], icon: KI_SC[id][1] }); }
       for (const id of [...o.skript, ...o.scener]) scenes.push({ key: id, ent: id, label: H.strip(this.fname(id), words), icon: id.startsWith('script.') ? 'play_circle' : 'palette' });
       if (!scenes.length && o.lys.length) scenes = SCENES.map(([key, label, icon]) => ({ key: 'fb:' + key, fb: key, label, icon }));
+      for (const id of [].concat(US.ekstra || [])) if (this._has(id) && !scenes.some(x => x.key === id)) scenes.push({ key: id, ent: id, label: H.strip(this.fname(id), words), icon: id.startsWith('script.') ? 'play_circle' : 'palette', extra: true });
+      const sHid = x => (US.skjul || []).includes(x);
+      const sOrder = this._sceneOrder = ordered(scenes.map(x => x.key), US.rekkefolge);
+      scenes = sOrder.map(key => { const x = scenes.find(y => y.key === key); return { ...x, def: x.label, label: (US.navn && US.navn[key]) || x.label, hid: sHid(key) }; });
       this._scenes = scenes;
+      const scShown = s.edit ? scenes : scenes.filter(x => !x.hid);
 
       const humBar = { display: 'block', width: `${hum != null ? KD.clamp(hum, 0, 100) : 0}%`, height: '100%', borderRadius: 3, background: hum > 60 ? C.amber : C.blue };
       const headIcon = { width: 40, height: 40, borderRadius: 20, flex: 'none', display: 'grid', placeItems: 'center', background: col, color: '#141416' };
@@ -423,24 +440,28 @@
   </section>
 
   <section style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
-    ${tiles.map(t => `<button class="kdr-a97" data-key="${t.key}" data-on-click="${t.go}" data-arg="${E(t.arg)}" data-hold="moreInfo" style="${S(t.style)}">
+    ${tiles.map(t => `<button class="kdr-a97" data-key="${t.key}" data-on-click="${s.edit ? 'tileTog' : t.go}" data-arg="${E(s.edit ? t.key : t.arg)}" ${s.edit ? '' : 'data-hold="moreInfo" '}style="${S({ ...t.style, ...(s.edit ? { opacity: t.hid ? 0.38 : 1, boxShadow: t.hid ? 'inset 0 0 0 1px rgba(255,255,255,0.12)' : 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.55)' } : {}) })}">
         <span style="${S(t.fill)}"></span>
         <span style="${S(t.iconWrap)}"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">${t.icon}</span></span>
         <span style="position:relative;display:flex;flex-direction:column;gap:1px;min-width:0;text-align:left">
           <span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(t.label)}</span>
           <span style="${S(t.subStyle)}">${E(t.sub)}</span>
         </span>
+        ${s.edit ? `<span class="ms" style="position:relative;margin-left:auto;font-size:18px;color:${t.hid ? '#f2f1ee' : 'oklch(0.82 0.1 350)'}">${t.hid ? 'visibility_off' : 'visibility'}</span>` : ''}
       </button>`).join('')}
   </section>
+  ${s.edit ? this._edPanel('fliser', 'Fliser', 'grid_view', tilesAll.map(t => ({ key: t.key, icon: t.icon, label: t.label, def: t.def, hid: t.hid })), UF.navn) : ''}
 
-  ${scenes.length ? `<section data-hscroll="1" style="display:flex;gap:14px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:2px var(--kd-kant,10px)">
-    ${scenes.map(x => { const act = s.scene === x.key;
+  ${scShown.length ? `<section data-hscroll="1" style="display:flex;gap:14px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:2px var(--kd-kant,10px)">
+    ${scShown.map(x => { const act = s.scene === x.key && !s.edit;
       const bubble = { width: 58, height: 58, borderRadius: 29, display: 'grid', placeItems: 'center', background: act ? PINK : '#1c1c1f', color: act ? '#2a1720' : '#c9c7c2', boxShadow: act ? '0 6px 18px rgba(240,140,190,0.3)' : 'inset 0 0 0 1px rgba(255,255,255,0.05)', transform: act ? 'scale(1.06)' : 'scale(1)', transition: 'transform .35s cubic-bezier(.34,1.8,.64,1), background .25s' };
-      return `<button data-key="${E(x.key)}" data-on-click="sceneGo" data-arg="${E(x.key)}" style="flex:none;display:flex;flex-direction:column;align-items:center;gap:6px;width:62px">
+      if (s.edit) Object.assign(bubble, { opacity: x.hid ? 0.38 : 1, boxShadow: x.hid ? 'inset 0 0 0 1px rgba(255,255,255,0.12)' : 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.55)' });
+      return `<button data-key="${E(x.key)}" data-on-click="${s.edit ? 'sceneHide' : 'sceneGo'}" data-arg="${E(x.key)}" style="flex:none;display:flex;flex-direction:column;align-items:center;gap:6px;width:62px">
         <span style="${S(bubble)}"><span class="ms" style="${S({ fontSize: 24, fontVariationSettings: `'FILL' ${act ? 1 : 0}` })}">${E(x.icon)}</span></span>
-        <span style="${S({ fontSize: 11, fontWeight: 500, color: act ? '#f2f1ee' : '#8e8d89', whiteSpace: 'nowrap' })}">${E(x.label)}</span>
+        <span style="${S({ fontSize: 11, fontWeight: 500, color: act ? '#f2f1ee' : '#8e8d89', whiteSpace: 'nowrap', maxWidth: 66, overflow: 'hidden', textOverflow: 'ellipsis', opacity: s.edit && x.hid ? 0.5 : 1 })}">${E(x.label)}</span>
       </button>`; }).join('')}
   </section>` : ''}
+  ${s.edit ? this._edPanel('scener', 'Scener', 'auto_awesome', scenes.map(x => ({ key: x.key, icon: x.icon, label: x.label, def: x.def, hid: x.hid, extra: x.extra })), US.navn) : ''}
 
   ${lightRows.length ? `<section style="display:flex;flex-direction:column;gap:8px">
     <div style="display:flex;justify-content:space-between;padding:0 6px"><span style="font-size:15px;font-weight:500">Lys</span><span style="font-size:12px;color:#8e8d89">${on} på · dra for å dimme</span></div>

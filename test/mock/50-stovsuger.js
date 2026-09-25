@@ -2,6 +2,13 @@
 (() => {
   const y = new Date(); y.setDate(y.getDate() - 1); y.setHours(14, 20, 0, 0);
   const B = 'sir_sweeps_a_lot';
+  // enkelt Roborock-aktig kart (SVG som data-URI) så kartfanen har noe å vise
+  const MAP = 'data:image/svg+xml;utf8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300"><rect width="400" height="300" fill="#1c1c1f"/>
+<g stroke="#8fb5d9" stroke-width="3" stroke-linejoin="round">
+<path d="M40 30h150v110H40z" fill="#3b5a7a"/><path d="M200 30h160v80H200z" fill="#5a4a7a"/><path d="M200 120h160v70H200z" fill="#3f6b58"/>
+<path d="M40 150h150v110H40z" fill="#7a5a3b"/><path d="M200 200h160v60H200z" fill="#6b3f52"/></g>
+<path d="M60 60h110M60 80h110M60 100h110M220 50h120M220 70h120M220 90h120M60 175h110M60 195h110M60 215h110" stroke="rgba(255,255,255,0.12)" stroke-width="10"/>
+<circle cx="80" cy="235" r="9" fill="#f2f1ee"/><circle cx="80" cy="235" r="15" fill="none" stroke="#7fd6a0" stroke-width="3"/></svg>`);
   MOCK.add({
     [`vacuum.${B}`]: { state: 'docked', attributes: { friendly_name: 'Sir Sweeps a lot', battery_level: 100, fan_speed: 'balanced', fan_speed_list: ['off', 'quiet', 'balanced', 'turbo', 'max', 'custom', 'max_plus'] } },
     [`sensor.${B}_battery`]: { state: '100', attributes: { unit_of_measurement: '%' } },
@@ -41,6 +48,7 @@
     [`switch.${B}_do_not_disturb`]: 'on',
     [`time.${B}_do_not_disturb_begin`]: '22:00:00',
     [`time.${B}_do_not_disturb_end`]: '08:00:00',
-    [`image.${B}_hjemme_andre_etasje`]: { state: 'idle', attributes: {} },
+    [`image.${B}_hjemme_andre_etasje`]: { state: 'idle', attributes: { friendly_name: 'Sir Sweeps a lot Andre etasje', entity_picture: MAP } },
+    [`sensor.${B}_current_room`]: 'Soverom',
   });
 })();

@@ -83,6 +83,13 @@
     'sensor.d_day_darling_plex_recently_added_show': { state: '1', attributes: { data: JSON.stringify([{ title_default: '$title' }, { title: 'The Last of Us', number: 'S03E01', airdate: air(-1, 3) }]) } },
     'sensor.d_day_darling_plex_recently_added_movie': { state: '1', attributes: { data: JSON.stringify([{ title_default: '$title' }, { title: 'Coyote vs. Acme', airdate: air(-2, 3) }]) } },
   });
+  // alternative kilder å velge mellom i «Tilpass oppsett»
+  MOCK.add({
+    'sensor.sonarr_queue': { state: '2', attributes: { friendly_name: 'Sonarr Queue', unit_of_measurement: 'episodes' } },
+    'sensor.radarr_movies': { state: '412', attributes: { friendly_name: 'Radarr Movies' } },
+    'sensor.plex_d_day_darling': { state: '0', attributes: { friendly_name: 'Plex (D-Day Darling)' } },
+    'sensor.posten_neste_levering': { state: ymd(dAt(5)), attributes: { friendly_name: 'Posten neste levering' } },
+  });
   const REG = {};
   for (const id of ['sensor.zalando_status', 'sensor.komplett_usb_hub_status', 'sensor.apotek_1_status']) REG[id] = { entity_id: id, platform: 'norwegian_parcel_tracker' };
   const prev = MOCK.make;
