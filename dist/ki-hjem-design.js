@@ -1,4 +1,4 @@
-/* KI Hjem Design – pikselkopi av Claude Design «Home Assistant sikkerhetspanel». Bygget 2026-09-25T22:01Z. */
+/* KI Hjem Design – pikselkopi av Claude Design «Home Assistant sikkerhetspanel». Bygget 2026-09-25T22:19Z. */
 
 /* ===== 00-kd-base.js ===== */
 try {
@@ -445,10 +445,30 @@ input,select,textarea{font:inherit;color:inherit}
    * Levende romdata: { temp, hum, set, setId, lightsOn, lightId, lightsCount } for et rom.
    * Bruker ki_rom (`sensor.<id>_oversikt` / `sensor.<id>_lys`) når det finnes, ellers tabellen.
    */
+  /**
+   * Finn en KI Rom-sensor for et rom: først `sensor.<rom>_<type>`, ellers sensoren med integrasjon ki_rom og area_id = rommet
+   * (som ki-rom-card i ki-cards). type: 'oversikt' | 'lys' | 'effekt' … Bufres per rom.
+   */
+  const KIROM = new Map();
+  KD.kiRom = (card, id, type = 'oversikt') => {
+    const h = card._hass; if (!h || !id) return null;
+    const key = id + '|' + type, S = h.states;
+    const ok = x => S[x] && S[x].attributes.integrasjon === 'ki_rom';
+    let f = KIROM.get(key);
+    if (!f || !S[f]) {
+      f = ok(`sensor.${id}_${type}`) ? `sensor.${id}_${type}` : null;
+      if (!f) f = Object.keys(S).find(x => x.startsWith('sensor.') && x.endsWith('_' + type) && !x.endsWith('_lys_' + type) && ok(x) && S[x].attributes.area_id === id) || null;
+      if (!f && type !== 'oversikt') { const ov = KD.kiRom(card, id, 'oversikt'); if (ov) { const g = ov.entity_id.replace(/_oversikt$/, '_' + type); if (S[g]) f = g; } }
+      KIROM.set(key, f);
+    }
+    return f ? card.st(f) : null;
+  };
+  const entId = x => typeof x === 'string' ? x : x && (x.entity || x.entity_id);
+
   KD.roomLive = (card, r) => {
-    const ov = card.st(`sensor.${r.id}_oversikt`);
+    const ov = KD.kiRom(card, r.id, 'oversikt');
     const A = (ov && ov.attributes) || {};
-    const list = x => Array.isArray(x) ? x : x ? [x] : [];
+    const list = x => (Array.isArray(x) ? x : x ? [x] : []).map(entId).filter(Boolean);
     // første kandidat som finnes og har et tall (config/tabell først, så KI Rom-områdets sensorer)
     const firstNum = (...ids) => { for (const id of ids) { if (id && card.n(id) != null) return id; } return ids.find(Boolean) || null; };
     const tId = firstNum(r.temp, ...list(A.temperatur)), hId = firstNum(r.fukt, ...list(A.fuktighet));
@@ -462,7 +482,7 @@ input,select,textarea{font:inherit;color:inherit}
     else if (clim) { setId = clim; set = parseFloat(card.at(clim, 'temperature')); }
     if (set != null && isNaN(set)) set = null;
     // lys: romgruppa hvis den finnes, ellers KI Rom-telleren
-    const lysS = card.st(`sensor.${r.id}_lys`);
+    const lysS = KD.kiRom(card, r.id, 'lys');
     const lightId = r.lys && card.st(r.lys) ? r.lys : null;
     const lysListe = lysS ? list(lysS.attributes.entiteter).filter(id => String(id).startsWith('light.')) : [];
     const lightsOn = lightId ? card.v(lightId) === 'on' : lysS ? parseFloat(lysS.state) > 0 : false;
@@ -585,6 +605,7 @@ try {
       hjem: { venstre: ['stue', 'inngang', 'ute'], hoyre: ['pult', 'kjokken'] },
       etasjer: { '1': ['stue', 'kjokken', 'inngang', 'do', 'vaskegang'], '2': ['pult', 'soverom', 'bad', 'cybele_soverom', 'rune_soverom', 'rune_kontor'] },
       sover_nar: 'on',
+      bilde: true,
     };
     static getStubConfig() { return {}; }
 
@@ -605,12 +626,32 @@ try {
       this._onChildClose = (ev) => { if (ev.composedPath().includes(this._sheetEl)) { ev.stopPropagation(); this.closeSheet(); } };
       this.shadowRoot.addEventListener('kd-close', this._onChildClose, true);
       setTimeout(() => this._syncHash(), 0);
+      this._paintPage(true);
+    }
+    /* Samme bakgrunn over hele siden (også bak skjult topp og statuslinje), så kortet ikke har synlige kanter.
+       bakgrunn: false slår det av; en farge overstyrer. Settes tilbake når kortet forsvinner. */
+    _paintPage(on) {
+      const col = this.config.bakgrunn === false ? null : (this.config.bakgrunn || '#141416');
+      const root = document.documentElement, VARS = ['--lovelace-background', '--primary-background-color', '--app-header-background-color', '--kiosk-header-color'];
+      const meta = document.querySelector('meta[name="theme-color"]');
+      if (on && col) {
+        if (!this._oldVars) { this._oldVars = VARS.map(v => [v, root.style.getPropertyValue(v)]); this._oldMeta = meta && meta.getAttribute('content'); this._oldBody = document.body.style.background; }
+        VARS.forEach(v => root.style.setProperty(v, col));
+        document.body.style.background = col;
+        if (meta) meta.setAttribute('content', col);
+      } else if (this._oldVars) {
+        this._oldVars.forEach(([v, x]) => x ? root.style.setProperty(v, x) : root.style.removeProperty(v));
+        document.body.style.background = this._oldBody || '';
+        if (meta && this._oldMeta != null) meta.setAttribute('content', this._oldMeta);
+        this._oldVars = null;
+      }
     }
     onDisconnect() {
       window.removeEventListener('location-changed', this._onLoc);
       window.removeEventListener('hashchange', this._onLoc);
       window.removeEventListener('popstate', this._onLoc);
       window.removeEventListener('scroll', this._onWinScroll);
+      this._paintPage(false);
     }
     set hass(h) { super.hass = h; if (this._sheetEl) this._sheetEl.hass = h; }
     get hass() { return this._hass; }
@@ -629,6 +670,14 @@ try {
       return { home, sleep };
     }
     get roomsAll() { return KD.rooms(this.config.rom); }
+    /** Profilbilde (entity_picture) som bakgrunn; forbokstaven skjules når bildet finnes */
+    pic(p) {
+      if (this.config.bilde === false) return '';
+      const u = p.bilde || this.at(p.person, 'entity_picture');
+      if (!u) return '';
+      const url = this._hass && this._hass.hassUrl ? this._hass.hassUrl(u) : u;
+      return `background-image:url('${e(String(url).replace(/'/g, '%27'))}');background-size:cover;background-position:center;color:transparent;`;
+    }
 
     /* ---------- ark ---------- */
     _syncHash() {
@@ -866,7 +915,7 @@ try {
 
       /* ----- rom ----- */
       const rooms = this.roomsAll;
-      const live = id => { const r = rooms[id]; if (!r) return null; const L = KD.roomLive(this, r); const media = this.n(`sensor.${id}_media`, 0) > 0; return { ...r, ...L, media }; };
+      const live = id => { const r = rooms[id]; if (!r) return null; const L = KD.roomLive(this, r); const ms = KD.kiRom(this, id, 'media'); const media = ms ? parseFloat(ms.state) > 0 : false; return { ...r, ...L, media }; };
       let left, right;
       if (s.floor === 'hjem') { left = ((c.hjem || {}).venstre || []).map(live).filter(Boolean); right = ((c.hjem || {}).hoyre || []).map(live).filter(Boolean); }
       else {
@@ -1012,7 +1061,7 @@ try {
 
       /* ----- ark ----- */
       const sheetBackdrop = { position: 'fixed', inset: 0, zIndex: 20, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', opacity: s.sheetOpen ? 1 : 0, pointerEvents: s.sheetOpen ? 'auto' : 'none', transition: 'opacity .35s' };
-      const sheetPanel = { position: 'fixed', left: '50%', bottom: 0, zIndex: 21, width: '100%', maxWidth: 440, height: 'calc(100vh - 52px)', display: 'flex', flexDirection: 'column', borderRadius: '38px 38px 0 0', overflow: 'hidden', background: '#141416', boxShadow: '0 -20px 50px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08)', transform: `translateX(-50%) translateY(${s.sheetOpen ? 0 : 105}%)`, transition: 'transform .5s cubic-bezier(.32,1.2,.5,1)' };
+      const sheetPanel = { position: 'fixed', left: '50%', bottom: 0, zIndex: 21, width: '100%', maxWidth: 540, height: 'calc(100vh - 52px)', display: 'flex', flexDirection: 'column', borderRadius: '38px 38px 0 0', overflow: 'hidden', background: '#141416', boxShadow: '0 -20px 50px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08)', transform: `translateX(-50%) translateY(${s.sheetOpen ? 0 : 105}%)`, transition: 'transform .5s cubic-bezier(.32,1.2,.5,1)' };
       const sh = this.sheetHeadVals();
 
       /* ----- dialoger ----- */
@@ -1023,7 +1072,7 @@ try {
         const av = { position: 'absolute', left: '50%', top: -48, transform: 'translateX(-50%)', width: 96, height: 96, borderRadius: 48, display: 'grid', placeItems: 'center', fontSize: 36, fontWeight: 600, background: p.farge, boxShadow: `0 0 0 4px #141416, 0 0 0 6px ${qp.home ? GREEN : PURP}` };
         return `<div data-key="quick-bd" data-on-click="quickClose" style="position:fixed;inset:0;z-index:30;background:rgba(0,0,0,0.55);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);animation:fadein .25s ease-out"></div>
     <div style="position:fixed;left:50%;top:50%;z-index:31;width:300px;max-width:calc(100vw - 40px);box-sizing:border-box;padding:62px 14px 14px;border-radius:30px;background:#232326;box-shadow:inset 0 1px 0 rgba(255,255,255,0.08),0 30px 60px rgba(0,0,0,0.5);display:flex;flex-direction:column;gap:10px;transform:translate(-50%,-50%);animation:pop .4s cubic-bezier(.34,1.56,.64,1)">
-      <div style="${S(av)}">${e(p.navn[0])}</div>
+      <div style="${S(av)}${this.pic(p)}">${e(p.navn[0])}</div>
       <div style="display:flex;flex-direction:column;align-items:center;gap:3px;padding-bottom:4px">
         <div style="font-size:22px;font-weight:600;letter-spacing:-0.01em">${e(p.navn)}</div>
         <div style="font-size:13px;color:#8e8d89">${qp.home ? 'Hjemme' : 'Borte'} · ${qp.sleep ? 'Sover' : 'Våken'}</div>
@@ -1070,7 +1119,7 @@ try {
     </div>`;
       };
 
-      return `<div style="position:relative;box-sizing:border-box;width:100%;max-width:420px;min-height:100vh;margin:0 auto;background:#141416;padding:20px 18px 120px;display:flex;flex-direction:column;gap:22px">
+      return `<div style="position:relative;box-sizing:border-box;width:100%;max-width:520px;min-height:100vh;margin:0 auto;background:#141416;padding:20px 18px 120px;display:flex;flex-direction:column;gap:22px">
 
   <header style="display:flex;flex-direction:column;gap:16px">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
@@ -1078,11 +1127,11 @@ try {
         <button data-on-click="toggleServer" style="display:flex;align-items:center;gap:4px;font-size:36px;font-weight:600;letter-spacing:-0.03em;line-height:1;white-space:nowrap"><span>${e(CUR.navn || 'Hjem')}</span><span class="ms" style="${S(serverChev)}">arrow_drop_down</span></button>
         <button data-on-click="openWeather" style="font-size:16px;color:#8e8d89;white-space:nowrap;text-align:left">${W.head != null ? Math.round(W.head) : '–'} °C · ${e(W.cond)}</button>
       </div>
-      <button data-on-click="openMe" data-hold="openMeSheet" title="${e(me.navn)}" style="position:relative;width:60px;height:60px;border-radius:30px;flex:none;display:grid;place-items:center;font-size:22px;font-weight:600;background:${e(me.farge)};box-shadow:${meRing}">${e(me.navn[0])}${meB.show ? `<span style="position:absolute;right:-6px;top:-4px;width:24px;height:24px;border-radius:12px;background:#232326;box-shadow:0 0 0 2px #141416;display:grid;place-items:center"><span class="ms" style="${S(meB.style)}">${meB.icon}</span></span>` : ''}</button>
+      <button data-on-click="openMe" data-hold="openMeSheet" title="${e(me.navn)}" style="position:relative;width:60px;height:60px;border-radius:30px;flex:none;display:grid;place-items:center;font-size:22px;font-weight:600;background:${e(me.farge)};box-shadow:${meRing};${this.pic(me)}">${e(me.navn[0])}${meB.show ? `<span style="position:absolute;right:-6px;top:-4px;width:24px;height:24px;border-radius:12px;background:#232326;box-shadow:0 0 0 2px #141416;display:grid;place-items:center"><span class="ms" style="${S(meB.style)}">${meB.icon}</span></span>` : ''}</button>
     </div>
     <div style="display:flex;gap:14px">
       ${people.map(({ p, b, avatar }) => `<button data-on-click="openPerson" data-arg="${e(p.id)}" title="${e(p.navn)}" style="position:relative;display:flex;flex-direction:column;align-items:center;gap:5px">
-          <span style="${S(avatar)}">${e(p.navn[0])}</span>
+          <span style="${S(avatar)}${this.pic(p)}">${e(p.navn[0])}</span>
           ${b.show ? `<span style="position:absolute;right:-8px;top:-6px;width:24px;height:24px;border-radius:12px;background:#232326;box-shadow:0 0 0 2px #141416;display:grid;place-items:center"><span class="ms" style="${S(b.style)}">${b.icon}</span></span>` : ''}
           <span style="font-size:11px;color:#8e8d89">${e(p.navn)}</span>
         </button>`).join('')}
@@ -3192,7 +3241,7 @@ try {
  * personer: { sebastian: { navn, entity, posisjon, sovn, mobil, farge, sovn_rom } }   # overstyr/utvid tabellen
  * entity / posisjon / sovn / mobil / navn / farge / sovn_rom   # overstyr for valgt person direkte
  * soner: { skole: { navn: Skole, ikon: school, farge: 'oklch(…)', bestemt: skolen } }   # nøkkel = zone-objekt-ID
- * bilde: false                 # true = bruk personens entity_picture i avataren i stedet for forbokstaven
+ * bilde: true                  # true = bruk personens entity_picture i avataren i stedet for forbokstaven
  * Mobil-sensorer (med prefiks): battery_level, battery_state, connection_type, ssid, geocoded_location, steps,
  * distance / walking_running_distance, sleep_duration, core_sleep, deep_sleep, rem_sleep, awake, sleep_score.
  */
@@ -3238,7 +3287,7 @@ try {
 
   class KDPersonCard extends KD.KDSheet {
     static head = ['person', 'Tilstedeværelse', 'Mobil, sone og søvn'];
-    static defaults = { person: 'sebastian', personer: null, soner: null, bilde: false, sovn_rom: 'Soverom' };
+    static defaults = { person: 'sebastian', personer: null, soner: null, bilde: true, sovn_rom: 'Soverom' };
     static getStubConfig() { return { person: 'sebastian' }; }
     getCardSize() { return 14; }
 
@@ -3413,7 +3462,7 @@ try {
         log: log.map(([text, sub, time, z], i, arr) => ({ text, sub, time: KD.hm(time), dot: { width: 9, height: 9, borderRadius: 5, marginTop: 5, background: this.zoneInfo(z)[2], flex: 'none' }, line: { flex: 1, width: 1, background: i < arr.length - 1 ? 'rgba(255,255,255,0.1)' : 'transparent', marginTop: 4 } })),
       };
       const pic = cfg.bilde && this.at(p.entity, 'entity_picture');
-      if (pic) Object.assign(vals.avatar, { backgroundImage: `url("${this._hass.hassUrl ? this._hass.hassUrl(pic) : pic}")`, backgroundSize: 'cover', backgroundPosition: 'center' });
+      if (pic) Object.assign(vals.avatar, { backgroundImage: `url('${KD.e(String(this._hass.hassUrl ? this._hass.hassUrl(pic) : pic).replace(/'/g, '%27'))}')`, backgroundSize: 'cover', backgroundPosition: 'center', color: 'transparent' });
       const v = vals;
 
       return `<div style="box-sizing:border-box;width:100%;max-width:420px;min-height:100vh;margin:0 auto;background:#141416;padding:20px 18px 40px;display:flex;flex-direction:column;gap:22px">
@@ -8185,7 +8234,7 @@ try {
   H.lights = (card, r, skjul) => {
     const h = card.hass; if (!h) return [];
     let ids = [];
-    const cnt = card.st(`sensor.${r.id}_lys`);
+    const cnt = KD.kiRom(card, r.id, 'lys');
     if (cnt && Array.isArray(cnt.attributes.entiteter)) ids.push(...cnt.attributes.entiteter);
     const lo = H.lysOv(card, r.id);
     if (lo && Array.isArray(lo.attributes.lys)) ids.push(...lo.attributes.lys);

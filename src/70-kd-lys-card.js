@@ -169,7 +169,7 @@
   H.lights = (card, r, skjul) => {
     const h = card.hass; if (!h) return [];
     let ids = [];
-    const cnt = card.st(`sensor.${r.id}_lys`);
+    const cnt = KD.kiRom(card, r.id, 'lys');
     if (cnt && Array.isArray(cnt.attributes.entiteter)) ids.push(...cnt.attributes.entiteter);
     const lo = H.lysOv(card, r.id);
     if (lo && Array.isArray(lo.attributes.lys)) ids.push(...lo.attributes.lys);

@@ -94,6 +94,7 @@
       hjem: { venstre: ['stue', 'inngang', 'ute'], hoyre: ['pult', 'kjokken'] },
       etasjer: { '1': ['stue', 'kjokken', 'inngang', 'do', 'vaskegang'], '2': ['pult', 'soverom', 'bad', 'cybele_soverom', 'rune_soverom', 'rune_kontor'] },
       sover_nar: 'on',
+      bilde: true,
     };
     static getStubConfig() { return {}; }
 
@@ -114,12 +115,32 @@
       this._onChildClose = (ev) => { if (ev.composedPath().includes(this._sheetEl)) { ev.stopPropagation(); this.closeSheet(); } };
       this.shadowRoot.addEventListener('kd-close', this._onChildClose, true);
       setTimeout(() => this._syncHash(), 0);
+      this._paintPage(true);
+    }
+    /* Samme bakgrunn over hele siden (også bak skjult topp og statuslinje), så kortet ikke har synlige kanter.
+       bakgrunn: false slår det av; en farge overstyrer. Settes tilbake når kortet forsvinner. */
+    _paintPage(on) {
+      const col = this.config.bakgrunn === false ? null : (this.config.bakgrunn || '#141416');
+      const root = document.documentElement, VARS = ['--lovelace-background', '--primary-background-color', '--app-header-background-color', '--kiosk-header-color'];
+      const meta = document.querySelector('meta[name="theme-color"]');
+      if (on && col) {
+        if (!this._oldVars) { this._oldVars = VARS.map(v => [v, root.style.getPropertyValue(v)]); this._oldMeta = meta && meta.getAttribute('content'); this._oldBody = document.body.style.background; }
+        VARS.forEach(v => root.style.setProperty(v, col));
+        document.body.style.background = col;
+        if (meta) meta.setAttribute('content', col);
+      } else if (this._oldVars) {
+        this._oldVars.forEach(([v, x]) => x ? root.style.setProperty(v, x) : root.style.removeProperty(v));
+        document.body.style.background = this._oldBody || '';
+        if (meta && this._oldMeta != null) meta.setAttribute('content', this._oldMeta);
+        this._oldVars = null;
+      }
     }
     onDisconnect() {
       window.removeEventListener('location-changed', this._onLoc);
       window.removeEventListener('hashchange', this._onLoc);
       window.removeEventListener('popstate', this._onLoc);
       window.removeEventListener('scroll', this._onWinScroll);
+      this._paintPage(false);
     }
     set hass(h) { super.hass = h; if (this._sheetEl) this._sheetEl.hass = h; }
     get hass() { return this._hass; }
@@ -138,6 +159,14 @@
       return { home, sleep };
     }
     get roomsAll() { return KD.rooms(this.config.rom); }
+    /** Profilbilde (entity_picture) som bakgrunn; forbokstaven skjules når bildet finnes */
+    pic(p) {
+      if (this.config.bilde === false) return '';
+      const u = p.bilde || this.at(p.person, 'entity_picture');
+      if (!u) return '';
+      const url = this._hass && this._hass.hassUrl ? this._hass.hassUrl(u) : u;
+      return `background-image:url('${e(String(url).replace(/'/g, '%27'))}');background-size:cover;background-position:center;color:transparent;`;
+    }
 
     /* ---------- ark ---------- */
     _syncHash() {
@@ -375,7 +404,7 @@
 
       /* ----- rom ----- */
       const rooms = this.roomsAll;
-      const live = id => { const r = rooms[id]; if (!r) return null; const L = KD.roomLive(this, r); const media = this.n(`sensor.${id}_media`, 0) > 0; return { ...r, ...L, media }; };
+      const live = id => { const r = rooms[id]; if (!r) return null; const L = KD.roomLive(this, r); const ms = KD.kiRom(this, id, 'media'); const media = ms ? parseFloat(ms.state) > 0 : false; return { ...r, ...L, media }; };
       let left, right;
       if (s.floor === 'hjem') { left = ((c.hjem || {}).venstre || []).map(live).filter(Boolean); right = ((c.hjem || {}).hoyre || []).map(live).filter(Boolean); }
       else {
@@ -521,7 +550,7 @@
 
       /* ----- ark ----- */
       const sheetBackdrop = { position: 'fixed', inset: 0, zIndex: 20, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', opacity: s.sheetOpen ? 1 : 0, pointerEvents: s.sheetOpen ? 'auto' : 'none', transition: 'opacity .35s' };
-      const sheetPanel = { position: 'fixed', left: '50%', bottom: 0, zIndex: 21, width: '100%', maxWidth: 440, height: 'calc(100vh - 52px)', display: 'flex', flexDirection: 'column', borderRadius: '38px 38px 0 0', overflow: 'hidden', background: '#141416', boxShadow: '0 -20px 50px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08)', transform: `translateX(-50%) translateY(${s.sheetOpen ? 0 : 105}%)`, transition: 'transform .5s cubic-bezier(.32,1.2,.5,1)' };
+      const sheetPanel = { position: 'fixed', left: '50%', bottom: 0, zIndex: 21, width: '100%', maxWidth: 540, height: 'calc(100vh - 52px)', display: 'flex', flexDirection: 'column', borderRadius: '38px 38px 0 0', overflow: 'hidden', background: '#141416', boxShadow: '0 -20px 50px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08)', transform: `translateX(-50%) translateY(${s.sheetOpen ? 0 : 105}%)`, transition: 'transform .5s cubic-bezier(.32,1.2,.5,1)' };
       const sh = this.sheetHeadVals();
 
       /* ----- dialoger ----- */
@@ -532,7 +561,7 @@
         const av = { position: 'absolute', left: '50%', top: -48, transform: 'translateX(-50%)', width: 96, height: 96, borderRadius: 48, display: 'grid', placeItems: 'center', fontSize: 36, fontWeight: 600, background: p.farge, boxShadow: `0 0 0 4px #141416, 0 0 0 6px ${qp.home ? GREEN : PURP}` };
         return `<div data-key="quick-bd" data-on-click="quickClose" style="position:fixed;inset:0;z-index:30;background:rgba(0,0,0,0.55);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);animation:fadein .25s ease-out"></div>
     <div style="position:fixed;left:50%;top:50%;z-index:31;width:300px;max-width:calc(100vw - 40px);box-sizing:border-box;padding:62px 14px 14px;border-radius:30px;background:#232326;box-shadow:inset 0 1px 0 rgba(255,255,255,0.08),0 30px 60px rgba(0,0,0,0.5);display:flex;flex-direction:column;gap:10px;transform:translate(-50%,-50%);animation:pop .4s cubic-bezier(.34,1.56,.64,1)">
-      <div style="${S(av)}">${e(p.navn[0])}</div>
+      <div style="${S(av)}${this.pic(p)}">${e(p.navn[0])}</div>
       <div style="display:flex;flex-direction:column;align-items:center;gap:3px;padding-bottom:4px">
         <div style="font-size:22px;font-weight:600;letter-spacing:-0.01em">${e(p.navn)}</div>
         <div style="font-size:13px;color:#8e8d89">${qp.home ? 'Hjemme' : 'Borte'} · ${qp.sleep ? 'Sover' : 'Våken'}</div>
@@ -579,7 +608,7 @@
     </div>`;
       };
 
-      return `<div style="position:relative;box-sizing:border-box;width:100%;max-width:420px;min-height:100vh;margin:0 auto;background:#141416;padding:20px 18px 120px;display:flex;flex-direction:column;gap:22px">
+      return `<div style="position:relative;box-sizing:border-box;width:100%;max-width:520px;min-height:100vh;margin:0 auto;background:#141416;padding:20px 18px 120px;display:flex;flex-direction:column;gap:22px">
 
   <header style="display:flex;flex-direction:column;gap:16px">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
@@ -587,11 +616,11 @@
         <button data-on-click="toggleServer" style="display:flex;align-items:center;gap:4px;font-size:36px;font-weight:600;letter-spacing:-0.03em;line-height:1;white-space:nowrap"><span>${e(CUR.navn || 'Hjem')}</span><span class="ms" style="${S(serverChev)}">arrow_drop_down</span></button>
         <button data-on-click="openWeather" style="font-size:16px;color:#8e8d89;white-space:nowrap;text-align:left">${W.head != null ? Math.round(W.head) : '–'} °C · ${e(W.cond)}</button>
       </div>
-      <button data-on-click="openMe" data-hold="openMeSheet" title="${e(me.navn)}" style="position:relative;width:60px;height:60px;border-radius:30px;flex:none;display:grid;place-items:center;font-size:22px;font-weight:600;background:${e(me.farge)};box-shadow:${meRing}">${e(me.navn[0])}${meB.show ? `<span style="position:absolute;right:-6px;top:-4px;width:24px;height:24px;border-radius:12px;background:#232326;box-shadow:0 0 0 2px #141416;display:grid;place-items:center"><span class="ms" style="${S(meB.style)}">${meB.icon}</span></span>` : ''}</button>
+      <button data-on-click="openMe" data-hold="openMeSheet" title="${e(me.navn)}" style="position:relative;width:60px;height:60px;border-radius:30px;flex:none;display:grid;place-items:center;font-size:22px;font-weight:600;background:${e(me.farge)};box-shadow:${meRing};${this.pic(me)}">${e(me.navn[0])}${meB.show ? `<span style="position:absolute;right:-6px;top:-4px;width:24px;height:24px;border-radius:12px;background:#232326;box-shadow:0 0 0 2px #141416;display:grid;place-items:center"><span class="ms" style="${S(meB.style)}">${meB.icon}</span></span>` : ''}</button>
     </div>
     <div style="display:flex;gap:14px">
       ${people.map(({ p, b, avatar }) => `<button data-on-click="openPerson" data-arg="${e(p.id)}" title="${e(p.navn)}" style="position:relative;display:flex;flex-direction:column;align-items:center;gap:5px">
-          <span style="${S(avatar)}">${e(p.navn[0])}</span>
+          <span style="${S(avatar)}${this.pic(p)}">${e(p.navn[0])}</span>
           ${b.show ? `<span style="position:absolute;right:-8px;top:-6px;width:24px;height:24px;border-radius:12px;background:#232326;box-shadow:0 0 0 2px #141416;display:grid;place-items:center"><span class="ms" style="${S(b.style)}">${b.icon}</span></span>` : ''}
           <span style="font-size:11px;color:#8e8d89">${e(p.navn)}</span>
         </button>`).join('')}
