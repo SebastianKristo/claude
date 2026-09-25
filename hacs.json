@@ -1,0 +1,7 @@
+{
+  "name": "KI Hjem Design",
+  "render_readme": true,
+  "filename": "ki-hjem-design.js",
+  "content_in_root": false,
+  "homeassistant": "2024.6.0"
+}
