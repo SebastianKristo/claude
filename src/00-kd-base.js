@@ -149,7 +149,12 @@ input,select,textarea{font:inherit;color:inherit}
     }
 
     /* ----- livssyklus ----- */
-    setConfig(config) { this.config = Object.assign({}, this.constructor.defaults || {}, config || {}); this._force = true; this._queue(); }
+    setConfig(config) {
+      this.config = Object.assign({}, this.constructor.defaults || {}, config || {});
+      // kant: sidemarg (px) – arves av innebygde ark via CSS-variabelen
+      if (config && config.kant != null || this.constructor.defaults && this.constructor.defaults.kant != null) this.style.setProperty('--kd-kant', parseFloat(this.config.kant) + 'px');
+      this._force = true; this._queue();
+    }
     set hass(h) {
       const old = this._hass; this._hass = h;
       if (!old || this._force || this._usedAll || !this._used) return this._queue();
@@ -459,6 +464,17 @@ input,select,textarea{font:inherit;color:inherit}
     }
     return f ? card.st(f) : null;
   };
+  /* ----- Brukervalg per rom (lagres som HA-brukerdata, følger brukeren på alle enheter) -----
+   * { <rom>: { skjul: [id], vis: [id], temp: id, fukt: id } } */
+  KD.UD_KEY = 'kd_rom_skjul';
+  KD.userData = (card) => KD._udOverride || card.cached('kd-ud-' + KD.UD_KEY, 5 * 60e3,
+    () => card.ws({ type: 'frontend/get_user_data', key: KD.UD_KEY }).then(r => (r && r.value) || {}).catch(() => ({})), {});
+  KD.saveUserData = (card, map) => {
+    KD._udOverride = map; card.invalidate('kd-ud-');
+    return card.ws({ type: 'frontend/set_user_data', key: KD.UD_KEY, value: map }).catch(e => card.toast('Kunne ikke lagre: ' + (e.message || e)));
+  };
+  KD.userRoom = (card, id) => (KD.userData(card) || {})[id] || {};
+
   const entId = x => typeof x === 'string' ? x : x && (x.entity || x.entity_id);
 
   KD.roomLive = (card, r) => {
@@ -467,7 +483,9 @@ input,select,textarea{font:inherit;color:inherit}
     const list = x => (Array.isArray(x) ? x : x ? [x] : []).map(entId).filter(Boolean);
     // første kandidat som finnes og har et tall (config/tabell først, så KI Rom-områdets sensorer)
     const firstNum = (...ids) => { for (const id of ids) { if (id && card.n(id) != null) return id; } return ids.find(Boolean) || null; };
-    const tId = firstNum(r.temp, ...list(A.temperatur)), hId = firstNum(r.fukt, ...list(A.fuktighet));
+    const U = KD.userRoom(card, r.id);
+    // valgt i «Tilpass rommet» → KI Rom sine sensorer → tabellen/config
+    const tId = firstNum(U.temp, ...list(A.temperatur), r.temp), hId = firstNum(U.fukt, ...list(A.fuktighet), r.fukt);
     const temp = card.n(tId), hum = card.n(hId);
     // settpunkt: KI Energis romtall → input_number/number i tabellen → første termostat i rommet
     const kiNum = `number.ki_rom_${r.id}_temp`;
@@ -482,7 +500,7 @@ input,select,textarea{font:inherit;color:inherit}
     const lightId = r.lys && card.st(r.lys) ? r.lys : null;
     const lysListe = lysS ? list(lysS.attributes.entiteter).filter(id => String(id).startsWith('light.')) : [];
     const lightsOn = lightId ? card.v(lightId) === 'on' : lysS ? parseFloat(lysS.state) > 0 : false;
-    return { temp, hum, set, setId: set != null ? setId : null, lightsOn, lightId, lysListe, lightsCount: lysS ? parseFloat(lysS.state) || 0 : null, tempId: tId, humId: hId };
+    return { tempValg: [...new Set([...list(A.temperatur), r.temp].filter(id => id && card.st(id)))], humValg: [...new Set([...list(A.fuktighet), r.fukt].filter(id => id && card.st(id)))], temp, hum, set, setId: set != null ? setId : null, lightsOn, lightId, lysListe, lightsCount: lysS ? parseFloat(lysS.state) || 0 : null, tempId: tId, humId: hId };
   };
 
   /** Juster et settpunkt (number/input_number/climate) med ett steg */

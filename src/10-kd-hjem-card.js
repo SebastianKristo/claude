@@ -89,11 +89,30 @@
       bevegelse: ['binary_sensor.stue_g6_turret_motion', 'binary_sensor.mellomgang_g5_turret_ultra_motion', 'binary_sensor.ringeklokke_g6_entry_motion'],
       gjoremal: 'todo.gjoremal',
       soppel: ['sensor.restavfall', 'sensor.papir_og_papp', 'sensor.plastemballasje', 'sensor.glass_og_metallemballasje'],
-      stovsuger_varsel: ['binary_sensor.sir_sweeps_a_lot_water_shortage'],
-      stovsuger_vannboks: 'binary_sensor.sir_sweeps_a_lot_water_box_attached',
       hjem: { venstre: ['stue', 'inngang', 'ute'], hoyre: ['pult', 'kjokken'] },
       etasjer: { '1': ['stue', 'kjokken', 'inngang', 'do', 'vaskegang'], '2': ['pult', 'soverom', 'bad', 'cybele_soverom', 'rune_soverom', 'rune_kontor'] },
       sover_nar: 'on',
+      kant: 16,
+      dokk_navn: false,   // vis navn under ikonene i dokken (kan også slås av/på i «Tilpass dokken»)
+      dokk_krymp: true,   // krymp dokken når man scroller nedover
+      dokk: [
+        { ikon: 'cleaning_services', navn: 'Støvsuger', ark: 'vac', prikk: ['binary_sensor.sir_sweeps_a_lot_water_shortage'], prikk_av: ['binary_sensor.sir_sweeps_a_lot_water_box_attached'] },
+        { ikon: 'power', navn: 'Strøm', ark: 'strom' },
+        { ikon: 'music_note', navn: 'Musikk', ark: 'media' },
+        { ikon: 'directions_car', navn: 'Bil', ark: 'car' },
+        { ikon: 'dns', navn: 'Server', ark: 'server' },
+        { ikon: 'tune', navn: 'Innstillinger', ark: 'settings' },
+      ],
+      meny: [
+        { ikon: 'thermostat', navn: 'Klima', ark: 'klima', farge: 'oklch(0.72 0.15 25)' },
+        { ikon: 'delete', navn: 'Søppel', ark: 'trash', farge: '#c9c7c2' },
+        { ikon: 'sprinkler', navn: 'Vanning', ark: 'vann', farge: 'oklch(0.8 0.12 235)' },
+        { ikon: 'calendar_month', navn: 'Kalender', ark: 'cal', farge: 'oklch(0.78 0.13 350)' },
+        { ikon: 'potted_plant', navn: 'Planter', ark: 'plants', farge: 'oklch(0.8 0.12 150)' },
+        { ikon: 'bedtime', navn: 'Søvn', ark: 'sleep', farge: 'oklch(0.72 0.1 275)' },
+        { ikon: 'print', navn: '3D-printer', ark: 'printer', farge: 'oklch(0.82 0.12 75)' },
+        { ikon: 'checklist', navn: 'Gjøremål', ark: 'todo', farge: '#c9c7c2' },
+      ],
       bilde: true,
     };
     static getStubConfig() { return {}; }
@@ -108,8 +127,9 @@
       window.addEventListener('hashchange', this._onLoc);
       window.addEventListener('popstate', this._onLoc);
       this.lastY = window.scrollY;
-      this._onWinScroll = () => { const y = window.scrollY, d = y - this.lastY; if (Math.abs(d) > 6) { const c = d > 0 && y > 60; if (c !== this.state.compact) this.setState({ compact: c }); this.lastY = y; } };
+      this._onWinScroll = () => { const y = window.scrollY, d = y - this.lastY; if (Math.abs(d) > 6) { if (!this.dockOpts().krymp) { this.lastY = y; if (this.state.compact) this.setState({ compact: false }); return; } const c = d > 0 && y > 60; if (c !== this.state.compact) this.setState({ compact: c }); this.lastY = y; } };
       window.addEventListener('scroll', this._onWinScroll, { passive: true });
+      this._dockDragInit();
       this._onSheetScroll = (ev) => { const t = ev.composedPath()[0]; if (t && t.matches && t.matches('[data-sheet-scroll]')) { cancelAnimationFrame(this._bhRaf); this._bhRaf = requestAnimationFrame(() => KD.scrollSheetTop(this.shadowRoot, t.scrollTop)); } };
       this.shadowRoot.addEventListener('scroll', this._onSheetScroll, { capture: true, passive: true });
       this._onChildClose = (ev) => { if (ev.composedPath().includes(this._sheetEl)) { ev.stopPropagation(); this.closeSheet(); } };
@@ -182,8 +202,8 @@
       this.openSheet(key, { roomId: room, personId, fromHash: true });
     }
     openSheet(file, opts = {}) {
-      if (this.config.ark === 'bubble') { this.nav('#' + (file === 'rom' ? ((this.roomsAll[opts.roomId] || {}).hash || '#' + opts.roomId).slice(1) : SHEET_HASH[file] || file)); return; }
-      const patch = { sheetFile: file, menu: false, serverMenu: false };
+      if (this.config.ark === 'bubble') { if (this.state.menu || this.state.serverMenu || this.state.dockEdit) this.setState({ menu: false, serverMenu: false, dockEdit: false }); this.nav('#' + (file === 'rom' ? ((this.roomsAll[opts.roomId] || {}).hash || '#' + opts.roomId).slice(1) : SHEET_HASH[file] || file)); return; }
+      const patch = { sheetFile: file, menu: false, serverMenu: false, dockEdit: false };
       if (opts.roomId) patch.sheetRoomId = opts.roomId;
       if (opts.personId) patch.personId = opts.personId;
       if (file !== this.state.sheetFile || opts.roomId !== undefined) { const sc = this.$('[data-sheet-scroll]'); if (sc) sc.scrollTop = 0; }
@@ -307,14 +327,136 @@
     pcMode(ev, k) { this.setState({ pcMode: k }); }
     pcMove(ev, arg, el) { const r = el.getBoundingClientRect(); const i = KD.clamp(Math.floor((ev.clientX - r.left) / r.width * 48), 0, 47); if (i !== this.state.pcHour) this.setState({ pcHour: i }); }
     pcLeave() { this.setState({ pcHour: null }); }
-    closeMenu() { this.setState({ menu: false }); }
-    menuGo(ev, k) { this.openSheet(k); }
-    navMove(ev, arg, el) { const r = el.getBoundingClientRect(); this.setState({ lx: (ev.clientX - r.left) / r.width * 100 }); }
-    navLeave() { this.setState({ lx: null }); }
+    closeMenu() { this.setState({ menu: false, dockEdit: false }); }
+    menuGo(ev, i) {
+      const it = this.dockLayout().menu[+i];
+      this.setState({ menu: false, dockEdit: false });
+      this.flush(); // lukk menyen før arket/popupen åpnes (også med bubble-card)
+      this.runItem(it);
+    }
+    /** Utfør en dokk-/menyknapp: ark | hash | sti | url | entity (+ handling: toggle/more-info) */
+    runItem(it) {
+      if (!it) return;
+      if (it.ark) return this.openSheet(it.ark, it.ark === 'rom' ? { roomId: it.rom } : it.ark === 'person' ? { personId: it.person } : {});
+      if (it.hash) return this.nav(it.hash.startsWith('#') ? it.hash : '#' + it.hash);
+      if (it.sti) return this.nav(it.sti);
+      if (it.url) return window.open(it.url);
+      if (it.entity) return it.handling === 'more-info' || it.handling === 'mer-info' ? this.more(it.entity) : this.toggle(it.entity);
+    }
+
+    /* ----- dokk: oppsett per bruker (lagres i HA) ----- */
+    /** alle knapper fra dokk + meny, med en stabil nøkkel */
+    dockPool() {
+      const c = this.config, seen = new Set(), out = [];
+      const key = it => it.id || it.ark && (it.ark + (it.rom ? ':' + it.rom : '') + (it.person ? ':' + it.person : '')) || it.hash || it.sti || it.url || it.entity || it.navn;
+      [...(c.dokk || []), ...(c.meny || [])].filter(Boolean).forEach((it, i) => {
+        const k = String(key(it) || 'i' + i); if (seen.has(k)) return; seen.add(k);
+        out.push({ ...it, _k: k, _dock: i < (c.dokk || []).filter(Boolean).length });
+      });
+      return out;
+    }
+    dockUd() {
+      if (this._dockUdLocal) return this._dockUdLocal;
+      return this.cached('kd-dokk-ud', 5 * 60e3, () => this.ws({ type: 'frontend/get_user_data', key: 'kd_dokk' }).then(r => (r && r.value) || {}).catch(() => ({})), {}) || {};
+    }
+    dockSave(patch) {
+      const v = { ...this.dockUd(), ...patch };
+      this._dockUdLocal = v;
+      this.ws({ type: 'frontend/set_user_data', key: 'kd_dokk', value: v }).catch(err => console.warn('kd-hjem: kunne ikke lagre dokk', err));
+      this.setState({ tab: 0, prevTab: 0 });
+    }
+    dockOpts() {
+      const u = this.dockUd(), c = this.config;
+      return { navn: u.navn != null ? !!u.navn : !!c.dokk_navn, krymp: u.krymp != null ? !!u.krymp : c.dokk_krymp !== false };
+    }
+    dockLayout() {
+      const pool = this.dockPool(), u = this.dockUd();
+      let dock;
+      if (Array.isArray(u.dokk)) dock = u.dokk.map(k => pool.find(p => p._k === k)).filter(Boolean);
+      else dock = pool.filter(p => p._dock);
+      const inDock = new Set(dock.map(p => p._k));
+      return { pool, dock, menu: pool.filter(p => !inDock.has(p._k)) };
+    }
+    dockItems() { return this.dockLayout().dock; }
+    dockEditOpen() { this.setState({ dockEdit: true, menu: false }); }
+    dockEditClose() { this.setState({ dockEdit: false }); }
+    dockMove(ev, arg) {
+      const [op, k] = String(arg).split('|'), keys = this.dockLayout().dock.map(p => p._k);
+      const i = keys.indexOf(k);
+      if (op === 'ut' && i >= 0) keys.splice(i, 1);
+      else if (op === 'inn' && i < 0) { if (keys.length >= 7) return; keys.push(k); }
+      else if (op === 'opp' && i > 0) [keys[i - 1], keys[i]] = [keys[i], keys[i - 1]];
+      else return;
+      this.haptic('selection');
+      this.dockSave({ dokk: keys });
+    }
+    dockOpt(ev, k) { this.haptic('selection'); this.dockSave({ [k]: !this.dockOpts()[k] }); }
+    dockReset() { this._dockUdLocal = {}; this.ws({ type: 'frontend/set_user_data', key: 'kd_dokk', value: {} }).catch(() => { }); this.setState({ tab: 0, prevTab: 0 }); }
+
+    navMove(ev, arg, el) { if (this._drag && this._drag.moved) return; const r = el.getBoundingClientRect(); this.setState({ lx: (ev.clientX - r.left) / r.width * 100 }); }
+    navLeave() { if (!this._drag) this.setState({ lx: null }); }
     dockGo(ev, i) {
+      if (performance.now() - (this._dragEnd || 0) < 350) return; // klikket etter en dra-bevegelse
       i = +i;
-      if (i === 6) return this.setState({ menu: !this.state.menu });
-      this.pickTab(i); this.openSheet(['vac', 'strom', 'media', 'car', 'server', 'settings'][i]);
+      const items = this.dockItems();
+      if (i >= items.length) return this.setState({ menu: !this.state.menu, dockEdit: false });
+      const it = items[i];
+      if (this.state.menu) this.setState({ menu: false });
+      if (it.ark || it.hash) this.pickTab(i);
+      this.runItem(it);
+    }
+    /** Dra fingeren langs dokken: glasslinsen følger fingeren, slipp for å velge */
+    _dockDragInit() {
+      if (this._dragInit) return; this._dragInit = true;
+      const R = this.shadowRoot;
+      const geo = () => {
+        const nav = this.$('nav[data-key="nav"]'); if (!nav) return null;
+        const btns = Array.from(nav.querySelectorAll('button[data-arg]'));
+        return { nav, btns, ind: nav.querySelector('[data-ind]'), rect: nav.getBoundingClientRect() };
+      };
+      const idxAt = (g, x) => { let best = 0, bd = 1e9; g.btns.forEach((b, i) => { const r = b.getBoundingClientRect(), d = Math.abs(x - (r.left + r.width / 2)); if (d < bd) { bd = d; best = i; } }); return best; };
+      R.addEventListener('pointerdown', ev => {
+        const nav = ev.composedPath().find(n => n.getAttribute && n.getAttribute('data-key') === 'nav');
+        if (!nav || ev.button > 0) return;
+        this._drag = { x0: ev.clientX, y0: ev.clientY, id: ev.pointerId, moved: false, idx: -1 };
+      }, { capture: true, passive: true });
+      R.addEventListener('pointermove', ev => {
+        const d = this._drag; if (!d || ev.pointerId !== d.id) return;
+        if (!d.moved) {
+          if (Math.abs(ev.clientX - d.x0) < 8) return;
+          d.moved = true;
+          const g = geo(); if (!g) return;
+          try { g.nav.setPointerCapture(ev.pointerId); } catch (e) { }
+          if (g.ind) { g.ind.style.transition = 'left .14s cubic-bezier(.3,1.3,.6,1), transform .3s cubic-bezier(.34,1.8,.64,1), top .3s, height .3s'; g.ind.style.transform = 'scale(1.18)'; }
+          g.nav.style.transform = g.nav.style.transform.replace(/scale\([^)]*\)/, 'scale(1.03)');
+        }
+        const g = geo(); if (!g || !g.ind) return;
+        const w = g.ind.offsetWidth, first = g.btns[0].getBoundingClientRect(), last = g.btns[g.btns.length - 1].getBoundingClientRect();
+        const left = KD.clamp(ev.clientX - g.rect.left - w / 2, first.left - g.rect.left, last.left - g.rect.left);
+        g.ind.style.left = left + 'px';
+        const sheen = g.nav.querySelector('[data-sheen]');
+        if (sheen) { sheen.style.opacity = 1; sheen.style.background = `radial-gradient(120px 60px at ${(ev.clientX - g.rect.left) / g.rect.width * 100}% 0%, rgba(255,255,255,0.28), transparent 70%)`; }
+        const i = idxAt(g, ev.clientX);
+        if (i !== d.idx) {
+          d.idx = i; this.haptic('selection');
+          g.btns.forEach((b, j) => { const ic = b.querySelector('.ms'); if (ic) { ic.style.opacity = j === i ? 1 : 0.72; ic.style.transform = j === i ? 'scale(1.18)' : 'scale(1)'; } });
+        }
+      }, { capture: true, passive: true });
+      const end = ev => {
+        const d = this._drag; if (!d || ev.pointerId !== d.id) return;
+        this._drag = null;
+        if (!d.moved) return;
+        this._dragEnd = performance.now();
+        const g = geo(); if (!g) return;
+        const i = ev.type === 'pointercancel' ? -1 : idxAt(g, ev.clientX);
+        if (g.ind) g.ind.style.transition = 'left .45s cubic-bezier(.34,1.4,.64,1), transform .45s cubic-bezier(.34,1.8,.64,1)';
+        this._force = true;
+        if (i >= 0) { this._dragEnd = 0; this.dockGo(null, i); this._dragEnd = performance.now(); }
+        this.setState({ lx: null });
+        this.flush();
+      };
+      R.addEventListener('pointerup', end, true);
+      R.addEventListener('pointercancel', end, true);
     }
     pickTab(i) {
       if (i === this.state.tab) return this.setState({ compact: false });
@@ -517,11 +659,15 @@
 
       /* ----- dokk ----- */
       const tab = s.tab ?? 0, compact = !!s.compact, moving = !!s.moving;
-      const vacDot = (c.stovsuger_varsel || []).some(id => this.v(id) === 'on') || (c.stovsuger_vannboks && this.v(c.stovsuger_vannboks) === 'off');
-      const ITEMS = [['cleaning_services', 'Støvsuger', vacDot], ['power', 'Stikkontakter'], ['music_note', 'Musikk'], ['directions_car', 'Bil'], ['dns', 'Server'], ['tune', 'Innstillinger'], ['more_horiz', 'Mer']];
-      const SZ = 44, GAP = 2, PAD = 6, dist = Math.abs(tab - (s.prevTab ?? tab)), lx = s.lx;
+      const arr = x => Array.isArray(x) ? x : x ? [x] : [];
+      const dotOf = it => arr(it.prikk).some(id => ['on', 'open', 'unlocked', 'problem', 'playing'].includes(this.v(id))) || arr(it.prikk_av).some(id => this.v(id) === 'off');
+      const LAY = this.dockLayout(), OPT = this.dockOpts(), NAVN = OPT.navn;
+      const ITEMS = LAY.dock.map(it => [it.ikon || 'circle', it.navn || '', dotOf(it)]);
+      ITEMS.push(['more_horiz', 'Mer', LAY.menu.some(dotOf)]);
+      const GAP = 2, PAD = 6, AVAIL = Math.min(window.innerWidth || 460, 560) - 16 - 2 * PAD, FIT = Math.floor((AVAIL - GAP * (ITEMS.length - 1)) / ITEMS.length);
+      const SZ = Math.max(38, Math.min(NAVN ? 58 : 44, FIT)), SH = NAVN ? 52 : 44, dist = Math.abs(tab - (s.prevTab ?? tab)), lx = s.lx;
       const navStyle = {
-        position: 'fixed', left: '50%', bottom: 18, zIndex: 24, display: 'flex', gap: GAP, padding: PAD, borderRadius: 30, overflow: 'hidden', isolation: 'isolate',
+        position: 'fixed', left: '50%', bottom: 18, zIndex: 24, display: 'flex', gap: GAP, touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none', maxWidth: 'calc(100vw - 16px)', padding: PAD, borderRadius: NAVN ? 32 : 30, overflow: 'hidden', isolation: 'isolate',
         background: 'rgba(40,40,44,0.38)', backdropFilter: 'blur(22px) saturate(190%) brightness(1.1)', WebkitBackdropFilter: 'blur(22px) saturate(190%) brightness(1.1)',
         boxShadow: '0 18px 40px rgba(0,0,0,0.45), 0 2px 6px rgba(0,0,0,0.25)',
         transform: `translateX(-50%) scale(${compact ? 0.8 : 1}) translateY(${compact ? 8 : 0}px)`, transformOrigin: 'bottom center',
@@ -529,7 +675,7 @@
       };
       const navSheen = { position: 'absolute', inset: 0, borderRadius: 'inherit', pointerEvents: 'none', opacity: lx == null ? 0 : 1, transition: 'opacity .3s', background: `radial-gradient(120px 60px at ${lx ?? 50}% 0%, rgba(255,255,255,0.28), transparent 70%)` };
       const indicator = {
-        position: 'absolute', top: PAD, left: PAD + tab * (SZ + GAP), width: SZ, height: SZ, borderRadius: 22, pointerEvents: 'none',
+        position: 'absolute', top: PAD, left: PAD + Math.min(tab, ITEMS.length - 1) * (SZ + GAP), width: SZ, height: SH, borderRadius: NAVN ? 26 : 22, pointerEvents: 'none',
         background: 'linear-gradient(180deg, rgba(255,255,255,0.34), rgba(255,255,255,0.14))',
         boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.6), inset 0 -1px 1px rgba(255,255,255,0.15), 0 4px 14px rgba(0,0,0,0.25)',
         backdropFilter: 'blur(6px) saturate(200%)', WebkitBackdropFilter: 'blur(6px) saturate(200%)',
@@ -537,10 +683,33 @@
         transition: 'left .5s cubic-bezier(.34,1.4,.64,1), transform .45s cubic-bezier(.34,1.8,.64,1)',
       };
       const dock = ITEMS.map(([icon, title, dot], i) => { const act = i === tab; return { i, icon, title,
-        style: { position: 'relative', zIndex: 1, width: SZ, height: SZ, borderRadius: 22, display: 'grid', placeItems: 'center', color: '#f2f1ee', transition: 'transform .35s cubic-bezier(.34,1.8,.64,1)' },
+        style: { position: 'relative', zIndex: 1, flex: 'none', width: SZ, height: SH, borderRadius: 22, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, color: '#f2f1ee', transition: 'transform .35s cubic-bezier(.34,1.8,.64,1)', WebkitTapHighlightColor: 'transparent' },
+        label: { maxWidth: SZ - 6, fontSize: 10, fontWeight: 500, lineHeight: '12px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', opacity: act ? 1 : 0.62, transition: 'opacity .2s' },
         iconStyle: { fontSize: 22, opacity: act ? 1 : 0.72, transform: act ? 'scale(1.08)' : 'scale(1)', fontVariationSettings: `'FILL' ${act ? 1 : 0}`, transition: 'transform .4s cubic-bezier(.34,1.8,.64,1), opacity .2s', textShadow: '0 1px 2px rgba(0,0,0,0.3)' },
-        dot: { position: 'absolute', right: 9, top: 9, width: 7, height: 7, borderRadius: 4, background: dot ? C.red : 'transparent', boxShadow: dot ? '0 0 0 1.5px rgba(30,30,34,0.6)' : 'none' } }; });
-      const menuItems = [['thermostat', 'Klima', 'klima', 'oklch(0.72 0.15 25)'], ['delete', 'Søppel', 'trash', '#c9c7c2'], ['sprinkler', 'Vanning', 'vann', 'oklch(0.8 0.12 235)'], ['calendar_month', 'Kalender', 'cal', 'oklch(0.78 0.13 350)'], ['potted_plant', 'Planter', 'plants', 'oklch(0.8 0.12 150)'], ['bedtime', 'Søvn', 'sleep', 'oklch(0.72 0.1 275)'], ['print', '3D-printer', 'printer', 'oklch(0.82 0.12 75)'], ['checklist', 'Gjøremål', 'todo', '#c9c7c2']];
+        dot: { position: 'absolute', right: NAVN ? 13 : 9, top: NAVN ? 5 : 9, width: 7, height: 7, borderRadius: 4, background: dot ? C.red : 'transparent', boxShadow: dot ? '0 0 0 1.5px rgba(30,30,34,0.6)' : 'none' } }; });
+      const menuItems = LAY.menu.map((m, i) => [m.ikon || 'circle', m.navn || '', i, m.farge || '#c9c7c2', dotOf(m)]);
+      const dockEditHTML = () => {
+        const sw = on => `<span style="${S({ width: 44, height: 26, borderRadius: 13, flex: 'none', position: 'relative', background: on ? 'oklch(0.78 0.13 350)' : '#3a3a3d', transition: 'background .2s' })}"><span style="${S({ position: 'absolute', top: 3, left: on ? 21 : 3, width: 20, height: 20, borderRadius: 10, background: '#f4f3ef', transition: 'left .25s cubic-bezier(.34,1.56,.64,1)' })}"></span></span>`;
+        const opt = (k, label, sub, on) => `<button class="kd-hov8" data-on-click="dockOpt" data-arg="${k}" style="min-height:52px;padding:6px 10px 6px 14px;border-radius:16px;display:flex;align-items:center;gap:12px;text-align:left"><span style="flex:1;min-width:0;display:flex;flex-direction:column"><span style="font-size:14px;font-weight:500">${label}</span><span style="font-size:11px;color:#8e8d89">${sub}</span></span>${sw(on)}</button>`;
+        const row = (it, i, inDock) => `<div data-key="de-${e(it._k)}" style="min-height:48px;padding:0 6px 0 12px;border-radius:16px;display:flex;align-items:center;gap:12px">
+            <span class="ms" style="font-size:20px;color:${inDock ? '#f2f1ee' : e(it.farge || '#c9c7c2')}">${e(it.ikon || 'circle')}</span>
+            <span style="flex:1;min-width:0;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(it.navn || it._k)}</span>
+            ${inDock && i > 0 ? `<button class="kd-press" data-on-click="dockMove" data-arg="${e('opp|' + it._k)}" title="Flytt til venstre" style="width:36px;height:36px;border-radius:18px;display:grid;place-items:center;color:#8e8d89"><span class="ms" style="font-size:20px">arrow_upward</span></button>` : ''}
+            <button class="kd-press" data-on-click="dockMove" data-arg="${e((inDock ? 'ut|' : 'inn|') + it._k)}" title="${inDock ? 'Flytt til «Mer»' : 'Legg i dokken'}" style="${S({ width: 36, height: 36, borderRadius: 18, display: 'grid', placeItems: 'center', color: inDock ? C.red : C.green, opacity: !inDock && LAY.dock.length >= 7 ? 0.3 : 1 })}"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">${inDock ? 'remove_circle' : 'add_circle'}</span></button>
+          </div>`;
+        return `<div data-key="de-bd" data-on-click="dockEditClose" style="position:fixed;inset:0;z-index:27;background:rgba(0,0,0,0.35)"></div>
+    <div data-key="de-panel" style="position:fixed;left:50%;transform:translateX(-50%);bottom:${NAVN ? 92 : 84}px;z-index:28;width:min(400px, calc(100vw - 24px));max-height:calc(100vh - 140px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;box-sizing:border-box;padding:8px;border-radius:26px;background:rgba(40,40,44,0.72);backdrop-filter:blur(26px) saturate(190%);-webkit-backdrop-filter:blur(26px) saturate(190%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.3),inset 0 0 0 0.5px rgba(255,255,255,0.18),0 18px 40px rgba(0,0,0,0.5);display:flex;flex-direction:column;gap:2px">
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 6px 6px 14px"><span style="flex:1;font-size:16px;font-weight:600">Tilpass dokken</span>
+        <button class="kd-hov8" data-on-click="dockReset" style="height:34px;padding:0 12px;border-radius:17px;font-size:12px;color:#a9a7a2">Nullstill</button>
+        <button data-on-click="dockEditClose" style="height:34px;padding:0 14px;border-radius:17px;font-size:13px;font-weight:600;background:linear-gradient(135deg, oklch(0.78 0.13 350), oklch(0.9 0.05 20));color:#2a1720">Ferdig</button></div>
+      ${opt('navn', 'Vis navn', 'Navn under ikonene i dokken', OPT.navn)}
+      ${opt('krymp', 'Krymp ved scrolling', 'Dokken blir mindre når du scroller ned', OPT.krymp)}
+      <div style="padding:12px 14px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">I dokken</div>
+      ${LAY.dock.map((it, i) => row(it, i, true)).join('') || '<div style="padding:8px 14px;font-size:13px;color:#6d6c69">Ingen – alt ligger i «Mer»</div>'}
+      <div style="padding:12px 14px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">Bak de tre prikkene</div>
+      ${LAY.menu.map((it, i) => row(it, i, false)).join('') || '<div style="padding:8px 14px;font-size:13px;color:#6d6c69">Tom</div>'}
+    </div>`;
+      };
 
       /* ----- servere ----- */
       const SERV = this.servers();
@@ -608,7 +777,7 @@
     </div>`;
       };
 
-      return `<div style="position:relative;box-sizing:border-box;width:100%;max-width:520px;min-height:100vh;margin:0 auto;background:#141416;padding:20px 18px 120px;display:flex;flex-direction:column;gap:22px">
+      return `<div style="position:relative;box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 120px;display:flex;flex-direction:column;gap:22px">
 
   <header style="display:flex;flex-direction:column;gap:16px">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
@@ -715,9 +884,12 @@
   </section>
 
   ${s.menu ? `<div data-key="menu-bd" data-on-click="closeMenu" style="position:fixed;inset:0;z-index:25"></div>
-    <div style="position:fixed;right:max(12px, calc(50% - 198px));bottom:84px;z-index:26;min-width:180px;max-height:calc(100vh - 120px);overflow-y:auto;scrollbar-width:none;box-sizing:border-box;padding:6px;border-radius:22px;background:rgba(40,40,44,0.5);backdrop-filter:blur(22px) saturate(190%);-webkit-backdrop-filter:blur(22px) saturate(190%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.3),inset 0 0 0 0.5px rgba(255,255,255,0.18),0 18px 40px rgba(0,0,0,0.45);display:flex;flex-direction:column;gap:2px">
-      ${menuItems.map(([icon, label, k, col]) => `<button class="kd-hov" data-on-click="menuGo" data-arg="${k}" style="height:44px;padding:0 14px 0 10px;border-radius:16px;display:flex;align-items:center;gap:10px;font-size:14px;font-weight:500;white-space:nowrap"><span class="ms" style="font-size:20px;color:${col}">${icon}</span>${label}</button>`).join('')}
+    <div style="position:fixed;right:max(12px, calc(50% - 198px));bottom:${NAVN ? 92 : 84}px;z-index:26;min-width:180px;max-height:calc(100vh - 120px);overflow-y:auto;scrollbar-width:none;box-sizing:border-box;padding:6px;border-radius:22px;background:rgba(40,40,44,0.5);backdrop-filter:blur(22px) saturate(190%);-webkit-backdrop-filter:blur(22px) saturate(190%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.3),inset 0 0 0 0.5px rgba(255,255,255,0.18),0 18px 40px rgba(0,0,0,0.45);display:flex;flex-direction:column;gap:2px">
+      ${menuItems.map(([icon, label, k, col, dot]) => `<button class="kd-hov" data-on-click="menuGo" data-arg="${k}" style="height:44px;padding:0 14px 0 10px;border-radius:16px;display:flex;align-items:center;gap:10px;font-size:14px;font-weight:500;white-space:nowrap"><span class="ms" style="font-size:20px;color:${e(col)}">${e(icon)}</span><span style="flex:1;text-align:left">${e(label)}</span>${dot ? `<span style="width:7px;height:7px;border-radius:4px;background:${C.red}"></span>` : ''}</button>`).join('')}
+      ${menuItems.length ? '<div style="height:1px;margin:4px 10px;background:rgba(255,255,255,0.08)"></div>' : ''}
+      <button class="kd-hov" data-on-click="dockEditOpen" style="height:44px;padding:0 14px 0 10px;border-radius:16px;display:flex;align-items:center;gap:10px;font-size:14px;font-weight:500;white-space:nowrap;color:#a9a7a2"><span class="ms" style="font-size:20px">edit</span>Tilpass dokken</button>
     </div>` : ''}
+  ${s.dockEdit ? dockEditHTML() : ''}
 
   ${s.quickId ? quickHTML() : ''}
   ${lockHTML()}
@@ -747,11 +919,11 @@
 
   <nav data-key="nav" data-on-pointermove="navMove" data-on-pointerleave="navLeave" style="${S(navStyle)}">
     <span style="position:absolute;inset:0;border-radius:inherit;background:linear-gradient(180deg,rgba(255,255,255,0.14),rgba(255,255,255,0.02) 45%,rgba(255,255,255,0.06));pointer-events:none"></span>
-    <span style="${S(navSheen)}"></span>
+    <span data-sheen="1" style="${S(navSheen)}"></span>
     <span style="position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 1px 0 rgba(255,255,255,0.35),inset 0 -1px 0 rgba(255,255,255,0.08),inset 0 0 0 0.5px rgba(255,255,255,0.18);pointer-events:none"></span>
-    <span style="${S(indicator)}"></span>
-    ${dock.map(d => `<button class="kd-press" title="${d.title}" data-on-click="dockGo" data-arg="${d.i}" style="${S(d.style)}">
-        <span class="ms" style="${S(d.iconStyle)}">${d.icon}</span>
+    <span data-ind="1" style="${S(indicator)}"></span>
+    ${dock.map(d => `<button class="kd-press" title="${e(d.title)}" data-on-click="dockGo" data-arg="${d.i}" style="${S(d.style)}">
+        <span class="ms" style="${S(d.iconStyle)}">${e(d.icon)}</span>${NAVN ? `<span style="${S(d.label)}">${e(d.title)}</span>` : ''}
         <span style="${S(d.dot)}"></span>
       </button>`).join('')}
   </nav>

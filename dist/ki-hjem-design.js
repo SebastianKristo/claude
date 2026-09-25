@@ -1,4 +1,4 @@
-/* KI Hjem Design – pikselkopi av Claude Design «Home Assistant sikkerhetspanel». Bygget 2026-09-25T22:19Z. */
+/* KI Hjem Design – pikselkopi av Claude Design «Home Assistant sikkerhetspanel». Bygget 2026-09-25T22:35Z. */
 
 /* ===== 00-kd-base.js ===== */
 try {
@@ -153,7 +153,12 @@ input,select,textarea{font:inherit;color:inherit}
     }
 
     /* ----- livssyklus ----- */
-    setConfig(config) { this.config = Object.assign({}, this.constructor.defaults || {}, config || {}); this._force = true; this._queue(); }
+    setConfig(config) {
+      this.config = Object.assign({}, this.constructor.defaults || {}, config || {});
+      // kant: sidemarg (px) – arves av innebygde ark via CSS-variabelen
+      if (config && config.kant != null || this.constructor.defaults && this.constructor.defaults.kant != null) this.style.setProperty('--kd-kant', parseFloat(this.config.kant) + 'px');
+      this._force = true; this._queue();
+    }
     set hass(h) {
       const old = this._hass; this._hass = h;
       if (!old || this._force || this._usedAll || !this._used) return this._queue();
@@ -463,6 +468,17 @@ input,select,textarea{font:inherit;color:inherit}
     }
     return f ? card.st(f) : null;
   };
+  /* ----- Brukervalg per rom (lagres som HA-brukerdata, følger brukeren på alle enheter) -----
+   * { <rom>: { skjul: [id], vis: [id], temp: id, fukt: id } } */
+  KD.UD_KEY = 'kd_rom_skjul';
+  KD.userData = (card) => KD._udOverride || card.cached('kd-ud-' + KD.UD_KEY, 5 * 60e3,
+    () => card.ws({ type: 'frontend/get_user_data', key: KD.UD_KEY }).then(r => (r && r.value) || {}).catch(() => ({})), {});
+  KD.saveUserData = (card, map) => {
+    KD._udOverride = map; card.invalidate('kd-ud-');
+    return card.ws({ type: 'frontend/set_user_data', key: KD.UD_KEY, value: map }).catch(e => card.toast('Kunne ikke lagre: ' + (e.message || e)));
+  };
+  KD.userRoom = (card, id) => (KD.userData(card) || {})[id] || {};
+
   const entId = x => typeof x === 'string' ? x : x && (x.entity || x.entity_id);
 
   KD.roomLive = (card, r) => {
@@ -471,7 +487,9 @@ input,select,textarea{font:inherit;color:inherit}
     const list = x => (Array.isArray(x) ? x : x ? [x] : []).map(entId).filter(Boolean);
     // første kandidat som finnes og har et tall (config/tabell først, så KI Rom-områdets sensorer)
     const firstNum = (...ids) => { for (const id of ids) { if (id && card.n(id) != null) return id; } return ids.find(Boolean) || null; };
-    const tId = firstNum(r.temp, ...list(A.temperatur)), hId = firstNum(r.fukt, ...list(A.fuktighet));
+    const U = KD.userRoom(card, r.id);
+    // valgt i «Tilpass rommet» → KI Rom sine sensorer → tabellen/config
+    const tId = firstNum(U.temp, ...list(A.temperatur), r.temp), hId = firstNum(U.fukt, ...list(A.fuktighet), r.fukt);
     const temp = card.n(tId), hum = card.n(hId);
     // settpunkt: KI Energis romtall → input_number/number i tabellen → første termostat i rommet
     const kiNum = `number.ki_rom_${r.id}_temp`;
@@ -486,7 +504,7 @@ input,select,textarea{font:inherit;color:inherit}
     const lightId = r.lys && card.st(r.lys) ? r.lys : null;
     const lysListe = lysS ? list(lysS.attributes.entiteter).filter(id => String(id).startsWith('light.')) : [];
     const lightsOn = lightId ? card.v(lightId) === 'on' : lysS ? parseFloat(lysS.state) > 0 : false;
-    return { temp, hum, set, setId: set != null ? setId : null, lightsOn, lightId, lysListe, lightsCount: lysS ? parseFloat(lysS.state) || 0 : null, tempId: tId, humId: hId };
+    return { tempValg: [...new Set([...list(A.temperatur), r.temp].filter(id => id && card.st(id)))], humValg: [...new Set([...list(A.fuktighet), r.fukt].filter(id => id && card.st(id)))], temp, hum, set, setId: set != null ? setId : null, lightsOn, lightId, lysListe, lightsCount: lysS ? parseFloat(lysS.state) || 0 : null, tempId: tId, humId: hId };
   };
 
   /** Juster et settpunkt (number/input_number/climate) med ett steg */
@@ -600,11 +618,30 @@ try {
       bevegelse: ['binary_sensor.stue_g6_turret_motion', 'binary_sensor.mellomgang_g5_turret_ultra_motion', 'binary_sensor.ringeklokke_g6_entry_motion'],
       gjoremal: 'todo.gjoremal',
       soppel: ['sensor.restavfall', 'sensor.papir_og_papp', 'sensor.plastemballasje', 'sensor.glass_og_metallemballasje'],
-      stovsuger_varsel: ['binary_sensor.sir_sweeps_a_lot_water_shortage'],
-      stovsuger_vannboks: 'binary_sensor.sir_sweeps_a_lot_water_box_attached',
       hjem: { venstre: ['stue', 'inngang', 'ute'], hoyre: ['pult', 'kjokken'] },
       etasjer: { '1': ['stue', 'kjokken', 'inngang', 'do', 'vaskegang'], '2': ['pult', 'soverom', 'bad', 'cybele_soverom', 'rune_soverom', 'rune_kontor'] },
       sover_nar: 'on',
+      kant: 16,
+      dokk_navn: false,   // vis navn under ikonene i dokken (kan også slås av/på i «Tilpass dokken»)
+      dokk_krymp: true,   // krymp dokken når man scroller nedover
+      dokk: [
+        { ikon: 'cleaning_services', navn: 'Støvsuger', ark: 'vac', prikk: ['binary_sensor.sir_sweeps_a_lot_water_shortage'], prikk_av: ['binary_sensor.sir_sweeps_a_lot_water_box_attached'] },
+        { ikon: 'power', navn: 'Strøm', ark: 'strom' },
+        { ikon: 'music_note', navn: 'Musikk', ark: 'media' },
+        { ikon: 'directions_car', navn: 'Bil', ark: 'car' },
+        { ikon: 'dns', navn: 'Server', ark: 'server' },
+        { ikon: 'tune', navn: 'Innstillinger', ark: 'settings' },
+      ],
+      meny: [
+        { ikon: 'thermostat', navn: 'Klima', ark: 'klima', farge: 'oklch(0.72 0.15 25)' },
+        { ikon: 'delete', navn: 'Søppel', ark: 'trash', farge: '#c9c7c2' },
+        { ikon: 'sprinkler', navn: 'Vanning', ark: 'vann', farge: 'oklch(0.8 0.12 235)' },
+        { ikon: 'calendar_month', navn: 'Kalender', ark: 'cal', farge: 'oklch(0.78 0.13 350)' },
+        { ikon: 'potted_plant', navn: 'Planter', ark: 'plants', farge: 'oklch(0.8 0.12 150)' },
+        { ikon: 'bedtime', navn: 'Søvn', ark: 'sleep', farge: 'oklch(0.72 0.1 275)' },
+        { ikon: 'print', navn: '3D-printer', ark: 'printer', farge: 'oklch(0.82 0.12 75)' },
+        { ikon: 'checklist', navn: 'Gjøremål', ark: 'todo', farge: '#c9c7c2' },
+      ],
       bilde: true,
     };
     static getStubConfig() { return {}; }
@@ -619,8 +656,9 @@ try {
       window.addEventListener('hashchange', this._onLoc);
       window.addEventListener('popstate', this._onLoc);
       this.lastY = window.scrollY;
-      this._onWinScroll = () => { const y = window.scrollY, d = y - this.lastY; if (Math.abs(d) > 6) { const c = d > 0 && y > 60; if (c !== this.state.compact) this.setState({ compact: c }); this.lastY = y; } };
+      this._onWinScroll = () => { const y = window.scrollY, d = y - this.lastY; if (Math.abs(d) > 6) { if (!this.dockOpts().krymp) { this.lastY = y; if (this.state.compact) this.setState({ compact: false }); return; } const c = d > 0 && y > 60; if (c !== this.state.compact) this.setState({ compact: c }); this.lastY = y; } };
       window.addEventListener('scroll', this._onWinScroll, { passive: true });
+      this._dockDragInit();
       this._onSheetScroll = (ev) => { const t = ev.composedPath()[0]; if (t && t.matches && t.matches('[data-sheet-scroll]')) { cancelAnimationFrame(this._bhRaf); this._bhRaf = requestAnimationFrame(() => KD.scrollSheetTop(this.shadowRoot, t.scrollTop)); } };
       this.shadowRoot.addEventListener('scroll', this._onSheetScroll, { capture: true, passive: true });
       this._onChildClose = (ev) => { if (ev.composedPath().includes(this._sheetEl)) { ev.stopPropagation(); this.closeSheet(); } };
@@ -693,8 +731,8 @@ try {
       this.openSheet(key, { roomId: room, personId, fromHash: true });
     }
     openSheet(file, opts = {}) {
-      if (this.config.ark === 'bubble') { this.nav('#' + (file === 'rom' ? ((this.roomsAll[opts.roomId] || {}).hash || '#' + opts.roomId).slice(1) : SHEET_HASH[file] || file)); return; }
-      const patch = { sheetFile: file, menu: false, serverMenu: false };
+      if (this.config.ark === 'bubble') { if (this.state.menu || this.state.serverMenu || this.state.dockEdit) this.setState({ menu: false, serverMenu: false, dockEdit: false }); this.nav('#' + (file === 'rom' ? ((this.roomsAll[opts.roomId] || {}).hash || '#' + opts.roomId).slice(1) : SHEET_HASH[file] || file)); return; }
+      const patch = { sheetFile: file, menu: false, serverMenu: false, dockEdit: false };
       if (opts.roomId) patch.sheetRoomId = opts.roomId;
       if (opts.personId) patch.personId = opts.personId;
       if (file !== this.state.sheetFile || opts.roomId !== undefined) { const sc = this.$('[data-sheet-scroll]'); if (sc) sc.scrollTop = 0; }
@@ -818,14 +856,136 @@ try {
     pcMode(ev, k) { this.setState({ pcMode: k }); }
     pcMove(ev, arg, el) { const r = el.getBoundingClientRect(); const i = KD.clamp(Math.floor((ev.clientX - r.left) / r.width * 48), 0, 47); if (i !== this.state.pcHour) this.setState({ pcHour: i }); }
     pcLeave() { this.setState({ pcHour: null }); }
-    closeMenu() { this.setState({ menu: false }); }
-    menuGo(ev, k) { this.openSheet(k); }
-    navMove(ev, arg, el) { const r = el.getBoundingClientRect(); this.setState({ lx: (ev.clientX - r.left) / r.width * 100 }); }
-    navLeave() { this.setState({ lx: null }); }
+    closeMenu() { this.setState({ menu: false, dockEdit: false }); }
+    menuGo(ev, i) {
+      const it = this.dockLayout().menu[+i];
+      this.setState({ menu: false, dockEdit: false });
+      this.flush(); // lukk menyen før arket/popupen åpnes (også med bubble-card)
+      this.runItem(it);
+    }
+    /** Utfør en dokk-/menyknapp: ark | hash | sti | url | entity (+ handling: toggle/more-info) */
+    runItem(it) {
+      if (!it) return;
+      if (it.ark) return this.openSheet(it.ark, it.ark === 'rom' ? { roomId: it.rom } : it.ark === 'person' ? { personId: it.person } : {});
+      if (it.hash) return this.nav(it.hash.startsWith('#') ? it.hash : '#' + it.hash);
+      if (it.sti) return this.nav(it.sti);
+      if (it.url) return window.open(it.url);
+      if (it.entity) return it.handling === 'more-info' || it.handling === 'mer-info' ? this.more(it.entity) : this.toggle(it.entity);
+    }
+
+    /* ----- dokk: oppsett per bruker (lagres i HA) ----- */
+    /** alle knapper fra dokk + meny, med en stabil nøkkel */
+    dockPool() {
+      const c = this.config, seen = new Set(), out = [];
+      const key = it => it.id || it.ark && (it.ark + (it.rom ? ':' + it.rom : '') + (it.person ? ':' + it.person : '')) || it.hash || it.sti || it.url || it.entity || it.navn;
+      [...(c.dokk || []), ...(c.meny || [])].filter(Boolean).forEach((it, i) => {
+        const k = String(key(it) || 'i' + i); if (seen.has(k)) return; seen.add(k);
+        out.push({ ...it, _k: k, _dock: i < (c.dokk || []).filter(Boolean).length });
+      });
+      return out;
+    }
+    dockUd() {
+      if (this._dockUdLocal) return this._dockUdLocal;
+      return this.cached('kd-dokk-ud', 5 * 60e3, () => this.ws({ type: 'frontend/get_user_data', key: 'kd_dokk' }).then(r => (r && r.value) || {}).catch(() => ({})), {}) || {};
+    }
+    dockSave(patch) {
+      const v = { ...this.dockUd(), ...patch };
+      this._dockUdLocal = v;
+      this.ws({ type: 'frontend/set_user_data', key: 'kd_dokk', value: v }).catch(err => console.warn('kd-hjem: kunne ikke lagre dokk', err));
+      this.setState({ tab: 0, prevTab: 0 });
+    }
+    dockOpts() {
+      const u = this.dockUd(), c = this.config;
+      return { navn: u.navn != null ? !!u.navn : !!c.dokk_navn, krymp: u.krymp != null ? !!u.krymp : c.dokk_krymp !== false };
+    }
+    dockLayout() {
+      const pool = this.dockPool(), u = this.dockUd();
+      let dock;
+      if (Array.isArray(u.dokk)) dock = u.dokk.map(k => pool.find(p => p._k === k)).filter(Boolean);
+      else dock = pool.filter(p => p._dock);
+      const inDock = new Set(dock.map(p => p._k));
+      return { pool, dock, menu: pool.filter(p => !inDock.has(p._k)) };
+    }
+    dockItems() { return this.dockLayout().dock; }
+    dockEditOpen() { this.setState({ dockEdit: true, menu: false }); }
+    dockEditClose() { this.setState({ dockEdit: false }); }
+    dockMove(ev, arg) {
+      const [op, k] = String(arg).split('|'), keys = this.dockLayout().dock.map(p => p._k);
+      const i = keys.indexOf(k);
+      if (op === 'ut' && i >= 0) keys.splice(i, 1);
+      else if (op === 'inn' && i < 0) { if (keys.length >= 7) return; keys.push(k); }
+      else if (op === 'opp' && i > 0) [keys[i - 1], keys[i]] = [keys[i], keys[i - 1]];
+      else return;
+      this.haptic('selection');
+      this.dockSave({ dokk: keys });
+    }
+    dockOpt(ev, k) { this.haptic('selection'); this.dockSave({ [k]: !this.dockOpts()[k] }); }
+    dockReset() { this._dockUdLocal = {}; this.ws({ type: 'frontend/set_user_data', key: 'kd_dokk', value: {} }).catch(() => { }); this.setState({ tab: 0, prevTab: 0 }); }
+
+    navMove(ev, arg, el) { if (this._drag && this._drag.moved) return; const r = el.getBoundingClientRect(); this.setState({ lx: (ev.clientX - r.left) / r.width * 100 }); }
+    navLeave() { if (!this._drag) this.setState({ lx: null }); }
     dockGo(ev, i) {
+      if (performance.now() - (this._dragEnd || 0) < 350) return; // klikket etter en dra-bevegelse
       i = +i;
-      if (i === 6) return this.setState({ menu: !this.state.menu });
-      this.pickTab(i); this.openSheet(['vac', 'strom', 'media', 'car', 'server', 'settings'][i]);
+      const items = this.dockItems();
+      if (i >= items.length) return this.setState({ menu: !this.state.menu, dockEdit: false });
+      const it = items[i];
+      if (this.state.menu) this.setState({ menu: false });
+      if (it.ark || it.hash) this.pickTab(i);
+      this.runItem(it);
+    }
+    /** Dra fingeren langs dokken: glasslinsen følger fingeren, slipp for å velge */
+    _dockDragInit() {
+      if (this._dragInit) return; this._dragInit = true;
+      const R = this.shadowRoot;
+      const geo = () => {
+        const nav = this.$('nav[data-key="nav"]'); if (!nav) return null;
+        const btns = Array.from(nav.querySelectorAll('button[data-arg]'));
+        return { nav, btns, ind: nav.querySelector('[data-ind]'), rect: nav.getBoundingClientRect() };
+      };
+      const idxAt = (g, x) => { let best = 0, bd = 1e9; g.btns.forEach((b, i) => { const r = b.getBoundingClientRect(), d = Math.abs(x - (r.left + r.width / 2)); if (d < bd) { bd = d; best = i; } }); return best; };
+      R.addEventListener('pointerdown', ev => {
+        const nav = ev.composedPath().find(n => n.getAttribute && n.getAttribute('data-key') === 'nav');
+        if (!nav || ev.button > 0) return;
+        this._drag = { x0: ev.clientX, y0: ev.clientY, id: ev.pointerId, moved: false, idx: -1 };
+      }, { capture: true, passive: true });
+      R.addEventListener('pointermove', ev => {
+        const d = this._drag; if (!d || ev.pointerId !== d.id) return;
+        if (!d.moved) {
+          if (Math.abs(ev.clientX - d.x0) < 8) return;
+          d.moved = true;
+          const g = geo(); if (!g) return;
+          try { g.nav.setPointerCapture(ev.pointerId); } catch (e) { }
+          if (g.ind) { g.ind.style.transition = 'left .14s cubic-bezier(.3,1.3,.6,1), transform .3s cubic-bezier(.34,1.8,.64,1), top .3s, height .3s'; g.ind.style.transform = 'scale(1.18)'; }
+          g.nav.style.transform = g.nav.style.transform.replace(/scale\([^)]*\)/, 'scale(1.03)');
+        }
+        const g = geo(); if (!g || !g.ind) return;
+        const w = g.ind.offsetWidth, first = g.btns[0].getBoundingClientRect(), last = g.btns[g.btns.length - 1].getBoundingClientRect();
+        const left = KD.clamp(ev.clientX - g.rect.left - w / 2, first.left - g.rect.left, last.left - g.rect.left);
+        g.ind.style.left = left + 'px';
+        const sheen = g.nav.querySelector('[data-sheen]');
+        if (sheen) { sheen.style.opacity = 1; sheen.style.background = `radial-gradient(120px 60px at ${(ev.clientX - g.rect.left) / g.rect.width * 100}% 0%, rgba(255,255,255,0.28), transparent 70%)`; }
+        const i = idxAt(g, ev.clientX);
+        if (i !== d.idx) {
+          d.idx = i; this.haptic('selection');
+          g.btns.forEach((b, j) => { const ic = b.querySelector('.ms'); if (ic) { ic.style.opacity = j === i ? 1 : 0.72; ic.style.transform = j === i ? 'scale(1.18)' : 'scale(1)'; } });
+        }
+      }, { capture: true, passive: true });
+      const end = ev => {
+        const d = this._drag; if (!d || ev.pointerId !== d.id) return;
+        this._drag = null;
+        if (!d.moved) return;
+        this._dragEnd = performance.now();
+        const g = geo(); if (!g) return;
+        const i = ev.type === 'pointercancel' ? -1 : idxAt(g, ev.clientX);
+        if (g.ind) g.ind.style.transition = 'left .45s cubic-bezier(.34,1.4,.64,1), transform .45s cubic-bezier(.34,1.8,.64,1)';
+        this._force = true;
+        if (i >= 0) { this._dragEnd = 0; this.dockGo(null, i); this._dragEnd = performance.now(); }
+        this.setState({ lx: null });
+        this.flush();
+      };
+      R.addEventListener('pointerup', end, true);
+      R.addEventListener('pointercancel', end, true);
     }
     pickTab(i) {
       if (i === this.state.tab) return this.setState({ compact: false });
@@ -1028,11 +1188,15 @@ try {
 
       /* ----- dokk ----- */
       const tab = s.tab ?? 0, compact = !!s.compact, moving = !!s.moving;
-      const vacDot = (c.stovsuger_varsel || []).some(id => this.v(id) === 'on') || (c.stovsuger_vannboks && this.v(c.stovsuger_vannboks) === 'off');
-      const ITEMS = [['cleaning_services', 'Støvsuger', vacDot], ['power', 'Stikkontakter'], ['music_note', 'Musikk'], ['directions_car', 'Bil'], ['dns', 'Server'], ['tune', 'Innstillinger'], ['more_horiz', 'Mer']];
-      const SZ = 44, GAP = 2, PAD = 6, dist = Math.abs(tab - (s.prevTab ?? tab)), lx = s.lx;
+      const arr = x => Array.isArray(x) ? x : x ? [x] : [];
+      const dotOf = it => arr(it.prikk).some(id => ['on', 'open', 'unlocked', 'problem', 'playing'].includes(this.v(id))) || arr(it.prikk_av).some(id => this.v(id) === 'off');
+      const LAY = this.dockLayout(), OPT = this.dockOpts(), NAVN = OPT.navn;
+      const ITEMS = LAY.dock.map(it => [it.ikon || 'circle', it.navn || '', dotOf(it)]);
+      ITEMS.push(['more_horiz', 'Mer', LAY.menu.some(dotOf)]);
+      const GAP = 2, PAD = 6, AVAIL = Math.min(window.innerWidth || 460, 560) - 16 - 2 * PAD, FIT = Math.floor((AVAIL - GAP * (ITEMS.length - 1)) / ITEMS.length);
+      const SZ = Math.max(38, Math.min(NAVN ? 58 : 44, FIT)), SH = NAVN ? 52 : 44, dist = Math.abs(tab - (s.prevTab ?? tab)), lx = s.lx;
       const navStyle = {
-        position: 'fixed', left: '50%', bottom: 18, zIndex: 24, display: 'flex', gap: GAP, padding: PAD, borderRadius: 30, overflow: 'hidden', isolation: 'isolate',
+        position: 'fixed', left: '50%', bottom: 18, zIndex: 24, display: 'flex', gap: GAP, touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none', maxWidth: 'calc(100vw - 16px)', padding: PAD, borderRadius: NAVN ? 32 : 30, overflow: 'hidden', isolation: 'isolate',
         background: 'rgba(40,40,44,0.38)', backdropFilter: 'blur(22px) saturate(190%) brightness(1.1)', WebkitBackdropFilter: 'blur(22px) saturate(190%) brightness(1.1)',
         boxShadow: '0 18px 40px rgba(0,0,0,0.45), 0 2px 6px rgba(0,0,0,0.25)',
         transform: `translateX(-50%) scale(${compact ? 0.8 : 1}) translateY(${compact ? 8 : 0}px)`, transformOrigin: 'bottom center',
@@ -1040,7 +1204,7 @@ try {
       };
       const navSheen = { position: 'absolute', inset: 0, borderRadius: 'inherit', pointerEvents: 'none', opacity: lx == null ? 0 : 1, transition: 'opacity .3s', background: `radial-gradient(120px 60px at ${lx ?? 50}% 0%, rgba(255,255,255,0.28), transparent 70%)` };
       const indicator = {
-        position: 'absolute', top: PAD, left: PAD + tab * (SZ + GAP), width: SZ, height: SZ, borderRadius: 22, pointerEvents: 'none',
+        position: 'absolute', top: PAD, left: PAD + Math.min(tab, ITEMS.length - 1) * (SZ + GAP), width: SZ, height: SH, borderRadius: NAVN ? 26 : 22, pointerEvents: 'none',
         background: 'linear-gradient(180deg, rgba(255,255,255,0.34), rgba(255,255,255,0.14))',
         boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.6), inset 0 -1px 1px rgba(255,255,255,0.15), 0 4px 14px rgba(0,0,0,0.25)',
         backdropFilter: 'blur(6px) saturate(200%)', WebkitBackdropFilter: 'blur(6px) saturate(200%)',
@@ -1048,10 +1212,33 @@ try {
         transition: 'left .5s cubic-bezier(.34,1.4,.64,1), transform .45s cubic-bezier(.34,1.8,.64,1)',
       };
       const dock = ITEMS.map(([icon, title, dot], i) => { const act = i === tab; return { i, icon, title,
-        style: { position: 'relative', zIndex: 1, width: SZ, height: SZ, borderRadius: 22, display: 'grid', placeItems: 'center', color: '#f2f1ee', transition: 'transform .35s cubic-bezier(.34,1.8,.64,1)' },
+        style: { position: 'relative', zIndex: 1, flex: 'none', width: SZ, height: SH, borderRadius: 22, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, color: '#f2f1ee', transition: 'transform .35s cubic-bezier(.34,1.8,.64,1)', WebkitTapHighlightColor: 'transparent' },
+        label: { maxWidth: SZ - 6, fontSize: 10, fontWeight: 500, lineHeight: '12px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', opacity: act ? 1 : 0.62, transition: 'opacity .2s' },
         iconStyle: { fontSize: 22, opacity: act ? 1 : 0.72, transform: act ? 'scale(1.08)' : 'scale(1)', fontVariationSettings: `'FILL' ${act ? 1 : 0}`, transition: 'transform .4s cubic-bezier(.34,1.8,.64,1), opacity .2s', textShadow: '0 1px 2px rgba(0,0,0,0.3)' },
-        dot: { position: 'absolute', right: 9, top: 9, width: 7, height: 7, borderRadius: 4, background: dot ? C.red : 'transparent', boxShadow: dot ? '0 0 0 1.5px rgba(30,30,34,0.6)' : 'none' } }; });
-      const menuItems = [['thermostat', 'Klima', 'klima', 'oklch(0.72 0.15 25)'], ['delete', 'Søppel', 'trash', '#c9c7c2'], ['sprinkler', 'Vanning', 'vann', 'oklch(0.8 0.12 235)'], ['calendar_month', 'Kalender', 'cal', 'oklch(0.78 0.13 350)'], ['potted_plant', 'Planter', 'plants', 'oklch(0.8 0.12 150)'], ['bedtime', 'Søvn', 'sleep', 'oklch(0.72 0.1 275)'], ['print', '3D-printer', 'printer', 'oklch(0.82 0.12 75)'], ['checklist', 'Gjøremål', 'todo', '#c9c7c2']];
+        dot: { position: 'absolute', right: NAVN ? 13 : 9, top: NAVN ? 5 : 9, width: 7, height: 7, borderRadius: 4, background: dot ? C.red : 'transparent', boxShadow: dot ? '0 0 0 1.5px rgba(30,30,34,0.6)' : 'none' } }; });
+      const menuItems = LAY.menu.map((m, i) => [m.ikon || 'circle', m.navn || '', i, m.farge || '#c9c7c2', dotOf(m)]);
+      const dockEditHTML = () => {
+        const sw = on => `<span style="${S({ width: 44, height: 26, borderRadius: 13, flex: 'none', position: 'relative', background: on ? 'oklch(0.78 0.13 350)' : '#3a3a3d', transition: 'background .2s' })}"><span style="${S({ position: 'absolute', top: 3, left: on ? 21 : 3, width: 20, height: 20, borderRadius: 10, background: '#f4f3ef', transition: 'left .25s cubic-bezier(.34,1.56,.64,1)' })}"></span></span>`;
+        const opt = (k, label, sub, on) => `<button class="kd-hov8" data-on-click="dockOpt" data-arg="${k}" style="min-height:52px;padding:6px 10px 6px 14px;border-radius:16px;display:flex;align-items:center;gap:12px;text-align:left"><span style="flex:1;min-width:0;display:flex;flex-direction:column"><span style="font-size:14px;font-weight:500">${label}</span><span style="font-size:11px;color:#8e8d89">${sub}</span></span>${sw(on)}</button>`;
+        const row = (it, i, inDock) => `<div data-key="de-${e(it._k)}" style="min-height:48px;padding:0 6px 0 12px;border-radius:16px;display:flex;align-items:center;gap:12px">
+            <span class="ms" style="font-size:20px;color:${inDock ? '#f2f1ee' : e(it.farge || '#c9c7c2')}">${e(it.ikon || 'circle')}</span>
+            <span style="flex:1;min-width:0;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(it.navn || it._k)}</span>
+            ${inDock && i > 0 ? `<button class="kd-press" data-on-click="dockMove" data-arg="${e('opp|' + it._k)}" title="Flytt til venstre" style="width:36px;height:36px;border-radius:18px;display:grid;place-items:center;color:#8e8d89"><span class="ms" style="font-size:20px">arrow_upward</span></button>` : ''}
+            <button class="kd-press" data-on-click="dockMove" data-arg="${e((inDock ? 'ut|' : 'inn|') + it._k)}" title="${inDock ? 'Flytt til «Mer»' : 'Legg i dokken'}" style="${S({ width: 36, height: 36, borderRadius: 18, display: 'grid', placeItems: 'center', color: inDock ? C.red : C.green, opacity: !inDock && LAY.dock.length >= 7 ? 0.3 : 1 })}"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">${inDock ? 'remove_circle' : 'add_circle'}</span></button>
+          </div>`;
+        return `<div data-key="de-bd" data-on-click="dockEditClose" style="position:fixed;inset:0;z-index:27;background:rgba(0,0,0,0.35)"></div>
+    <div data-key="de-panel" style="position:fixed;left:50%;transform:translateX(-50%);bottom:${NAVN ? 92 : 84}px;z-index:28;width:min(400px, calc(100vw - 24px));max-height:calc(100vh - 140px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;box-sizing:border-box;padding:8px;border-radius:26px;background:rgba(40,40,44,0.72);backdrop-filter:blur(26px) saturate(190%);-webkit-backdrop-filter:blur(26px) saturate(190%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.3),inset 0 0 0 0.5px rgba(255,255,255,0.18),0 18px 40px rgba(0,0,0,0.5);display:flex;flex-direction:column;gap:2px">
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 6px 6px 14px"><span style="flex:1;font-size:16px;font-weight:600">Tilpass dokken</span>
+        <button class="kd-hov8" data-on-click="dockReset" style="height:34px;padding:0 12px;border-radius:17px;font-size:12px;color:#a9a7a2">Nullstill</button>
+        <button data-on-click="dockEditClose" style="height:34px;padding:0 14px;border-radius:17px;font-size:13px;font-weight:600;background:linear-gradient(135deg, oklch(0.78 0.13 350), oklch(0.9 0.05 20));color:#2a1720">Ferdig</button></div>
+      ${opt('navn', 'Vis navn', 'Navn under ikonene i dokken', OPT.navn)}
+      ${opt('krymp', 'Krymp ved scrolling', 'Dokken blir mindre når du scroller ned', OPT.krymp)}
+      <div style="padding:12px 14px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">I dokken</div>
+      ${LAY.dock.map((it, i) => row(it, i, true)).join('') || '<div style="padding:8px 14px;font-size:13px;color:#6d6c69">Ingen – alt ligger i «Mer»</div>'}
+      <div style="padding:12px 14px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">Bak de tre prikkene</div>
+      ${LAY.menu.map((it, i) => row(it, i, false)).join('') || '<div style="padding:8px 14px;font-size:13px;color:#6d6c69">Tom</div>'}
+    </div>`;
+      };
 
       /* ----- servere ----- */
       const SERV = this.servers();
@@ -1119,7 +1306,7 @@ try {
     </div>`;
       };
 
-      return `<div style="position:relative;box-sizing:border-box;width:100%;max-width:520px;min-height:100vh;margin:0 auto;background:#141416;padding:20px 18px 120px;display:flex;flex-direction:column;gap:22px">
+      return `<div style="position:relative;box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 120px;display:flex;flex-direction:column;gap:22px">
 
   <header style="display:flex;flex-direction:column;gap:16px">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
@@ -1226,9 +1413,12 @@ try {
   </section>
 
   ${s.menu ? `<div data-key="menu-bd" data-on-click="closeMenu" style="position:fixed;inset:0;z-index:25"></div>
-    <div style="position:fixed;right:max(12px, calc(50% - 198px));bottom:84px;z-index:26;min-width:180px;max-height:calc(100vh - 120px);overflow-y:auto;scrollbar-width:none;box-sizing:border-box;padding:6px;border-radius:22px;background:rgba(40,40,44,0.5);backdrop-filter:blur(22px) saturate(190%);-webkit-backdrop-filter:blur(22px) saturate(190%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.3),inset 0 0 0 0.5px rgba(255,255,255,0.18),0 18px 40px rgba(0,0,0,0.45);display:flex;flex-direction:column;gap:2px">
-      ${menuItems.map(([icon, label, k, col]) => `<button class="kd-hov" data-on-click="menuGo" data-arg="${k}" style="height:44px;padding:0 14px 0 10px;border-radius:16px;display:flex;align-items:center;gap:10px;font-size:14px;font-weight:500;white-space:nowrap"><span class="ms" style="font-size:20px;color:${col}">${icon}</span>${label}</button>`).join('')}
+    <div style="position:fixed;right:max(12px, calc(50% - 198px));bottom:${NAVN ? 92 : 84}px;z-index:26;min-width:180px;max-height:calc(100vh - 120px);overflow-y:auto;scrollbar-width:none;box-sizing:border-box;padding:6px;border-radius:22px;background:rgba(40,40,44,0.5);backdrop-filter:blur(22px) saturate(190%);-webkit-backdrop-filter:blur(22px) saturate(190%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.3),inset 0 0 0 0.5px rgba(255,255,255,0.18),0 18px 40px rgba(0,0,0,0.45);display:flex;flex-direction:column;gap:2px">
+      ${menuItems.map(([icon, label, k, col, dot]) => `<button class="kd-hov" data-on-click="menuGo" data-arg="${k}" style="height:44px;padding:0 14px 0 10px;border-radius:16px;display:flex;align-items:center;gap:10px;font-size:14px;font-weight:500;white-space:nowrap"><span class="ms" style="font-size:20px;color:${e(col)}">${e(icon)}</span><span style="flex:1;text-align:left">${e(label)}</span>${dot ? `<span style="width:7px;height:7px;border-radius:4px;background:${C.red}"></span>` : ''}</button>`).join('')}
+      ${menuItems.length ? '<div style="height:1px;margin:4px 10px;background:rgba(255,255,255,0.08)"></div>' : ''}
+      <button class="kd-hov" data-on-click="dockEditOpen" style="height:44px;padding:0 14px 0 10px;border-radius:16px;display:flex;align-items:center;gap:10px;font-size:14px;font-weight:500;white-space:nowrap;color:#a9a7a2"><span class="ms" style="font-size:20px">edit</span>Tilpass dokken</button>
     </div>` : ''}
+  ${s.dockEdit ? dockEditHTML() : ''}
 
   ${s.quickId ? quickHTML() : ''}
   ${lockHTML()}
@@ -1258,11 +1448,11 @@ try {
 
   <nav data-key="nav" data-on-pointermove="navMove" data-on-pointerleave="navLeave" style="${S(navStyle)}">
     <span style="position:absolute;inset:0;border-radius:inherit;background:linear-gradient(180deg,rgba(255,255,255,0.14),rgba(255,255,255,0.02) 45%,rgba(255,255,255,0.06));pointer-events:none"></span>
-    <span style="${S(navSheen)}"></span>
+    <span data-sheen="1" style="${S(navSheen)}"></span>
     <span style="position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 1px 0 rgba(255,255,255,0.35),inset 0 -1px 0 rgba(255,255,255,0.08),inset 0 0 0 0.5px rgba(255,255,255,0.18);pointer-events:none"></span>
-    <span style="${S(indicator)}"></span>
-    ${dock.map(d => `<button class="kd-press" title="${d.title}" data-on-click="dockGo" data-arg="${d.i}" style="${S(d.style)}">
-        <span class="ms" style="${S(d.iconStyle)}">${d.icon}</span>
+    <span data-ind="1" style="${S(indicator)}"></span>
+    ${dock.map(d => `<button class="kd-press" title="${e(d.title)}" data-on-click="dockGo" data-arg="${d.i}" style="${S(d.style)}">
+        <span class="ms" style="${S(d.iconStyle)}">${e(d.icon)}</span>${NAVN ? `<span style="${S(d.label)}">${e(d.title)}</span>` : ''}
         <span style="${S(d.dot)}"></span>
       </button>`).join('')}
   </nav>
@@ -1674,7 +1864,7 @@ try {
       }).join('');
 
       const coreIcon = { fontSize: 26, color: coreCol, fontVariationSettings: "'FILL' 1" };
-      return `<div style="box-sizing:border-box;width:100%;max-width:420px;min-height:100vh;margin:0 auto;background:#141416;padding:20px 18px 28px;display:flex;flex-direction:column;gap:22px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 28px;display:flex;flex-direction:column;gap:22px">
 
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Strøm</div>
@@ -2143,7 +2333,7 @@ try {
       else if (tabK === 'ta') main = this._ta();
       else if (tabK === 'op') main = this._op();
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:420px;min-height:100vh;margin:0 auto;background:#141416;padding:20px 14px 40px;display:flex;flex-direction:column;gap:16px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:16px">
   <header style="display:flex;align-items:center;gap:12px;padding:0 4px">
     <span style="width:40px;height:40px;border-radius:20px;background:#e9e8e4;color:#141416;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">thermostat</span></span>
     <div style="flex:1;font-size:26px;font-weight:500;letter-spacing:-0.02em">Klima</div>
@@ -2742,7 +2932,7 @@ try {
         return { text, who, time, dot: { width: 9, height: 9, borderRadius: 5, marginTop: 5, background: col, flex: 'none' }, line: { flex: 1, width: 1, background: i < arr.length - 1 ? 'rgba(255,255,255,0.1)' : 'transparent', marginTop: 4 } };
       });
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:420px;min-height:100vh;margin:0 auto;background:#141416;padding:20px 18px 28px;display:flex;flex-direction:column;gap:22px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 28px;display:flex;flex-direction:column;gap:22px">
 
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Sikkerhet</div>
@@ -3153,7 +3343,7 @@ try {
         star: { fontSize: 20, color: fav ? C.amber : '#48474a', fontVariationSettings: `'FILL' ${fav ? 1 : 0}` } }; });
       const n = CAMS.length;
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:420px;min-height:100vh;margin:0 auto;background:#141416;padding:20px 14px 40px;display:flex;flex-direction:column;gap:14px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:14px">
   <header style="display:flex;align-items:center;gap:12px;padding:0 4px">
     <span style="width:40px;height:40px;border-radius:20px;background:#e9e8e4;color:#141416;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">videocam</span></span>
     <div style="flex:1;font-size:26px;font-weight:500;letter-spacing:-0.02em">Kamera</div>
@@ -3465,7 +3655,7 @@ try {
       if (pic) Object.assign(vals.avatar, { backgroundImage: `url('${KD.e(String(this._hass.hassUrl ? this._hass.hassUrl(pic) : pic).replace(/'/g, '%27'))}')`, backgroundSize: 'cover', backgroundPosition: 'center', color: 'transparent' });
       const v = vals;
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:420px;min-height:100vh;margin:0 auto;background:#141416;padding:20px 18px 40px;display:flex;flex-direction:column;gap:22px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:22px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Tilstedeværelse</div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -4179,7 +4369,7 @@ try {
       }
 
       return `
-<div style="box-sizing:border-box;width:100%;max-width:540px;min-height:100vh;margin:0 auto;background:#141416;padding:20px 18px 28px;display:flex;flex-direction:column;gap:16px">
+<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 28px;display:flex;flex-direction:column;gap:16px">
 
   <header style="display:flex;align-items:center;gap:10px">
     <div style="flex:1;font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Vanning</div>
@@ -4366,7 +4556,7 @@ try {
       </div>`;
       }).join('');
       return `
-<div style="box-sizing:border-box;width:100%;max-width:420px;min-height:100vh;margin:0 auto;background:#141416;padding:20px 18px 40px;display:flex;flex-direction:column;gap:22px">
+<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:22px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Planter</div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -4593,7 +4783,7 @@ try {
       }).join('');
 
       return `
-<div style="box-sizing:border-box;width:100%;max-width:420px;min-height:100vh;margin:0 auto;background:#141416;padding:20px 18px 40px;display:flex;flex-direction:column;gap:22px">
+<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:22px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Søvn</div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -4867,7 +5057,7 @@ try {
       const pollen = this.pollen();
 
       return `
-<div style="box-sizing:border-box;width:100%;max-width:420px;min-height:100vh;margin:0 auto;background:#141416;padding:20px 18px 40px;display:flex;flex-direction:column;gap:22px">
+<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:22px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Vær · <span>${e(cfg.sted || '')}</span></div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -5342,7 +5532,7 @@ try {
         : { icon: 'play_arrow', label: st === 'paused' ? 'Fortsett' : zone ? `Støvsug ${zone.navn.toLowerCase()}` : sel.length ? `Støvsug ${sel.length} rom` : 'Støvsug alt', style: { height: 64, borderRadius: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontSize: 16, fontWeight: 600, background: C.green, color: '#10231a' } };
       const e = KD.e, S = KD.S;
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:420px;min-height:100vh;margin:0 auto;background:#141416;padding:20px 18px 40px;display:flex;flex-direction:column;gap:22px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:22px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89"><span>${e(cf.navn || 'Sir Sweeps')}</span></div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -5680,7 +5870,7 @@ try {
       const secHead = (t) => `<div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:0 4px"><span>${e(t)}</span></div>`;
       const chipRow = (items, fn) => `<div data-hscroll="1" style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -18px;padding:0 18px">${items.map(fn).join('')}</div>`;
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:420px;min-height:100vh;margin:0 auto;background:#141416;padding:20px 18px 40px;display:flex;flex-direction:column;gap:20px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:20px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Media</div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -6032,7 +6222,7 @@ try {
       const pill = 'display:inline-flex;align-items:center;height:30px;padding:0 11px;border-radius:15px;background:#232326;font-weight:500;vertical-align:middle;white-space:nowrap';
       const pill2 = 'display:inline-block;padding:0 10px;border-radius:14px;background:#f2f1ee;color:#141416;font-weight:500;line-height:1.6';
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:420px;min-height:100vh;margin:0 auto;background:#141416;padding:20px 18px 40px;display:flex;flex-direction:column;gap:20px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:20px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89"><span>${e(cf.navn)}</span></div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -6354,7 +6544,7 @@ try {
           bar: { width: `${pct || 0}%`, height: '100%', background: pct != null && pct < 15 ? AMBER : '#c9c7c2' } };
       });
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:420px;min-height:100vh;margin:0 auto;background:#141416;padding:20px 18px 40px;display:flex;flex-direction:column;gap:20px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:20px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89"><span>${e(cf.navn)}</span></div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -6844,7 +7034,7 @@ try {
       const statusStyle = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 500, color: '#c9c7c2' };
       const statusDot = { width: 8, height: 8, borderRadius: 4, flex: 'none', background: V.ok, boxShadow: `0 0 10px ${V.ok}` };
       const tl = tabs.map(t => tab(...t));
-      return `<div style="box-sizing:border-box;width:100%;max-width:420px;min-height:100vh;margin:0 auto;background:#141416;padding:20px 18px 40px;display:flex;flex-direction:column;gap:20px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:20px">
   <header style="display:flex;align-items:center;gap:12px">
     <span style="width:40px;height:40px;border-radius:20px;background:#e9e8e4;color:#141416;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">dns</span></span>
     <div style="flex:1;font-size:26px;font-weight:500;letter-spacing:-0.02em">Server</div>
@@ -7111,7 +7301,7 @@ try {
       const items = (L[s.tab] || []).map((r, i) => { const w = sw(r.on); return { ...r, track: w.track, knob: w.knob,
         row: { display: 'flex', alignItems: 'center', gap: 12, padding: '12px 4px', width: '100%', borderTop: i ? '1px solid rgba(255,255,255,0.05)' : 'none' },
         iconWrap: { width: 40, height: 40, borderRadius: 20, flex: 'none', display: 'grid', placeItems: 'center', background: '#1c1c1f', color: r.on ? '#f2f1ee' : '#6d6c69' } }; });
-      return `<div style="box-sizing:border-box;width:100%;max-width:420px;min-height:100vh;margin:0 auto;background:#141416;padding:20px 18px 40px;display:flex;flex-direction:column;gap:20px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:20px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Innstillinger</div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -7486,7 +7676,7 @@ try {
             steps: [1, 2, 3, 4].map(k => ({ flex: 1, height: 4, borderRadius: 2, background: k <= p.step ? C.red : '#2a2a2d' })) })) };
       }
 
-      html = `<div style="box-sizing:border-box;width:100%;max-width:420px;min-height:100vh;margin:0 auto;background:#141416;padding:20px 18px 40px;display:flex;flex-direction:column;gap:20px">
+      html = `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:20px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Kalender</div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -7829,7 +8019,7 @@ try {
         box: { width: 26, height: 26, borderRadius: 9, flex: 'none', marginTop: 1, display: 'grid', placeItems: 'center', background: x.done ? GREEN : 'transparent', boxShadow: x.done ? 'none' : 'inset 0 0 0 1.5px #5d5c5a', transition: 'background .2s' },
         check: { fontSize: 18, color: '#141416', opacity: x.done ? 1 : 0, fontVariationSettings: "'wght' 600" },
         textStyle: { fontSize: 14, lineHeight: 1.4, textWrap: 'pretty', textDecoration: x.done ? 'line-through' : 'none' } }));
-      return `<div style="box-sizing:border-box;width:100%;max-width:420px;min-height:100vh;margin:0 auto;background:#141416;padding:20px 18px 40px;display:flex;flex-direction:column;gap:20px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:20px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Gjøremål</div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -7988,7 +8178,7 @@ try {
           style: { aspectRatio: '1', borderRadius: 14, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, background: hits.length ? '#262629' : 'transparent', boxShadow: t ? 'inset 0 0 0 1.5px #f2f1ee' : 'none', opacity: inM ? 1 : 0.25 },
           num: { fontSize: 13, fontWeight: t ? 600 : 500, fontVariantNumeric: 'tabular-nums' } }; });
       const legend = F.map(f => ({ name: f.name.split(' ')[0], dot: { width: 8, height: 8, borderRadius: 4, background: f.col } }));
-      return `<div style="box-sizing:border-box;width:100%;max-width:420px;min-height:100vh;margin:0 auto;background:#141416;padding:20px 18px 40px;display:flex;flex-direction:column;gap:16px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:16px">
   <header style="display:flex;align-items:center;gap:12px">
     <span style="width:40px;height:40px;border-radius:20px;background:#e9e8e4;color:#141416;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">delete</span></span>
     <div style="flex:1;font-size:26px;font-weight:500;letter-spacing:-0.02em">Søppel</div>
@@ -8294,14 +8484,9 @@ try {
 
   /* ----- Skjul/vis valgt i UI (lagres som HA-brukerdata, følger brukeren på alle enheter) -----
    * { <rom>: { skjul: [entity_id], vis: [entity_id] } }  – «vis» opphever standard-/config-skjul. */
-  H.UD_KEY = 'kd_rom_skjul';
-  H.userHide = (card) => card.cached('kd-ud-' + H.UD_KEY, 5 * 60e3,
-    () => card.ws({ type: 'frontend/get_user_data', key: H.UD_KEY }).then(r => (r && r.value) || {}).catch(() => ({})), {});
-  H.saveUserHide = (card, map) => {
-    KD._udOverride = map; card.invalidate('kd-ud-');
-    return card.ws({ type: 'frontend/set_user_data', key: H.UD_KEY, value: map }).catch(e => card.toast('Kunne ikke lagre: ' + (e.message || e)));
-  };
-  H.userHideNow = (card) => KD._udOverride || H.userHide(card);
+  H.userHide = (card) => KD.userData(card);
+  H.saveUserHide = (card, map) => KD.saveUserData(card, map);
+  H.userHideNow = (card) => KD.userData(card);
   /** Kombiner standard/config-skjul med brukerens valg for ett rom (eller alle rom når romId mangler) */
   H.hideFn = (card, base, romId) => {
     const ud = H.userHideNow(card), rows = romId ? [ud[romId] || {}] : Object.values(ud);
@@ -8547,7 +8732,7 @@ a:hover{color:oklch(0.86 0.12 95)}`;
       else if (tab === 'f1' || tab === 'f2') inner = this._floor(tab, fl[tab]);
       else inner = this._on(fl);
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:420px;min-height:100vh;margin:0 auto;background:#141416;padding:20px 14px 40px;display:flex;flex-direction:column;gap:12px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:12px">
   <header style="display:flex;align-items:center;gap:12px;padding:0 4px">
     <span style="width:40px;height:40px;border-radius:20px;background:#e9e8e4;color:#141416;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">lightbulb</span></span>
     <div style="flex:1;font-size:26px;font-weight:500;letter-spacing:-0.02em">Lys</div>
@@ -8837,6 +9022,11 @@ try {
       const L = KD.roomLive(this, r);
       if (!L.tempId && o && o.temperatur[0]) { L.tempId = o.temperatur[0]; L.temp = this.n(L.tempId); }
       if (!L.humId && o && o.fuktighet[0]) { L.humId = o.fuktighet[0]; L.hum = this.n(L.humId); }
+      const ids = xs => xs.map(x => typeof x === 'string' ? x : x && x.entity).filter(Boolean);
+      if (o) {
+        L.tempValg = [...new Set([...(L.tempValg || []), ...ids(o.temperatur)])];
+        L.humValg = [...new Set([...(L.humValg || []), ...ids(o.fuktighet)])];
+      }
       return L;
     }
     /** romoversikt i ki_rom-format, med skjul og effekt-par brukt */
@@ -8905,9 +9095,32 @@ try {
       H.saveUserHide(this, ud);
       this._queue();
     }
+    /** velg hvilken sensor rommet henter temperatur/fukt fra (lagres per bruker, brukes også i Hjem) */
+    sensorPick(ev, arg) {
+      const [k, id] = String(arg).split('|'); if (!k || !id) return;
+      const r = this._room(), ud = JSON.parse(JSON.stringify(KD.userData(this) || {}));
+      const row = ud[r.id] = ud[r.id] || {};
+      if (row[k] === id) delete row[k]; else row[k] = id;
+      this.haptic('selection');
+      KD.saveUserData(this, ud);
+      this._queue();
+    }
     editReset() {
       const r = this._room(), ud = JSON.parse(JSON.stringify(H.userHideNow(this) || {}));
       delete ud[r.id]; H.saveUserHide(this, ud); this._queue();
+    }
+    _sensorPicker(r, L) {
+      const U = KD.userRoom(this, r.id);
+      const row = (k, title, icon, list, cur, unit) => list.length ? `<div style="display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:#8e8d89"><span class="ms" style="font-size:16px">${icon}</span><span>${title}</span></div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">${list.map(id => {
+        const sel = id === cur, fixed = U[k] === id, v = this.n(id);
+        return `<button class="kdr-a92" data-key="kd-sv-${k}-${E(id)}" data-on-click="sensorPick" data-arg="${E(k + '|' + id)}" style="${S({ display: 'flex', alignItems: 'center', gap: 6, maxWidth: '100%', minWidth: 0, height: 34, padding: '0 12px', borderRadius: 17, fontSize: 12, fontWeight: 500, background: sel ? 'oklch(0.78 0.13 350 / 0.2)' : 'rgba(255,255,255,0.06)', boxShadow: sel ? 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.7)' : 'none', color: sel ? '#f2f1ee' : '#a9a7a2' })}">${fixed ? '<span class="ms" style="font-size:14px">push_pin</span>' : ''}<span style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(this.fname(id))}</span><span style="color:#8e8d89;white-space:nowrap">${v != null ? E(nf(v, unit === '%' ? 0 : 1) + (unit === '%' ? ' %' : '°')) : '–'}</span></button>`;
+      }).join('')}</div></div>` : '';
+      const t = row('temp', 'Temperatur fra', 'device_thermostat', L.tempValg || [], L.tempId, '°');
+      const f = row('fukt', 'Fukt fra', 'humidity_percentage', L.humValg || [], L.humId, '%');
+      if (!t && !f) return '';
+      return `<section data-key="kd-sensorvalg" style="display:flex;flex-direction:column;gap:14px;padding:14px 16px;border-radius:24px;background:#1c1c1f">${t}${f}</section>`;
     }
     afterRender() {
       const root = this.$('.kd-root > div, .kd-sheet-body > div');
@@ -9094,7 +9307,7 @@ try {
       const setVal = k ? (Number.isInteger(k.set) ? String(k.set) : nf(k.set, 1)) : '';
       this._headVals = [r.ikon, r.navn, `${temp != null ? nf(temp, 1) : '–'}° · ${hum != null ? nf(hum, 0) : '–'} %`];
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:420px;min-height:100vh;margin:0 auto;background:#141416;padding:20px 14px 40px;display:flex;flex-direction:column;gap:18px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:18px">
   <header style="display:flex;align-items:center;gap:12px;padding:0 4px">
     <span style="${S(headIcon)}"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">${E(r.ikon)}</span></span>
     <div style="flex:1;font-size:26px;font-weight:500;letter-spacing:-0.02em">${E(r.navn)}</div>
@@ -9208,6 +9421,7 @@ try {
       <path d="${line}" fill="none" stroke="oklch(0.82 0.12 75)" stroke-width="1.5" vector-effect="non-scaling-stroke"></path>
     </svg>
   </section>
+  ${s.edit ? this._sensorPicker(r, L) : ''}
   ${s.edit ? '' : `<button class="kdr-a97" data-key="kd-edit-btn" data-on-click="editTog" style="display:flex;align-items:center;justify-content:center;gap:8px;height:48px;border-radius:24px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);color:#a9a7a2;font-size:13px;font-weight:500"><span class="ms" style="font-size:18px">tune</span>Tilpass rommet</button>`}
 </div>`;
     }

@@ -368,7 +368,7 @@
       }).join('');
 
       const coreIcon = { fontSize: 26, color: coreCol, fontVariationSettings: "'FILL' 1" };
-      return `<div style="box-sizing:border-box;width:100%;max-width:420px;min-height:100vh;margin:0 auto;background:#141416;padding:20px 18px 28px;display:flex;flex-direction:column;gap:22px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 28px;display:flex;flex-direction:column;gap:22px">
 
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Strøm</div>
