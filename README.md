@@ -115,6 +115,11 @@ meny:                       # «Mer»-menyen
 ```
 `prikk` viser rød prikk når entiteten er «på», `prikk_av` når den er «av».
 
+Dokken i bruk: dra fingeren langs dokken – glasslinsen følger fingeren, og slipp velger knappen.
+Under de tre prikkene ligger **«Tilpass dokken»**: flytt knapper mellom dokken og «Mer»-menyen (maks 7 i dokken),
+endre rekkefølge, slå navn under ikonene av/på og velg om dokken skal krympe når du scroller.
+Valgene lagres per bruker i HA. Standardverdiene kan også settes i config: `dokk_navn` (false) og `dokk_krymp` (true).
+
 Automatisk: personen som hører til innlogget bruker blir «meg»; romdata (temperatur, fukt, lys) hentes fra KI Rom-sensorene når de finnes;
 antall lys på faller tilbake til å telle `light.*`; hendelser i dag faller tilbake til kalender-API-et.
 
