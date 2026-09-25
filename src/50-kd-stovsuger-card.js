@@ -277,7 +277,7 @@
         : { icon: 'play_arrow', label: st === 'paused' ? 'Fortsett' : zone ? `Støvsug ${zone.navn.toLowerCase()}` : sel.length ? `Støvsug ${sel.length} rom` : 'Støvsug alt', style: { height: 64, borderRadius: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontSize: 16, fontWeight: 600, background: C.green, color: '#10231a' } };
       const e = KD.e, S = KD.S;
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:22px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:22px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89"><span>${e(cf.navn || 'Sir Sweeps')}</span></div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>

@@ -103,7 +103,7 @@
           style: { aspectRatio: '1', borderRadius: 14, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, background: hits.length ? '#262629' : 'transparent', boxShadow: t ? 'inset 0 0 0 1.5px #f2f1ee' : 'none', opacity: inM ? 1 : 0.25 },
           num: { fontSize: 13, fontWeight: t ? 600 : 500, fontVariantNumeric: 'tabular-nums' } }; });
       const legend = F.map(f => ({ name: f.name.split(' ')[0], dot: { width: 8, height: 8, borderRadius: 4, background: f.col } }));
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:16px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:16px">
   <header style="display:flex;align-items:center;gap:12px">
     <span style="width:40px;height:40px;border-radius:20px;background:#e9e8e4;color:#141416;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">delete</span></span>
     <div style="flex:1;font-size:26px;font-weight:500;letter-spacing:-0.02em">Søppel</div>

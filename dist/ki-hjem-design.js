@@ -1,4 +1,4 @@
-/* KI Hjem Design – pikselkopi av Claude Design «Home Assistant sikkerhetspanel». Bygget 2026-09-25T22:35Z. */
+/* KI Hjem Design – pikselkopi av Claude Design «Home Assistant sikkerhetspanel». Bygget 2026-09-25T22:48Z. */
 
 /* ===== 00-kd-base.js ===== */
 try {
@@ -621,8 +621,9 @@ try {
       hjem: { venstre: ['stue', 'inngang', 'ute'], hoyre: ['pult', 'kjokken'] },
       etasjer: { '1': ['stue', 'kjokken', 'inngang', 'do', 'vaskegang'], '2': ['pult', 'soverom', 'bad', 'cybele_soverom', 'rune_soverom', 'rune_kontor'] },
       sover_nar: 'on',
-      kant: 16,
-      dokk_navn: false,   // vis navn under ikonene i dokken (kan også slås av/på i «Tilpass dokken»)
+      kant: 10,
+      dokk_stil: 'bred',  // bred (fyller bredden, som Apple Music) | kompakt (designets glassdokk)
+      dokk_navn: true,    // vis navn under ikonene i dokken (kan også slås av/på i «Tilpass dokken»)
       dokk_krymp: true,   // krymp dokken når man scroller nedover
       dokk: [
         { ikon: 'cleaning_services', navn: 'Støvsuger', ark: 'vac', prikk: ['binary_sensor.sir_sweeps_a_lot_water_shortage'], prikk_av: ['binary_sensor.sir_sweeps_a_lot_water_box_attached'] },
@@ -896,7 +897,7 @@ try {
     }
     dockOpts() {
       const u = this.dockUd(), c = this.config;
-      return { navn: u.navn != null ? !!u.navn : !!c.dokk_navn, krymp: u.krymp != null ? !!u.krymp : c.dokk_krymp !== false };
+      return { bred: u.bred != null ? !!u.bred : c.dokk_stil !== 'kompakt', navn: u.navn != null ? !!u.navn : c.dokk_navn !== false, krymp: u.krymp != null ? !!u.krymp : c.dokk_krymp !== false };
     }
     dockLayout() {
       const pool = this.dockPool(), u = this.dockUd();
@@ -956,7 +957,7 @@ try {
           d.moved = true;
           const g = geo(); if (!g) return;
           try { g.nav.setPointerCapture(ev.pointerId); } catch (e) { }
-          if (g.ind) { g.ind.style.transition = 'left .14s cubic-bezier(.3,1.3,.6,1), transform .3s cubic-bezier(.34,1.8,.64,1), top .3s, height .3s'; g.ind.style.transform = 'scale(1.18)'; }
+          if (g.ind) { g.ind.style.transition = 'left .14s cubic-bezier(.3,1.3,.6,1), transform .3s cubic-bezier(.34,1.8,.64,1), top .3s, height .3s'; g.ind.style.transform = g.ind.offsetWidth > 64 ? 'scale(1.06, 1.1)' : 'scale(1.18)'; }
           g.nav.style.transform = g.nav.style.transform.replace(/scale\([^)]*\)/, 'scale(1.03)');
         }
         const g = geo(); if (!g || !g.ind) return;
@@ -1190,32 +1191,38 @@ try {
       const tab = s.tab ?? 0, compact = !!s.compact, moving = !!s.moving;
       const arr = x => Array.isArray(x) ? x : x ? [x] : [];
       const dotOf = it => arr(it.prikk).some(id => ['on', 'open', 'unlocked', 'problem', 'playing'].includes(this.v(id))) || arr(it.prikk_av).some(id => this.v(id) === 'off');
-      const LAY = this.dockLayout(), OPT = this.dockOpts(), NAVN = OPT.navn;
+      const LAY = this.dockLayout(), OPT = this.dockOpts(), NAVN = OPT.navn, BRED = OPT.bred, ACC = 'oklch(0.8 0.13 350)';
       const ITEMS = LAY.dock.map(it => [it.ikon || 'circle', it.navn || '', dotOf(it)]);
       ITEMS.push(['more_horiz', 'Mer', LAY.menu.some(dotOf)]);
       const GAP = 2, PAD = 6, AVAIL = Math.min(window.innerWidth || 460, 560) - 16 - 2 * PAD, FIT = Math.floor((AVAIL - GAP * (ITEMS.length - 1)) / ITEMS.length);
-      const SZ = Math.max(38, Math.min(NAVN ? 58 : 44, FIT)), SH = NAVN ? 52 : 44, dist = Math.abs(tab - (s.prevTab ?? tab)), lx = s.lx;
+      const SZ = Math.max(38, Math.min(NAVN ? 58 : 44, FIT)), SH = BRED ? (NAVN ? 58 : 50) : NAVN ? 52 : 44, N = ITEMS.length, MB = 18 + SH + 2 * PAD + 10;
+      const CELL = `((100% - ${2 * PAD}px - ${(N - 1) * GAP}px) / ${N})`, dist = Math.abs(tab - (s.prevTab ?? tab)), lx = s.lx;
       const navStyle = {
-        position: 'fixed', left: '50%', bottom: 18, zIndex: 24, display: 'flex', gap: GAP, touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none', maxWidth: 'calc(100vw - 16px)', padding: PAD, borderRadius: NAVN ? 32 : 30, overflow: 'hidden', isolation: 'isolate',
-        background: 'rgba(40,40,44,0.38)', backdropFilter: 'blur(22px) saturate(190%) brightness(1.1)', WebkitBackdropFilter: 'blur(22px) saturate(190%) brightness(1.1)',
-        boxShadow: '0 18px 40px rgba(0,0,0,0.45), 0 2px 6px rgba(0,0,0,0.25)',
+        position: 'fixed', left: '50%', bottom: 18, zIndex: 24, display: 'flex', gap: GAP, touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none', maxWidth: 'calc(100vw - 16px)', padding: PAD, borderRadius: BRED ? (SH + 2 * PAD) / 2 : NAVN ? 32 : 30, overflow: 'hidden', isolation: 'isolate',
+        ...(BRED ? { width: 'calc(min(100vw, var(--kd-bredde,560px)) - 2 * var(--kd-kant,10px))', boxSizing: 'border-box' } : {}),
+        background: BRED ? 'rgba(36,36,39,0.72)' : 'rgba(40,40,44,0.38)', backdropFilter: 'blur(22px) saturate(190%) brightness(1.1)', WebkitBackdropFilter: 'blur(22px) saturate(190%) brightness(1.1)',
+        boxShadow: BRED ? 'inset 0 0 0 0.5px rgba(255,255,255,0.14), inset 0 1px 0 rgba(255,255,255,0.1), 0 18px 40px rgba(0,0,0,0.5)' : '0 18px 40px rgba(0,0,0,0.45), 0 2px 6px rgba(0,0,0,0.25)',
         transform: `translateX(-50%) scale(${compact ? 0.8 : 1}) translateY(${compact ? 8 : 0}px)`, transformOrigin: 'bottom center',
         transition: 'transform .55s cubic-bezier(.34,1.56,.64,1)',
       };
       const navSheen = { position: 'absolute', inset: 0, borderRadius: 'inherit', pointerEvents: 'none', opacity: lx == null ? 0 : 1, transition: 'opacity .3s', background: `radial-gradient(120px 60px at ${lx ?? 50}% 0%, rgba(255,255,255,0.28), transparent 70%)` };
       const indicator = {
-        position: 'absolute', top: PAD, left: PAD + Math.min(tab, ITEMS.length - 1) * (SZ + GAP), width: SZ, height: SH, borderRadius: NAVN ? 26 : 22, pointerEvents: 'none',
-        background: 'linear-gradient(180deg, rgba(255,255,255,0.34), rgba(255,255,255,0.14))',
-        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.6), inset 0 -1px 1px rgba(255,255,255,0.15), 0 4px 14px rgba(0,0,0,0.25)',
+        position: 'absolute', top: PAD, pointerEvents: 'none',
+        ...(BRED ? { left: `calc(${PAD}px + ${Math.min(tab, N - 1)} * (${CELL} + ${GAP}px))`, width: `calc(${CELL})`, height: SH, borderRadius: SH / 2,
+          background: 'rgba(0,0,0,0.42)', boxShadow: 'inset 0 0 0 0.5px rgba(255,255,255,0.06), inset 0 1px 2px rgba(0,0,0,0.3)' }
+          : { left: PAD + Math.min(tab, N - 1) * (SZ + GAP), width: SZ, height: SH, borderRadius: NAVN ? 26 : 22,
+          background: 'linear-gradient(180deg, rgba(255,255,255,0.34), rgba(255,255,255,0.14))',
+          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.6), inset 0 -1px 1px rgba(255,255,255,0.15), 0 4px 14px rgba(0,0,0,0.25)' }),
         backdropFilter: 'blur(6px) saturate(200%)', WebkitBackdropFilter: 'blur(6px) saturate(200%)',
         transform: moving ? `scaleX(${1 + Math.min(dist, 4) * 0.12}) scaleY(${1 - Math.min(dist, 4) * 0.04})` : 'scale(1)',
         transition: 'left .5s cubic-bezier(.34,1.4,.64,1), transform .45s cubic-bezier(.34,1.8,.64,1)',
       };
       const dock = ITEMS.map(([icon, title, dot], i) => { const act = i === tab; return { i, icon, title,
-        style: { position: 'relative', zIndex: 1, flex: 'none', width: SZ, height: SH, borderRadius: 22, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, color: '#f2f1ee', transition: 'transform .35s cubic-bezier(.34,1.8,.64,1)', WebkitTapHighlightColor: 'transparent' },
-        label: { maxWidth: SZ - 6, fontSize: 10, fontWeight: 500, lineHeight: '12px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', opacity: act ? 1 : 0.62, transition: 'opacity .2s' },
-        iconStyle: { fontSize: 22, opacity: act ? 1 : 0.72, transform: act ? 'scale(1.08)' : 'scale(1)', fontVariationSettings: `'FILL' ${act ? 1 : 0}`, transition: 'transform .4s cubic-bezier(.34,1.8,.64,1), opacity .2s', textShadow: '0 1px 2px rgba(0,0,0,0.3)' },
-        dot: { position: 'absolute', right: NAVN ? 13 : 9, top: NAVN ? 5 : 9, width: 7, height: 7, borderRadius: 4, background: dot ? C.red : 'transparent', boxShadow: dot ? '0 0 0 1.5px rgba(30,30,34,0.6)' : 'none' } }; });
+        style: { position: 'relative', zIndex: 1, ...(BRED ? { flex: '1 1 0', minWidth: 0 } : { flex: 'none', width: SZ }), height: SH, borderRadius: 22, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, color: '#f2f1ee', transition: 'transform .35s cubic-bezier(.34,1.8,.64,1)', WebkitTapHighlightColor: 'transparent' },
+        label: BRED ? { maxWidth: 'calc(100% - 6px)', fontSize: 11, fontWeight: 600, lineHeight: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: act ? ACC : '#f2f1ee', transition: 'color .25s' }
+          : { maxWidth: SZ - 6, fontSize: 10, fontWeight: 500, lineHeight: '12px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', opacity: act ? 1 : 0.62, transition: 'opacity .2s' },
+        iconStyle: BRED ? { fontSize: 24, color: act ? ACC : '#f2f1ee', transform: act ? 'scale(1.06)' : 'scale(1)', fontVariationSettings: "'FILL' 1", transition: 'transform .4s cubic-bezier(.34,1.8,.64,1), color .25s' } : { fontSize: 22, opacity: act ? 1 : 0.72, transform: act ? 'scale(1.08)' : 'scale(1)', fontVariationSettings: `'FILL' ${act ? 1 : 0}`, transition: 'transform .4s cubic-bezier(.34,1.8,.64,1), opacity .2s', textShadow: '0 1px 2px rgba(0,0,0,0.3)' },
+        dot: { position: 'absolute', right: BRED ? 'calc(50% - 16px)' : NAVN ? 13 : 9, top: NAVN ? 5 : 9, width: 7, height: 7, borderRadius: 4, background: dot ? C.red : 'transparent', boxShadow: dot ? '0 0 0 1.5px rgba(30,30,34,0.6)' : 'none' } }; });
       const menuItems = LAY.menu.map((m, i) => [m.ikon || 'circle', m.navn || '', i, m.farge || '#c9c7c2', dotOf(m)]);
       const dockEditHTML = () => {
         const sw = on => `<span style="${S({ width: 44, height: 26, borderRadius: 13, flex: 'none', position: 'relative', background: on ? 'oklch(0.78 0.13 350)' : '#3a3a3d', transition: 'background .2s' })}"><span style="${S({ position: 'absolute', top: 3, left: on ? 21 : 3, width: 20, height: 20, borderRadius: 10, background: '#f4f3ef', transition: 'left .25s cubic-bezier(.34,1.56,.64,1)' })}"></span></span>`;
@@ -1227,10 +1234,11 @@ try {
             <button class="kd-press" data-on-click="dockMove" data-arg="${e((inDock ? 'ut|' : 'inn|') + it._k)}" title="${inDock ? 'Flytt til «Mer»' : 'Legg i dokken'}" style="${S({ width: 36, height: 36, borderRadius: 18, display: 'grid', placeItems: 'center', color: inDock ? C.red : C.green, opacity: !inDock && LAY.dock.length >= 7 ? 0.3 : 1 })}"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">${inDock ? 'remove_circle' : 'add_circle'}</span></button>
           </div>`;
         return `<div data-key="de-bd" data-on-click="dockEditClose" style="position:fixed;inset:0;z-index:27;background:rgba(0,0,0,0.35)"></div>
-    <div data-key="de-panel" style="position:fixed;left:50%;transform:translateX(-50%);bottom:${NAVN ? 92 : 84}px;z-index:28;width:min(400px, calc(100vw - 24px));max-height:calc(100vh - 140px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;box-sizing:border-box;padding:8px;border-radius:26px;background:rgba(40,40,44,0.72);backdrop-filter:blur(26px) saturate(190%);-webkit-backdrop-filter:blur(26px) saturate(190%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.3),inset 0 0 0 0.5px rgba(255,255,255,0.18),0 18px 40px rgba(0,0,0,0.5);display:flex;flex-direction:column;gap:2px">
+    <div data-key="de-panel" style="position:fixed;left:50%;transform:translateX(-50%);bottom:${MB}px;z-index:28;width:min(400px, calc(100vw - 24px));max-height:calc(100vh - 140px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;box-sizing:border-box;padding:8px;border-radius:26px;background:rgba(40,40,44,0.72);backdrop-filter:blur(26px) saturate(190%);-webkit-backdrop-filter:blur(26px) saturate(190%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.3),inset 0 0 0 0.5px rgba(255,255,255,0.18),0 18px 40px rgba(0,0,0,0.5);display:flex;flex-direction:column;gap:2px">
       <div style="display:flex;align-items:center;gap:8px;padding:6px 6px 6px 14px"><span style="flex:1;font-size:16px;font-weight:600">Tilpass dokken</span>
         <button class="kd-hov8" data-on-click="dockReset" style="height:34px;padding:0 12px;border-radius:17px;font-size:12px;color:#a9a7a2">Nullstill</button>
         <button data-on-click="dockEditClose" style="height:34px;padding:0 14px;border-radius:17px;font-size:13px;font-weight:600;background:linear-gradient(135deg, oklch(0.78 0.13 350), oklch(0.9 0.05 20));color:#2a1720">Ferdig</button></div>
+      ${opt('bred', 'Bred dokk', 'Fyller bredden, som Apple Music', OPT.bred)}
       ${opt('navn', 'Vis navn', 'Navn under ikonene i dokken', OPT.navn)}
       ${opt('krymp', 'Krymp ved scrolling', 'Dokken blir mindre når du scroller ned', OPT.krymp)}
       <div style="padding:12px 14px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">I dokken</div>
@@ -1306,7 +1314,7 @@ try {
     </div>`;
       };
 
-      return `<div style="position:relative;box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 120px;display:flex;flex-direction:column;gap:22px">
+      return `<div style="position:relative;box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) calc(${MB + 24}px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:22px">
 
   <header style="display:flex;flex-direction:column;gap:16px">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
@@ -1413,7 +1421,7 @@ try {
   </section>
 
   ${s.menu ? `<div data-key="menu-bd" data-on-click="closeMenu" style="position:fixed;inset:0;z-index:25"></div>
-    <div style="position:fixed;right:max(12px, calc(50% - 198px));bottom:${NAVN ? 92 : 84}px;z-index:26;min-width:180px;max-height:calc(100vh - 120px);overflow-y:auto;scrollbar-width:none;box-sizing:border-box;padding:6px;border-radius:22px;background:rgba(40,40,44,0.5);backdrop-filter:blur(22px) saturate(190%);-webkit-backdrop-filter:blur(22px) saturate(190%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.3),inset 0 0 0 0.5px rgba(255,255,255,0.18),0 18px 40px rgba(0,0,0,0.45);display:flex;flex-direction:column;gap:2px">
+    <div style="position:fixed;right:max(12px, calc(50% - 198px));bottom:${MB}px;z-index:26;min-width:180px;max-height:calc(100vh - 120px);overflow-y:auto;scrollbar-width:none;box-sizing:border-box;padding:6px;border-radius:22px;background:rgba(40,40,44,0.5);backdrop-filter:blur(22px) saturate(190%);-webkit-backdrop-filter:blur(22px) saturate(190%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.3),inset 0 0 0 0.5px rgba(255,255,255,0.18),0 18px 40px rgba(0,0,0,0.45);display:flex;flex-direction:column;gap:2px">
       ${menuItems.map(([icon, label, k, col, dot]) => `<button class="kd-hov" data-on-click="menuGo" data-arg="${k}" style="height:44px;padding:0 14px 0 10px;border-radius:16px;display:flex;align-items:center;gap:10px;font-size:14px;font-weight:500;white-space:nowrap"><span class="ms" style="font-size:20px;color:${e(col)}">${e(icon)}</span><span style="flex:1;text-align:left">${e(label)}</span>${dot ? `<span style="width:7px;height:7px;border-radius:4px;background:${C.red}"></span>` : ''}</button>`).join('')}
       ${menuItems.length ? '<div style="height:1px;margin:4px 10px;background:rgba(255,255,255,0.08)"></div>' : ''}
       <button class="kd-hov" data-on-click="dockEditOpen" style="height:44px;padding:0 14px 0 10px;border-radius:16px;display:flex;align-items:center;gap:10px;font-size:14px;font-weight:500;white-space:nowrap;color:#a9a7a2"><span class="ms" style="font-size:20px">edit</span>Tilpass dokken</button>
@@ -1864,7 +1872,7 @@ try {
       }).join('');
 
       const coreIcon = { fontSize: 26, color: coreCol, fontVariationSettings: "'FILL' 1" };
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 28px;display:flex;flex-direction:column;gap:22px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 28px;display:flex;flex-direction:column;gap:22px">
 
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Strøm</div>
@@ -2333,7 +2341,7 @@ try {
       else if (tabK === 'ta') main = this._ta();
       else if (tabK === 'op') main = this._op();
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:16px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:16px">
   <header style="display:flex;align-items:center;gap:12px;padding:0 4px">
     <span style="width:40px;height:40px;border-radius:20px;background:#e9e8e4;color:#141416;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">thermostat</span></span>
     <div style="flex:1;font-size:26px;font-weight:500;letter-spacing:-0.02em">Klima</div>
@@ -2932,7 +2940,7 @@ try {
         return { text, who, time, dot: { width: 9, height: 9, borderRadius: 5, marginTop: 5, background: col, flex: 'none' }, line: { flex: 1, width: 1, background: i < arr.length - 1 ? 'rgba(255,255,255,0.1)' : 'transparent', marginTop: 4 } };
       });
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 28px;display:flex;flex-direction:column;gap:22px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 28px;display:flex;flex-direction:column;gap:22px">
 
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Sikkerhet</div>
@@ -3343,7 +3351,7 @@ try {
         star: { fontSize: 20, color: fav ? C.amber : '#48474a', fontVariationSettings: `'FILL' ${fav ? 1 : 0}` } }; });
       const n = CAMS.length;
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:14px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:14px">
   <header style="display:flex;align-items:center;gap:12px;padding:0 4px">
     <span style="width:40px;height:40px;border-radius:20px;background:#e9e8e4;color:#141416;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">videocam</span></span>
     <div style="flex:1;font-size:26px;font-weight:500;letter-spacing:-0.02em">Kamera</div>
@@ -3655,7 +3663,7 @@ try {
       if (pic) Object.assign(vals.avatar, { backgroundImage: `url('${KD.e(String(this._hass.hassUrl ? this._hass.hassUrl(pic) : pic).replace(/'/g, '%27'))}')`, backgroundSize: 'cover', backgroundPosition: 'center', color: 'transparent' });
       const v = vals;
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:22px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:22px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Tilstedeværelse</div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -4369,7 +4377,7 @@ try {
       }
 
       return `
-<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 28px;display:flex;flex-direction:column;gap:16px">
+<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 28px;display:flex;flex-direction:column;gap:16px">
 
   <header style="display:flex;align-items:center;gap:10px">
     <div style="flex:1;font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Vanning</div>
@@ -4556,7 +4564,7 @@ try {
       </div>`;
       }).join('');
       return `
-<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:22px">
+<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:22px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Planter</div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -4783,7 +4791,7 @@ try {
       }).join('');
 
       return `
-<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:22px">
+<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:22px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Søvn</div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -5057,7 +5065,7 @@ try {
       const pollen = this.pollen();
 
       return `
-<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:22px">
+<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:22px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Vær · <span>${e(cfg.sted || '')}</span></div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -5532,7 +5540,7 @@ try {
         : { icon: 'play_arrow', label: st === 'paused' ? 'Fortsett' : zone ? `Støvsug ${zone.navn.toLowerCase()}` : sel.length ? `Støvsug ${sel.length} rom` : 'Støvsug alt', style: { height: 64, borderRadius: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontSize: 16, fontWeight: 600, background: C.green, color: '#10231a' } };
       const e = KD.e, S = KD.S;
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:22px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:22px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89"><span>${e(cf.navn || 'Sir Sweeps')}</span></div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -5740,9 +5748,50 @@ try {
     /* ----- handlinger ----- */
     tab(e, k) { this.setState({ tab: k }); }
     flash(k) { this.setState({ press: k }); clearTimeout(this._pt); this._pt = setTimeout(() => this.setState({ press: null }), 160); }
+    /** fjernkontrollen: config → remote.<tv> → en remote med samme navn som TV-en */
+    remoteId() {
+      const c = this.config, tv = String(c.tv || '').split('.')[1] || '';
+      if (c.fjernkontroll && this.st(c.fjernkontroll)) return c.fjernkontroll;
+      if (tv && this.st('remote.' + tv)) return 'remote.' + tv;
+      const nm = low(this.fname(c.tv));
+      return this.find(/^remote\./).find(id => nm && low(this.fname(id)) === nm) || this.find(/^remote\./).find(id => tv && id.includes(tv.split('_')[0])) || null;
+    }
     send(cmd) {
-      const r = this.config.fjernkontroll;
-      if (r && this.st(r)) return this.call('remote', 'send_command', { entity_id: r, command: cmd, hold_secs: 0 });
+      const r = this.remoteId();
+      if (!r) { this.toast('Fant ingen fjernkontroll (remote.*) – sett «fjernkontroll» i kortet'); return; }
+      const go = () => this.call('remote', 'send_command', { entity_id: r, command: cmd, hold_secs: 0 });
+      if (this.v(r) === 'off' && cmd !== 'wakeup') { // Apple TV i dvale: vekk den først
+        const now = Date.now(); if (now - (this._woke || 0) < 4000) return go();
+        this._woke = now;
+        return this.call('remote', 'turn_on', { entity_id: r }).then(() => new Promise(res => setTimeout(res, 600))).then(go);
+      }
+      return go();
+    }
+    /** Styreflaten: trykk på pil/midten, eller sveip (som ki-fjernkontroll-card) */
+    _padInit() {
+      const pad = this.$('[data-key="kd-pad"]'); if (!pad || pad._kd) return; pad._kd = true;
+      const DIR = { up: 'up', down: 'down', left: 'left', right: 'right' }, ROT = 26, STEG = 46;
+      let x0 = 0, y0 = 0, on = false, steg = 0, ret = null, moved = false;
+      const zone = (x, y) => { const r = pad.getBoundingClientRect(), dx = x - (r.left + r.width / 2), dy = y - (r.top + r.height / 2); if (Math.hypot(dx, dy) < r.width * 0.2) return 'ok'; return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'); };
+      pad.addEventListener('pointerdown', ev => { if (ev.button > 0) return; x0 = ev.clientX; y0 = ev.clientY; on = true; steg = 0; ret = null; moved = false; try { pad.setPointerCapture(ev.pointerId); } catch (e) { } });
+      pad.addEventListener('pointermove', ev => {
+        if (!on) return;
+        const dx = ev.clientX - x0, dy = ev.clientY - y0, l = Math.hypot(dx, dy);
+        if (l > 8) moved = true;
+        if (l < ROT) return;
+        const ny = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+        if (ny !== ret) { ret = ny; steg = 0; x0 = ev.clientX; y0 = ev.clientY; }
+        const vil = Math.max(1, Math.floor(Math.abs(Math.abs(dx) > Math.abs(dy) ? dx : dy) / STEG));
+        while (steg < vil) { steg++; this.flash(ny); this.haptic('selection'); this.send(DIR[ny]); }
+      });
+      const end = ev => {
+        if (!on) return; on = false;
+        if (ev.type === 'pointercancel') return;
+        if (!moved) { const z = zone(ev.clientX, ev.clientY); this.flash(z); this.haptic('light'); this.send(z === 'ok' ? 'select' : DIR[z]); }
+        else if (ret && steg === 0) { this.flash(ret); this.send(DIR[ret]); }
+      };
+      pad.addEventListener('pointerup', end);
+      pad.addEventListener('pointercancel', end);
     }
     pad(e, k) { this.flash(k); this.send(k === 'ok' ? 'select' : k); }
     powerTv() { const id = this.config.tv; this.call('media_player', this.on(id) ? 'turn_off' : 'turn_on', { entity_id: id }); }
@@ -5796,6 +5845,7 @@ try {
     openMore(e, id) { this.more(id); }
 
     afterRender() {
+      this._padInit();
       // oppdater avspillingstiden hvert sekund mens noe spilles
       clearTimeout(this._tick);
       if (this._connected && this._playingPos) this._tick = setTimeout(() => this._queue(), 1000);
@@ -5870,7 +5920,7 @@ try {
       const secHead = (t) => `<div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:0 4px"><span>${e(t)}</span></div>`;
       const chipRow = (items, fn) => `<div data-hscroll="1" style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -18px;padding:0 18px">${items.map(fn).join('')}</div>`;
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:20px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Media</div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -5892,9 +5942,9 @@ try {
 
   ${tv ? `
     <section style="display:flex;justify-content:center">
-      <div style="position:relative;width:250px;height:250px;border-radius:50%;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05)">
-        ${pad.map(p => `<button data-on-click="pad" data-arg="${p.k}" style="${S(p.style)}"><span class="ms" style="font-size:28px"><span>${p.icon}</span></span></button>`).join('')}
-        <button data-on-click="pad" data-arg="ok" style="${S(ok)}">OK</button>
+      <div data-key="kd-pad" role="group" aria-label="Styreflate" style="position:relative;width:250px;height:250px;border-radius:50%;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05);touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;cursor:pointer">
+        ${pad.map(p => `<span data-arg="${p.k}" style="${S({ ...p.style, pointerEvents: 'none' })}"><span class="ms" style="font-size:28px"><span>${p.icon}</span></span></span>`).join('')}
+        <span data-arg="ok" style="${S({ ...ok, display: 'grid', placeItems: 'center', pointerEvents: 'none' })}">OK</span>
       </div>
     </section>
     <section style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px">
@@ -6222,7 +6272,7 @@ try {
       const pill = 'display:inline-flex;align-items:center;height:30px;padding:0 11px;border-radius:15px;background:#232326;font-weight:500;vertical-align:middle;white-space:nowrap';
       const pill2 = 'display:inline-block;padding:0 10px;border-radius:14px;background:#f2f1ee;color:#141416;font-weight:500;line-height:1.6';
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:20px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89"><span>${e(cf.navn)}</span></div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -6544,7 +6594,7 @@ try {
           bar: { width: `${pct || 0}%`, height: '100%', background: pct != null && pct < 15 ? AMBER : '#c9c7c2' } };
       });
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:20px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89"><span>${e(cf.navn)}</span></div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -7034,7 +7084,7 @@ try {
       const statusStyle = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 500, color: '#c9c7c2' };
       const statusDot = { width: 8, height: 8, borderRadius: 4, flex: 'none', background: V.ok, boxShadow: `0 0 10px ${V.ok}` };
       const tl = tabs.map(t => tab(...t));
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:20px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
   <header style="display:flex;align-items:center;gap:12px">
     <span style="width:40px;height:40px;border-radius:20px;background:#e9e8e4;color:#141416;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">dns</span></span>
     <div style="flex:1;font-size:26px;font-weight:500;letter-spacing:-0.02em">Server</div>
@@ -7301,7 +7351,7 @@ try {
       const items = (L[s.tab] || []).map((r, i) => { const w = sw(r.on); return { ...r, track: w.track, knob: w.knob,
         row: { display: 'flex', alignItems: 'center', gap: 12, padding: '12px 4px', width: '100%', borderTop: i ? '1px solid rgba(255,255,255,0.05)' : 'none' },
         iconWrap: { width: 40, height: 40, borderRadius: 20, flex: 'none', display: 'grid', placeItems: 'center', background: '#1c1c1f', color: r.on ? '#f2f1ee' : '#6d6c69' } }; });
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:20px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Innstillinger</div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -7676,7 +7726,7 @@ try {
             steps: [1, 2, 3, 4].map(k => ({ flex: 1, height: 4, borderRadius: 2, background: k <= p.step ? C.red : '#2a2a2d' })) })) };
       }
 
-      html = `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:20px">
+      html = `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Kalender</div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -8019,7 +8069,7 @@ try {
         box: { width: 26, height: 26, borderRadius: 9, flex: 'none', marginTop: 1, display: 'grid', placeItems: 'center', background: x.done ? GREEN : 'transparent', boxShadow: x.done ? 'none' : 'inset 0 0 0 1.5px #5d5c5a', transition: 'background .2s' },
         check: { fontSize: 18, color: '#141416', opacity: x.done ? 1 : 0, fontVariationSettings: "'wght' 600" },
         textStyle: { fontSize: 14, lineHeight: 1.4, textWrap: 'pretty', textDecoration: x.done ? 'line-through' : 'none' } }));
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:20px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Gjøremål</div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -8178,7 +8228,7 @@ try {
           style: { aspectRatio: '1', borderRadius: 14, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, background: hits.length ? '#262629' : 'transparent', boxShadow: t ? 'inset 0 0 0 1.5px #f2f1ee' : 'none', opacity: inM ? 1 : 0.25 },
           num: { fontSize: 13, fontWeight: t ? 600 : 500, fontVariantNumeric: 'tabular-nums' } }; });
       const legend = F.map(f => ({ name: f.name.split(' ')[0], dot: { width: 8, height: 8, borderRadius: 4, background: f.col } }));
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:16px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:16px">
   <header style="display:flex;align-items:center;gap:12px">
     <span style="width:40px;height:40px;border-radius:20px;background:#e9e8e4;color:#141416;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">delete</span></span>
     <div style="flex:1;font-size:26px;font-weight:500;letter-spacing:-0.02em">Søppel</div>
@@ -8732,7 +8782,7 @@ a:hover{color:oklch(0.86 0.12 95)}`;
       else if (tab === 'f1' || tab === 'f2') inner = this._floor(tab, fl[tab]);
       else inner = this._on(fl);
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:12px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:12px">
   <header style="display:flex;align-items:center;gap:12px;padding:0 4px">
     <span style="width:40px;height:40px;border-radius:20px;background:#e9e8e4;color:#141416;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">lightbulb</span></span>
     <div style="flex:1;font-size:26px;font-weight:500;letter-spacing:-0.02em">Lys</div>
@@ -9307,7 +9357,7 @@ try {
       const setVal = k ? (Number.isInteger(k.set) ? String(k.set) : nf(k.set, 1)) : '';
       this._headVals = [r.ikon, r.navn, `${temp != null ? nf(temp, 1) : '–'}° · ${hum != null ? nf(hum, 0) : '–'} %`];
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:18px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:18px">
   <header style="display:flex;align-items:center;gap:12px;padding:0 4px">
     <span style="${S(headIcon)}"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">${E(r.ikon)}</span></span>
     <div style="flex:1;font-size:26px;font-weight:500;letter-spacing:-0.02em">${E(r.navn)}</div>

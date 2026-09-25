@@ -477,7 +477,7 @@ a:hover{color:oklch(0.86 0.12 95)}`;
       else if (tab === 'f1' || tab === 'f2') inner = this._floor(tab, fl[tab]);
       else inner = this._on(fl);
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:12px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:12px">
   <header style="display:flex;align-items:center;gap:12px;padding:0 4px">
     <span style="width:40px;height:40px;border-radius:20px;background:#e9e8e4;color:#141416;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">lightbulb</span></span>
     <div style="flex:1;font-size:26px;font-weight:500;letter-spacing:-0.02em">Lys</div>

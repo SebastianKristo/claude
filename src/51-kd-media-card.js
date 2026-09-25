@@ -78,9 +78,50 @@
     /* ----- handlinger ----- */
     tab(e, k) { this.setState({ tab: k }); }
     flash(k) { this.setState({ press: k }); clearTimeout(this._pt); this._pt = setTimeout(() => this.setState({ press: null }), 160); }
+    /** fjernkontrollen: config → remote.<tv> → en remote med samme navn som TV-en */
+    remoteId() {
+      const c = this.config, tv = String(c.tv || '').split('.')[1] || '';
+      if (c.fjernkontroll && this.st(c.fjernkontroll)) return c.fjernkontroll;
+      if (tv && this.st('remote.' + tv)) return 'remote.' + tv;
+      const nm = low(this.fname(c.tv));
+      return this.find(/^remote\./).find(id => nm && low(this.fname(id)) === nm) || this.find(/^remote\./).find(id => tv && id.includes(tv.split('_')[0])) || null;
+    }
     send(cmd) {
-      const r = this.config.fjernkontroll;
-      if (r && this.st(r)) return this.call('remote', 'send_command', { entity_id: r, command: cmd, hold_secs: 0 });
+      const r = this.remoteId();
+      if (!r) { this.toast('Fant ingen fjernkontroll (remote.*) – sett «fjernkontroll» i kortet'); return; }
+      const go = () => this.call('remote', 'send_command', { entity_id: r, command: cmd, hold_secs: 0 });
+      if (this.v(r) === 'off' && cmd !== 'wakeup') { // Apple TV i dvale: vekk den først
+        const now = Date.now(); if (now - (this._woke || 0) < 4000) return go();
+        this._woke = now;
+        return this.call('remote', 'turn_on', { entity_id: r }).then(() => new Promise(res => setTimeout(res, 600))).then(go);
+      }
+      return go();
+    }
+    /** Styreflaten: trykk på pil/midten, eller sveip (som ki-fjernkontroll-card) */
+    _padInit() {
+      const pad = this.$('[data-key="kd-pad"]'); if (!pad || pad._kd) return; pad._kd = true;
+      const DIR = { up: 'up', down: 'down', left: 'left', right: 'right' }, ROT = 26, STEG = 46;
+      let x0 = 0, y0 = 0, on = false, steg = 0, ret = null, moved = false;
+      const zone = (x, y) => { const r = pad.getBoundingClientRect(), dx = x - (r.left + r.width / 2), dy = y - (r.top + r.height / 2); if (Math.hypot(dx, dy) < r.width * 0.2) return 'ok'; return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'); };
+      pad.addEventListener('pointerdown', ev => { if (ev.button > 0) return; x0 = ev.clientX; y0 = ev.clientY; on = true; steg = 0; ret = null; moved = false; try { pad.setPointerCapture(ev.pointerId); } catch (e) { } });
+      pad.addEventListener('pointermove', ev => {
+        if (!on) return;
+        const dx = ev.clientX - x0, dy = ev.clientY - y0, l = Math.hypot(dx, dy);
+        if (l > 8) moved = true;
+        if (l < ROT) return;
+        const ny = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+        if (ny !== ret) { ret = ny; steg = 0; x0 = ev.clientX; y0 = ev.clientY; }
+        const vil = Math.max(1, Math.floor(Math.abs(Math.abs(dx) > Math.abs(dy) ? dx : dy) / STEG));
+        while (steg < vil) { steg++; this.flash(ny); this.haptic('selection'); this.send(DIR[ny]); }
+      });
+      const end = ev => {
+        if (!on) return; on = false;
+        if (ev.type === 'pointercancel') return;
+        if (!moved) { const z = zone(ev.clientX, ev.clientY); this.flash(z); this.haptic('light'); this.send(z === 'ok' ? 'select' : DIR[z]); }
+        else if (ret && steg === 0) { this.flash(ret); this.send(DIR[ret]); }
+      };
+      pad.addEventListener('pointerup', end);
+      pad.addEventListener('pointercancel', end);
     }
     pad(e, k) { this.flash(k); this.send(k === 'ok' ? 'select' : k); }
     powerTv() { const id = this.config.tv; this.call('media_player', this.on(id) ? 'turn_off' : 'turn_on', { entity_id: id }); }
@@ -134,6 +175,7 @@
     openMore(e, id) { this.more(id); }
 
     afterRender() {
+      this._padInit();
       // oppdater avspillingstiden hvert sekund mens noe spilles
       clearTimeout(this._tick);
       if (this._connected && this._playingPos) this._tick = setTimeout(() => this._queue(), 1000);
@@ -208,7 +250,7 @@
       const secHead = (t) => `<div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:0 4px"><span>${e(t)}</span></div>`;
       const chipRow = (items, fn) => `<div data-hscroll="1" style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -18px;padding:0 18px">${items.map(fn).join('')}</div>`;
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,16px) 40px;display:flex;flex-direction:column;gap:20px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Media</div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -230,9 +272,9 @@
 
   ${tv ? `
     <section style="display:flex;justify-content:center">
-      <div style="position:relative;width:250px;height:250px;border-radius:50%;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05)">
-        ${pad.map(p => `<button data-on-click="pad" data-arg="${p.k}" style="${S(p.style)}"><span class="ms" style="font-size:28px"><span>${p.icon}</span></span></button>`).join('')}
-        <button data-on-click="pad" data-arg="ok" style="${S(ok)}">OK</button>
+      <div data-key="kd-pad" role="group" aria-label="Styreflate" style="position:relative;width:250px;height:250px;border-radius:50%;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05);touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;cursor:pointer">
+        ${pad.map(p => `<span data-arg="${p.k}" style="${S({ ...p.style, pointerEvents: 'none' })}"><span class="ms" style="font-size:28px"><span>${p.icon}</span></span></span>`).join('')}
+        <span data-arg="ok" style="${S({ ...ok, display: 'grid', placeItems: 'center', pointerEvents: 'none' })}">OK</span>
       </div>
     </section>
     <section style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px">

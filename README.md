@@ -101,7 +101,7 @@ Entitetsnøkler (med standard): `vaer` weather.forecast_home · `ute_temp` senso
 `effekt` sensor.strommaler_effekt · `lys_totalt` sensor.hele_huset_lys · `kalender_sensor` sensor.alle_kalendere · `las` lock.dorlas_blatann ·
 `las_batteri` sensor.dorlas_wifi_battery · `las_sist` sensor.ansiktsgjenkjenning_dorlas_sist_last_opp_av · `autolas` (finnes automatisk) ·
 `alarm` alarm_control_panel.alarm · `bevegelse` [kamerasensorene] · `gjoremal` todo.gjoremal · `soppel` [avfallssensorene] ·
-`sover_nar` on · `kant` (16 – avstand til skjermkanten i px, gjelder også alle popups).
+`sover_nar` on · `kant` (10 – avstand til skjermkanten i px, gjelder også alle popups) · `dokk_stil` (`bred` som Apple Music | `kompakt` designets glassdokk).
 
 Liquid Glass-dokken og «Mer»-menyen kan settes opp selv (standard er designets knapper):
 ```yaml
@@ -118,7 +118,7 @@ meny:                       # «Mer»-menyen
 Dokken i bruk: dra fingeren langs dokken – glasslinsen følger fingeren, og slipp velger knappen.
 Under de tre prikkene ligger **«Tilpass dokken»**: flytt knapper mellom dokken og «Mer»-menyen (maks 7 i dokken),
 endre rekkefølge, slå navn under ikonene av/på og velg om dokken skal krympe når du scroller.
-Valgene lagres per bruker i HA. Standardverdiene kan også settes i config: `dokk_navn` (false) og `dokk_krymp` (true).
+Valgene lagres per bruker i HA. Standardverdiene kan også settes i config: `dokk_stil` (bred), `dokk_navn` (true) og `dokk_krymp` (true).
 
 Automatisk: personen som hører til innlogget bruker blir «meg»; romdata (temperatur, fukt, lys) hentes fra KI Rom-sensorene når de finnes;
 antall lys på faller tilbake til å telle `light.*`; hendelser i dag faller tilbake til kalender-API-et.
@@ -138,7 +138,7 @@ Dokumentasjonen for hver nøkkel står øverst i hver fil i `src/`. Kort oppsumm
 - **Søvn** – `personer`, `vekking` (tom = alle KI Søvn-vekkealarmer), `nattmodus`.
 - **Vær** – `sted` (Strømstad), `vaer`, `naa`, `sol`, `maane`, `pollen: auto`, `luft`, `timer`, `dager`.
 - **Støvsuger** – `entity`, skriptene (`start`, `start_rom`, `pause`, `hjem`, `tom`), `rom` (dine input_boolean-er, valgfritt `areal`), `soner`, `deler`.
-- **Media** – `tv`, `fjernkontroll`, `musikk`, `hoyttalere`, `apper`, `radio`.
+- **Media** – `tv`, `fjernkontroll` (finnes automatisk; styreflaten kan trykkes eller sveipes, og vekker Apple TV-en hvis den sover), `musikk`, `hoyttalere`, `apper`, `radio`.
 - **Bil** – Tesla-entitetene, `smartlading` (switch.ki_lading_automatikk), `kapasitet` (75), `ladeeffekt_kw` (11), `prefiks`.
 - **3D-printer** – `prefiks` (creality_k2), `lys`, `romvifte`, `energi`, `homey_bryter`, `cfs_spor`.
 - **Server** – `pve_node`, `unraid`, speedtest/qBittorrent, `faner`. Proxmox-gjester, Unraid, UniFi og lagring oppdages.
