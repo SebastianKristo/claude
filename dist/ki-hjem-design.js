@@ -1,4 +1,4 @@
-/* KI Hjem Design – pikselkopi av Claude Design «Home Assistant sikkerhetspanel». Bygget 2026-09-25T22:54Z. */
+/* KI Hjem Design – pikselkopi av Claude Design «Home Assistant sikkerhetspanel». Bygget 2026-09-25T23:11Z. */
 
 /* ===== 00-kd-base.js ===== */
 try {
@@ -356,6 +356,8 @@ input,select,textarea{font:inherit;color:inherit}
   KD.animateSheetTop = (root) => {
     const q = k => root.querySelector('[data-bh="' + k + '"]');
     const pill = q('pill'); if (!pill || !pill.animate) return;
+    const host = root.host || root; // topp_animasjon: false (config eller «Tilpass rommet») slår av animasjonen
+    if ((host.config && host.config.topp_animasjon === false) || (KD._udMap.kd_innst || (host.cached ? KD.ud(host, 'kd_innst') : {})).topp_animasjon === false) { KD.scrollSheetTop(root, 0); return; }
     const sp = 'cubic-bezier(.2,.9,.25,1.25)', out = 'cubic-bezier(.2,.8,.2,1)';
     const run = (k, kf, o) => { const el = q(k); if (el) el.animate(kf, { fill: 'backwards', ...o }); };
     run('pill', [{ transform: 'translateY(-28px) scale(0.9)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 560, easing: sp });
@@ -367,6 +369,12 @@ input,select,textarea{font:inherit;color:inherit}
     run('sheen', [{ transform: 'translateX(-120%)' }, { transform: 'translateX(260%)' }], { duration: 1100, delay: 320, easing: 'ease-in-out' });
     const g = q('glow'); if (g) { if (g._kdGlow) g._kdGlow.cancel(); g._kdGlow = g.animate([{ transform: 'scale(1)', opacity: 0.45 }, { transform: 'scale(1.55)', opacity: 0 }], { duration: 2400, delay: 900, iterations: Infinity, easing: 'ease-out' }); }
     KD.scrollSheetTop(root, 0);
+  };
+  /** Stopp gløden i alle topp-piller under et element (også i shadow roots) */
+  KD.stopSheetTop = (el) => {
+    const walk = n => { if (!n) return; if (n.getAttribute && n.getAttribute('data-bh') === 'glow' && n._kdGlow) { n._kdGlow.cancel(); n._kdGlow = null; }
+      if (n.shadowRoot) walk(n.shadowRoot); for (const c of n.children || []) walk(c); };
+    walk(el);
   };
   /** Pillen krymper når arket scrolles (designets bhScroll) */
   KD.scrollSheetTop = (root, y) => {
@@ -510,6 +518,15 @@ input,select,textarea{font:inherit;color:inherit}
     KD._udOverride = map; card.invalidate('kd-ud-');
     return card.ws({ type: 'frontend/set_user_data', key: KD.UD_KEY, value: map }).catch(e => card.toast('Kunne ikke lagre: ' + (e.message || e)));
   };
+  /** Generell brukerlagring i HA (frontend/set_user_data) per nøkkel – f.eks. 'kd_kamera', 'kd_alarm', 'kd_hjem' */
+  KD._udMap = {};
+  KD.ud = (card, key) => KD._udMap[key] || card.cached('kd-udk-' + key, 5 * 60e3,
+    () => card.ws({ type: 'frontend/get_user_data', key }).then(r => (r && r.value) || {}).catch(() => ({})), {}) || {};
+  KD.udSave = (card, key, value) => {
+    KD._udMap[key] = value; card.invalidate('kd-udk-' + key);
+    if (card._queue) card._queue();
+    return card.ws({ type: 'frontend/set_user_data', key, value }).catch(e => card.toast('Kunne ikke lagre: ' + (e.message || e)));
+  };
   KD.userRoom = (card, id) => (KD.userData(card) || {})[id] || {};
 
   const entId = x => typeof x === 'string' ? x : x && (x.entity || x.entity_id);
@@ -628,6 +645,17 @@ try {
   };
   const dayKey = (d) => d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
   const isOre = (u, A) => KD.isOre(u, A);
+  // Tilpass Hjem: seksjoner, fliser og delene av setningen øverst
+  const SEK_KEYS = ['personer', 'prosa', 'rom', 'soppel', 'strom'];
+  const PROSA_KEYS = ['ute', 'strom', 'effekt', 'lys', 'hendelser'];
+  const TILE_V = ['las', 'romV', 'alarm'], TILE_H = ['romH', 'kamera', 'gjoremal'];
+  const HLABEL = {
+    sek: { personer: ['group', 'Personer'], prosa: ['notes', 'Setningen øverst'], rom: ['meeting_room', 'Rom og fliser'], soppel: ['delete', 'Søppel'], strom: ['bolt', 'Strømpriser'] },
+    flis: { las: ['key', 'Dørlås'], romV: ['weekend', 'Romkort (venstre)'], alarm: ['shield', 'Alarm'], romH: ['desk', 'Romkort (høyre)'], kamera: ['videocam', 'Kamera'], gjoremal: ['handyman', 'Gjøremål'] },
+    prosa: { ute: ['thermostat', 'Ute-temperatur'], strom: ['payments', 'Strømpris'], effekt: ['bolt', 'Effekt (W)'], lys: ['lightbulb', 'Lys på'], hendelser: ['event', 'Hendelser i dag'] },
+  };
+  /** brukerens rekkefølge, men bare gyldige nøkler og alle med */
+  const norm = (list, def) => { const out = (Array.isArray(list) ? list : []).filter((k, i, a) => def.includes(k) && a.indexOf(k) === i); for (const k of def) if (!out.includes(k)) out.push(k); return out; };
 
   class KDHjem extends KD.KDCard {
     static defaults = {
@@ -656,7 +684,7 @@ try {
       dokk_navn: true,    // vis navn under ikonene i dokken (kan også slås av/på i «Tilpass dokken»)
       dokk_krymp: true,   // krymp dokken når man scroller nedover
       dokk: [
-        { ikon: 'cleaning_services', navn: 'Støvsuger', ark: 'vac', prikk: ['binary_sensor.sir_sweeps_a_lot_water_shortage'], prikk_av: ['binary_sensor.sir_sweeps_a_lot_water_box_attached'] },
+        { ikon: 'home', navn: 'Hjem', hjem: true },
         { ikon: 'power', navn: 'Strøm', ark: 'strom' },
         { ikon: 'music_note', navn: 'Musikk', ark: 'media' },
         { ikon: 'directions_car', navn: 'Bil', ark: 'car' },
@@ -664,6 +692,7 @@ try {
         { ikon: 'tune', navn: 'Innstillinger', ark: 'settings' },
       ],
       meny: [
+        { ikon: 'cleaning_services', navn: 'Støvsuger', ark: 'vac', farge: 'oklch(0.8 0.12 150)', prikk: ['binary_sensor.sir_sweeps_a_lot_water_shortage'], prikk_av: ['binary_sensor.sir_sweeps_a_lot_water_box_attached'] },
         { ikon: 'thermostat', navn: 'Klima', ark: 'klima', farge: 'oklch(0.72 0.15 25)' },
         { ikon: 'delete', navn: 'Søppel', ark: 'trash', farge: '#c9c7c2' },
         { ikon: 'sprinkler', navn: 'Vanning', ark: 'vann', farge: 'oklch(0.8 0.12 235)' },
@@ -701,18 +730,26 @@ try {
        bakgrunn: false slår det av; en farge overstyrer. Settes tilbake når kortet forsvinner. */
     _paintPage(on) {
       const col = this.config.bakgrunn === false ? null : (this.config.bakgrunn || '#141416');
-      const root = document.documentElement, VARS = ['--lovelace-background', '--primary-background-color', '--app-header-background-color', '--kiosk-header-color'];
+      const root = document.documentElement, VARS = ['--lovelace-background', '--primary-background-color', '--app-header-background-color', '--kiosk-header-color', '--view-background', '--secondary-background-color'];
       const meta = document.querySelector('meta[name="theme-color"]');
+      // Tema kan være satt direkte på elementer nærmere kortet (home-assistant, hui-root, hui-view …) – sett variablene
+      // på hele kjeden opp fra kortet, ellers vinner temaet og det blir en fargekant mellom kortet og siden.
+      const chain = () => { const out = [root]; let n = this; while (n) { n = n.parentNode || n.host; if (n && n.nodeType === 1 && n.style) out.push(n); } return out; };
       if (on && col) {
-        if (!this._oldVars) { this._oldVars = VARS.map(v => [v, root.style.getPropertyValue(v)]); this._oldMeta = meta && meta.getAttribute('content'); this._oldBody = document.body.style.background; }
-        VARS.forEach(v => root.style.setProperty(v, col));
+        if (!this._oldVars) {
+          this._painted = chain();
+          this._oldVars = this._painted.map(el => [el, VARS.map(v => [v, el.style.getPropertyValue(v)]), el.style.background]);
+          this._oldMeta = meta && meta.getAttribute('content'); this._oldBody = document.body.style.background;
+        }
+        for (const el of this._painted) VARS.forEach(v => el.style.setProperty(v, col));
+        for (const el of this._painted) if (/^(HUI-VIEW|HUI-PANEL-VIEW|HUI-MASONRY-VIEW|HUI-SECTIONS-VIEW|HUI-VIEW-CONTAINER|HUI-VIEW-BACKGROUND)$/.test(el.tagName)) el.style.background = col;
         document.body.style.background = col;
         if (meta) meta.setAttribute('content', col);
       } else if (this._oldVars) {
-        this._oldVars.forEach(([v, x]) => x ? root.style.setProperty(v, x) : root.style.removeProperty(v));
+        for (const [el, vars, bg] of this._oldVars) { vars.forEach(([v, x]) => x ? el.style.setProperty(v, x) : el.style.removeProperty(v)); if (el !== root) el.style.background = bg || ''; }
         document.body.style.background = this._oldBody || '';
         if (meta && this._oldMeta != null) meta.setAttribute('content', this._oldMeta);
-        this._oldVars = null;
+        this._oldVars = null; this._painted = null;
       }
     }
     onDisconnect() {
@@ -897,6 +934,13 @@ try {
     /** Utfør en dokk-/menyknapp: ark | hash | sti | url | entity (+ handling: toggle/more-info) */
     runItem(it) {
       if (!it) return;
+      if (it.hjem) { // tilbake til Hjem: lukk arket/popupen og rull til toppen
+        this.setState({ menu: false });
+        if (this.state.sheetOpen) this.closeSheet();
+        else if (location.hash) { history.replaceState(null, '', location.pathname + location.search); window.dispatchEvent(new CustomEvent('location-changed', { detail: { replace: true } })); }
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return this._queue();
+      }
       if (it.ark) return this.openSheet(it.ark, it.ark === 'rom' ? { roomId: it.rom } : it.ark === 'person' ? { personId: it.person } : {});
       if (it.hash) return this.nav(it.hash.startsWith('#') ? it.hash : '#' + it.hash);
       if (it.sti) return this.nav(it.sti);
@@ -908,7 +952,7 @@ try {
     /** alle knapper fra dokk + meny, med en stabil nøkkel */
     dockPool() {
       const c = this.config, seen = new Set(), out = [];
-      const key = it => it.id || it.ark && (it.ark + (it.rom ? ':' + it.rom : '') + (it.person ? ':' + it.person : '')) || it.hash || it.sti || it.url || it.entity || it.navn;
+      const key = it => it.id || it.hjem && 'hjem' || it.ark && (it.ark + (it.rom ? ':' + it.rom : '') + (it.person ? ':' + it.person : '')) || it.hash || it.sti || it.url || it.entity || it.navn;
       [...(c.dokk || []), ...(c.meny || [])].filter(Boolean).forEach((it, i) => {
         const k = String(key(it) || 'i' + i); if (seen.has(k)) return; seen.add(k);
         out.push({ ...it, _k: k, _dock: i < (c.dokk || []).filter(Boolean).length });
@@ -938,6 +982,41 @@ try {
       return { pool, dock, menu: pool.filter(p => !inDock.has(p._k)) };
     }
     dockItems() { return this.dockLayout().dock; }
+    /* ----- Tilpass Hjem ----- */
+    hjemCols(HU) {
+      const all = [...TILE_V, ...TILE_H];
+      const V = (Array.isArray(HU.venstre) ? HU.venstre : TILE_V).filter((k, i, a) => all.includes(k) && a.indexOf(k) === i);
+      const H = (Array.isArray(HU.hoyre) ? HU.hoyre : TILE_H).filter((k, i, a) => all.includes(k) && !V.includes(k) && a.indexOf(k) === i);
+      for (const k of all) if (!V.includes(k) && !H.includes(k)) (TILE_V.includes(k) ? V : H).push(k);
+      return [V, H];
+    }
+    hjemEditOpen() { this.setState({ hjemEdit: true, menu: false, dockEdit: false }); }
+    hjemEditClose() { this.setState({ hjemEdit: false }); }
+    hjemReset() { this.haptic('selection'); KD.udSave(this, 'kd_hjem', {}); }
+    /** arg: gruppe|nøkkel|handling – gruppe: sek | prosa | venstre | hoyre, handling: opp | ned | skjul | bytt */
+    hjemOp(ev, arg) {
+      const [g, k, op] = String(arg).split('|');
+      const HU = JSON.parse(JSON.stringify(KD.ud(this, 'kd_hjem') || {}));
+      const skjul = new Set(HU.skjul || []);
+      const move = (arr, i, d) => { const j = i + d; if (j < 0 || j >= arr.length) return false; [arr[i], arr[j]] = [arr[j], arr[i]]; return true; };
+      if (g === 'venstre' || g === 'hoyre') {
+        const [V, H] = this.hjemCols(HU), A = g === 'venstre' ? V : H, B = g === 'venstre' ? H : V, i = A.indexOf(k);
+        if (i < 0) return;
+        if (op === 'skjul') { skjul.has('flis:' + k) ? skjul.delete('flis:' + k) : skjul.add('flis:' + k); }
+        else if (op === 'bytt') { A.splice(i, 1); B.push(k); }
+        else if (!move(A, i, op === 'opp' ? -1 : 1)) return;
+        HU.venstre = V; HU.hoyre = H;
+      } else {
+        const field = g === 'sek' ? 'seksjoner' : 'prosa', list = norm(HU[field], g === 'sek' ? SEK_KEYS : PROSA_KEYS), i = list.indexOf(k);
+        if (i < 0) return;
+        if (op === 'skjul') { const t = g + ':' + k; skjul.has(t) ? skjul.delete(t) : skjul.add(t); }
+        else if (!move(list, i, op === 'opp' ? -1 : 1)) return;
+        HU[field] = list;
+      }
+      HU.skjul = [...skjul];
+      this.haptic('selection');
+      KD.udSave(this, 'kd_hjem', HU);
+    }
     dockEditOpen() { this.setState({ dockEdit: true, menu: false }); }
     dockEditClose() { this.setState({ dockEdit: false }); }
     dockMove(ev, arg) {
@@ -962,7 +1041,7 @@ try {
       if (i >= items.length) return this.setState({ menu: !this.state.menu, dockEdit: false });
       const it = items[i];
       if (this.state.menu) this.setState({ menu: false });
-      if (it.ark || it.hash) this.pickTab(i);
+      this.setState({ compact: false });
       this.runItem(it);
     }
     /** Dra fingeren langs dokken: glasslinsen følger fingeren, slipp for å velge */
@@ -1030,6 +1109,8 @@ try {
     }
 
     afterRender() {
+      // HA kan legge temaet på nytt (navigasjon/tema-bytte) – mal over igjen hvis noe er overskrevet
+      if (this._painted && this._painted.some(el => el.style.getPropertyValue('--lovelace-background') !== (this.config.bakgrunn || '#141416'))) { const col = this.config.bakgrunn || '#141416'; for (const el of this._painted) ['--lovelace-background', '--primary-background-color', '--view-background'].forEach(v => el.style.setProperty(v, col)); }
       if (this._animHead && this.state.sheetOpen) { this._animHead = false; requestAnimationFrame(() => KD.animateSheetTop(this.shadowRoot)); }
     }
 
@@ -1225,18 +1306,27 @@ try {
       const T = this.trash();
 
       /* ----- dokk ----- */
-      const tab = s.tab ?? 0, compact = !!s.compact, moving = !!s.moving;
+      const compact = !!s.compact;
       const arr = x => Array.isArray(x) ? x : x ? [x] : [];
       const dotOf = it => arr(it.prikk).some(id => ['on', 'open', 'unlocked', 'problem', 'playing'].includes(this.v(id))) || arr(it.prikk_av).some(id => this.v(id) === 'off');
       const LAY = this.dockLayout(), OPT = this.dockOpts(), NAVN = OPT.navn, BRED = OPT.bred, ACC = 'oklch(0.8 0.13 350)';
+      // aktiv fane = åpent ark (eller #hash med bubble-card); ingen ark → Hjem-knappen; ark fra «Mer» → Mer
+      const hashKey = HASH[(location.hash || '').slice(1)] || (location.hash && Object.values(this.roomsAll || {}).some(r => r.hash === location.hash) ? 'rom' : null);
+      const curKey = s.sheetOpen && s.sheetFile ? s.sheetFile : c.ark === 'bubble' ? hashKey : null;
+      const curRoom = curKey === 'rom' ? s.sheetRoomId : null;
+      const hitIt = it => it.ark === curKey && (curKey !== 'rom' || !it.rom || it.rom === curRoom) || (it.hash && location.hash === (it.hash.startsWith('#') ? it.hash : '#' + it.hash));
+      let tab = curKey ? LAY.dock.findIndex(hitIt) : LAY.dock.findIndex(it => it.hjem);
+      if (tab < 0 && curKey && LAY.menu.some(hitIt)) tab = LAY.dock.length; // «Mer»
+      if (tab !== this._lastTab) { this._prevTab = this._lastTab ?? tab; this._lastTab = tab; this._movingT = Date.now(); clearTimeout(this._mvT); this._mvT = setTimeout(() => this._queue(), 300); }
+      const moving = Date.now() - (this._movingT || 0) < 260;
       const ITEMS = LAY.dock.map(it => [it.ikon || 'circle', it.navn || '', dotOf(it)]);
       ITEMS.push(['more_horiz', 'Mer', LAY.menu.some(dotOf)]);
       const GAP = 2, PAD = 6, AVAIL = Math.min(window.innerWidth || 460, 560) - 16 - 2 * PAD, FIT = Math.floor((AVAIL - GAP * (ITEMS.length - 1)) / ITEMS.length);
       const SZ = Math.max(38, Math.min(NAVN ? 58 : 44, FIT)), SH = BRED ? (NAVN ? 58 : 50) : NAVN ? 52 : 44, N = ITEMS.length, MB = 18 + SH + 2 * PAD + 10;
-      const CELL = `((100% - ${2 * PAD}px - ${(N - 1) * GAP}px) / ${N})`, dist = Math.abs(tab - (s.prevTab ?? tab)), lx = s.lx;
+      const CELL = `((100% - ${2 * PAD}px - ${(N - 1) * GAP}px) / ${N})`, dist = Math.abs(tab - (this._prevTab ?? tab)), lx = s.lx;
       const navStyle = {
         position: 'fixed', left: '50%', bottom: 18, zIndex: 24, display: 'flex', gap: GAP, touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none', maxWidth: 'calc(100vw - 16px)', padding: PAD, borderRadius: BRED ? (SH + 2 * PAD) / 2 : NAVN ? 32 : 30, overflow: 'hidden', isolation: 'isolate',
-        ...(BRED ? { width: 'calc(min(100vw, var(--kd-bredde,560px)) - 2 * var(--kd-kant,10px))', boxSizing: 'border-box' } : {}),
+        ...(BRED ? { width: 'min(calc(100vw - 2 * var(--kd-kant,10px)), 640px)', boxSizing: 'border-box' } : {}),
         background: BRED ? 'rgba(36,36,39,0.72)' : 'rgba(40,40,44,0.38)', backdropFilter: 'blur(22px) saturate(190%) brightness(1.1)', WebkitBackdropFilter: 'blur(22px) saturate(190%) brightness(1.1)',
         boxShadow: BRED ? 'inset 0 0 0 0.5px rgba(255,255,255,0.14), inset 0 1px 0 rgba(255,255,255,0.1), 0 18px 40px rgba(0,0,0,0.5)' : '0 18px 40px rgba(0,0,0,0.45), 0 2px 6px rgba(0,0,0,0.25)',
         transform: `translateX(-50%) scale(${compact ? 0.8 : 1}) translateY(${compact ? 8 : 0}px)`, transformOrigin: 'bottom center',
@@ -1244,15 +1334,15 @@ try {
       };
       const navSheen = { position: 'absolute', inset: 0, borderRadius: 'inherit', pointerEvents: 'none', opacity: lx == null ? 0 : 1, transition: 'opacity .3s', background: `radial-gradient(120px 60px at ${lx ?? 50}% 0%, rgba(255,255,255,0.28), transparent 70%)` };
       const indicator = {
-        position: 'absolute', top: PAD, pointerEvents: 'none',
-        ...(BRED ? { left: `calc(${PAD}px + ${Math.min(tab, N - 1)} * (${CELL} + ${GAP}px))`, width: `calc(${CELL})`, height: SH, borderRadius: SH / 2,
+        position: 'absolute', top: PAD, pointerEvents: 'none', opacity: tab < 0 ? 0 : 1,
+        ...(BRED ? { left: `calc(${PAD}px + ${Math.max(0, Math.min(tab, N - 1))} * (${CELL} + ${GAP}px))`, width: `calc(${CELL})`, height: SH, borderRadius: SH / 2,
           background: 'rgba(0,0,0,0.42)', boxShadow: 'inset 0 0 0 0.5px rgba(255,255,255,0.06), inset 0 1px 2px rgba(0,0,0,0.3)' }
-          : { left: PAD + Math.min(tab, N - 1) * (SZ + GAP), width: SZ, height: SH, borderRadius: NAVN ? 26 : 22,
+          : { left: PAD + Math.max(0, Math.min(tab, N - 1)) * (SZ + GAP), width: SZ, height: SH, borderRadius: NAVN ? 26 : 22,
           background: 'linear-gradient(180deg, rgba(255,255,255,0.34), rgba(255,255,255,0.14))',
           boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.6), inset 0 -1px 1px rgba(255,255,255,0.15), 0 4px 14px rgba(0,0,0,0.25)' }),
         backdropFilter: 'blur(6px) saturate(200%)', WebkitBackdropFilter: 'blur(6px) saturate(200%)',
         transform: moving ? `scaleX(${1 + Math.min(dist, 4) * 0.12}) scaleY(${1 - Math.min(dist, 4) * 0.04})` : 'scale(1)',
-        transition: 'left .5s cubic-bezier(.34,1.4,.64,1), transform .45s cubic-bezier(.34,1.8,.64,1)',
+        transition: 'left .5s cubic-bezier(.34,1.4,.64,1), transform .45s cubic-bezier(.34,1.8,.64,1), opacity .25s',
       };
       const dock = ITEMS.map(([icon, title, dot], i) => { const act = i === tab; return { i, icon, title,
         style: { position: 'relative', zIndex: 1, ...(BRED ? { flex: '1 1 0', minWidth: 0 } : { flex: 'none', width: SZ }), height: SH, borderRadius: 22, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, color: '#f2f1ee', transition: 'transform .35s cubic-bezier(.34,1.8,.64,1)', WebkitTapHighlightColor: 'transparent' },
@@ -1261,6 +1351,29 @@ try {
         iconStyle: BRED ? { fontSize: 24, color: act ? ACC : '#f2f1ee', transform: act ? 'scale(1.06)' : 'scale(1)', fontVariationSettings: "'FILL' 1", transition: 'transform .4s cubic-bezier(.34,1.8,.64,1), color .25s' } : { fontSize: 22, opacity: act ? 1 : 0.72, transform: act ? 'scale(1.08)' : 'scale(1)', fontVariationSettings: `'FILL' ${act ? 1 : 0}`, transition: 'transform .4s cubic-bezier(.34,1.8,.64,1), opacity .2s', textShadow: '0 1px 2px rgba(0,0,0,0.3)' },
         dot: { position: 'absolute', right: BRED ? 'calc(50% - 16px)' : NAVN ? 13 : 9, top: NAVN ? 5 : 9, width: 7, height: 7, borderRadius: 4, background: dot ? C.red : 'transparent', boxShadow: dot ? '0 0 0 1.5px rgba(30,30,34,0.6)' : 'none' } }; });
       const menuItems = LAY.menu.map((m, i) => [m.ikon || 'circle', m.navn || '', i, m.farge || '#c9c7c2', dotOf(m)]);
+      const hjemEditHTML = () => {
+        const HU = KD.ud(this, 'kd_hjem'), SK = new Set(HU.skjul || []), [V, H] = this.hjemCols(HU);
+        const ib = (arg, icon, title, col, dis) => `<button class="kd-press" data-on-click="hjemOp" data-arg="${e(arg)}" title="${title}" style="${S({ width: 34, height: 34, borderRadius: 17, flex: 'none', display: 'grid', placeItems: 'center', color: col || '#8e8d89', opacity: dis ? 0.25 : 1, pointerEvents: dis ? 'none' : null })}"><span class="ms" style="font-size:20px">${icon}</span></button>`;
+        const rows = (g, keys, lab, hideKey) => keys.map((k, i) => { const hid = SK.has(hideKey + ':' + k), [icon, name] = lab[k];
+          return `<div data-key="he-${g}-${k}" style="min-height:46px;padding:0 4px 0 12px;border-radius:16px;display:flex;align-items:center;gap:10px;opacity:${hid ? 0.45 : 1}">
+            <span class="ms" style="font-size:20px;color:#c9c7c2">${icon}</span>
+            <span style="flex:1;min-width:0;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(name)}</span>
+            ${ib(g + '|' + k + '|opp', 'arrow_upward', 'Flytt opp', null, i === 0)}${ib(g + '|' + k + '|ned', 'arrow_downward', 'Flytt ned', null, i === keys.length - 1)}
+            ${g === 'venstre' || g === 'hoyre' ? ib(g + '|' + k + '|bytt', 'swap_horiz', 'Bytt kolonne') : ''}
+            ${ib(g + '|' + k + '|skjul', hid ? 'visibility_off' : 'visibility', hid ? 'Vis' : 'Skjul', hid ? '#6d6c69' : 'oklch(0.82 0.1 350)')}
+          </div>`; }).join('');
+        const head = t => `<div style="padding:12px 14px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">${t}</div>`;
+        return `<div data-key="he-bd" data-on-click="hjemEditClose" style="position:fixed;inset:0;z-index:27;background:rgba(0,0,0,0.35)"></div>
+    <div data-key="he-panel" style="position:fixed;left:50%;transform:translateX(-50%);bottom:${MB}px;z-index:28;width:min(420px, calc(100vw - 24px));max-height:calc(100vh - ${MB + 40}px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;box-sizing:border-box;padding:8px;border-radius:26px;background:rgba(40,40,44,0.78);backdrop-filter:blur(26px) saturate(190%);-webkit-backdrop-filter:blur(26px) saturate(190%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.3),inset 0 0 0 0.5px rgba(255,255,255,0.18),0 18px 40px rgba(0,0,0,0.5);display:flex;flex-direction:column;gap:2px">
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 6px 6px 14px"><span style="flex:1;font-size:16px;font-weight:600">Tilpass Hjem</span>
+        <button class="kd-hov8" data-on-click="hjemReset" style="height:34px;padding:0 12px;border-radius:17px;font-size:12px;color:#a9a7a2">Nullstill</button>
+        <button data-on-click="hjemEditClose" style="height:34px;padding:0 14px;border-radius:17px;font-size:13px;font-weight:600;background:linear-gradient(135deg, oklch(0.78 0.13 350), oklch(0.9 0.05 20));color:#2a1720">Ferdig</button></div>
+      ${head('Seksjoner')}${rows('sek', norm(HU.seksjoner, SEK_KEYS), HLABEL.sek, 'sek')}
+      ${head('Setningen øverst')}${rows('prosa', norm(HU.prosa, PROSA_KEYS), HLABEL.prosa, 'prosa')}
+      ${head('Fliser – venstre kolonne')}${rows('venstre', V, HLABEL.flis, 'flis')}
+      ${head('Fliser – høyre kolonne')}${rows('hoyre', H, HLABEL.flis, 'flis')}
+    </div>`;
+      };
       const dockEditHTML = () => {
         const sw = on => `<span style="${S({ width: 44, height: 26, borderRadius: 13, flex: 'none', position: 'relative', background: on ? 'oklch(0.78 0.13 350)' : '#3a3a3d', transition: 'background .2s' })}"><span style="${S({ position: 'absolute', top: 3, left: on ? 21 : 3, width: 20, height: 20, borderRadius: 10, background: '#f4f3ef', transition: 'left .25s cubic-bezier(.34,1.56,.64,1)' })}"></span></span>`;
         const opt = (k, label, sub, on) => `<button class="kd-hov8" data-on-click="dockOpt" data-arg="${k}" style="min-height:52px;padding:6px 10px 6px 14px;border-radius:16px;display:flex;align-items:center;gap:12px;text-align:left"><span style="flex:1;min-width:0;display:flex;flex-direction:column"><span style="font-size:14px;font-weight:500">${label}</span><span style="font-size:11px;color:#8e8d89">${sub}</span></span>${sw(on)}</button>`;
@@ -1293,7 +1406,7 @@ try {
 
       /* ----- ark ----- */
       const sheetBackdrop = { position: 'fixed', inset: 0, zIndex: 20, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', opacity: s.sheetOpen ? 1 : 0, pointerEvents: s.sheetOpen ? 'auto' : 'none', transition: 'opacity .35s' };
-      const sheetPanel = { position: 'fixed', left: '50%', bottom: 0, zIndex: 21, width: '100%', maxWidth: 540, height: 'calc(100vh - 52px)', display: 'flex', flexDirection: 'column', borderRadius: '38px 38px 0 0', overflow: 'hidden', background: '#141416', boxShadow: '0 -20px 50px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08)', transform: `translateX(-50%) translateY(${s.sheetOpen ? 0 : 105}%)`, transition: 'transform .5s cubic-bezier(.32,1.2,.5,1)' };
+      const sheetPanel = { position: 'fixed', left: '50%', bottom: 0, zIndex: 21, width: '100%', maxWidth: 'var(--kd-ark-bredde, 100%)', height: 'calc(100vh - 52px)', display: 'flex', flexDirection: 'column', borderRadius: '38px 38px 0 0', overflow: 'hidden', background: '#141416', boxShadow: '0 -20px 50px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08)', transform: `translateX(-50%) translateY(${s.sheetOpen ? 0 : 105}%)`, transition: 'transform .5s cubic-bezier(.32,1.2,.5,1)' };
       const sh = this.sheetHeadVals();
 
       /* ----- dialoger ----- */
@@ -1351,47 +1464,36 @@ try {
     </div>`;
       };
 
-      return `<div style="position:relative;box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) calc(${MB + 24}px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:22px">
-
-  <header style="display:flex;flex-direction:column;gap:16px">
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
-      <div style="display:flex;flex-direction:column;gap:6px;min-width:0">
-        <button data-on-click="toggleServer" style="display:flex;align-items:center;gap:4px;font-size:36px;font-weight:600;letter-spacing:-0.03em;line-height:1;white-space:nowrap"><span>${e(CUR.navn || 'Hjem')}</span><span class="ms" style="${S(serverChev)}">arrow_drop_down</span></button>
-        <button data-on-click="openWeather" style="font-size:16px;color:#8e8d89;white-space:nowrap;text-align:left">${W.head != null ? Math.round(W.head) : '–'} °C · ${e(W.cond)}</button>
-      </div>
-      <button data-on-click="openMe" data-hold="openMeSheet" title="${e(me.navn)}" style="position:relative;width:60px;height:60px;border-radius:30px;flex:none;display:grid;place-items:center;font-size:22px;font-weight:600;background:${e(me.farge)};box-shadow:${meRing};${this.pic(me)}">${e(me.navn[0])}${meB.show ? `<span style="position:absolute;right:-6px;top:-4px;width:24px;height:24px;border-radius:12px;background:#232326;box-shadow:0 0 0 2px #141416;display:grid;place-items:center"><span class="ms" style="${S(meB.style)}">${meB.icon}</span></span>` : ''}</button>
-    </div>
-    <div style="display:flex;gap:14px">
+      /* ----- Tilpass Hjem: rekkefølge/synlighet (per bruker, 'kd_hjem') ----- */
+      const HU = KD.ud(this, 'kd_hjem'), HSKJUL = new Set(HU.skjul || []);
+      const P_UTE = `<button data-on-click="openWeather" style="display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 11px;border-radius:16px;background:#232326;font-weight:500;vertical-align:middle;white-space:nowrap"><span class="ms" style="font-size:18px;color:#bdbbb6">${W.icon}</span>${W.t != null ? nf(W.t, 1) : '–'}°</button>`, P_PRIS = `<button data-on-click="goPower" style="${S(pricePill)}"><span style="${S(priceDot)}"></span><span>${pNow != null ? nf(pNow) : '–'}</span> kr</button>`, P_WATT = `<span style="display:inline-flex;align-items:center;height:32px;padding:0 11px;border-radius:16px;background:#232326;font-weight:500;vertical-align:middle;white-space:nowrap;font-variant-numeric:tabular-nums"><span>${watt}</span> W</span>`, P_LYS = `<button data-on-click="showLights" style="display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 11px;border-radius:16px;background:oklch(0.86 0.12 95 / 0.16);box-shadow:inset 0 0 0 1px oklch(0.86 0.12 95 / 0.4);font-weight:500;vertical-align:middle;white-space:nowrap"><span class="ms" style="font-size:18px;color:oklch(0.86 0.12 95);font-variation-settings:'FILL' 1">lightbulb</span><span>${lightsOn}</span> lys</button>`, P_CAL = `<button data-on-click="openCal" style="display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 11px;border-radius:16px;background:#232326;font-weight:500;vertical-align:middle;white-space:nowrap"><span class="ms" style="font-size:18px;color:oklch(0.8 0.12 250)">event</span>${nEv == null ? '–' : nEv} ${nEv === 1 ? 'hendelse' : 'hendelser'}</button>`;
+      const PROSA_DEL = { ute: () => `Ute er det ${P_UTE}.`, strom: () => `Strømmen koster ${P_PRIS}.`, effekt: () => `Vi bruker ${P_WATT}.`, lys: () => `Det er ${P_LYS} på.`, hendelser: () => `Vi har ${P_CAL} i dag.` };
+      const PR = norm(HU.prosa, PROSA_KEYS), prVis = PR.filter(k => !HSKJUL.has('prosa:' + k));
+      const prosaTxt = prVis.join() === PROSA_KEYS.join() ? `Ute er det ${P_UTE}. Strømmen koster ${P_PRIS} og vi bruker ${P_WATT} med ${P_LYS} på. Vi har ${P_CAL} i dag.` : prVis.map(k => PROSA_DEL[k]()).join(' ');
+      const TILE = { las: () => tileHTML(lockTile), romV: () => carousel(left, 'iL'), alarm: () => tileHTML(alarmTile), romH: () => carousel(right, 'iR'), kamera: () => tileHTML(camTile), gjoremal: () => tileHTML(todoTile) };
+      const [COLV0, COLH0] = this.hjemCols(HU);
+      const COLV = COLV0.filter(k => !HSKJUL.has('flis:' + k)), COLH = COLH0.filter(k => !HSKJUL.has('flis:' + k));
+      const SEK = {
+        personer: () => `    <div data-key="h-personer" style="display:flex;gap:14px;flex-wrap:wrap;margin-top:-6px">
       ${people.map(({ p, b, avatar }) => `<button data-on-click="openPerson" data-arg="${e(p.id)}" title="${e(p.navn)}" style="position:relative;display:flex;flex-direction:column;align-items:center;gap:5px">
           <span style="${S(avatar)}${this.pic(p)}">${e(p.navn[0])}</span>
           ${b.show ? `<span style="position:absolute;right:-8px;top:-6px;width:24px;height:24px;border-radius:12px;background:#232326;box-shadow:0 0 0 2px #141416;display:grid;place-items:center"><span class="ms" style="${S(b.style)}">${b.icon}</span></span>` : ''}
           <span style="font-size:11px;color:#8e8d89">${e(p.navn)}</span>
         </button>`).join('')}
-    </div>
-    <div style="font-size:22px;font-weight:400;line-height:1.75;letter-spacing:-0.01em;text-wrap:pretty">
-      Ute er det <button data-on-click="openWeather" style="display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 11px;border-radius:16px;background:#232326;font-weight:500;vertical-align:middle;white-space:nowrap"><span class="ms" style="font-size:18px;color:#bdbbb6">${W.icon}</span>${W.t != null ? nf(W.t, 1) : '–'}°</button>. Strømmen koster <button data-on-click="goPower" style="${S(pricePill)}"><span style="${S(priceDot)}"></span><span>${pNow != null ? nf(pNow) : '–'}</span> kr</button> og vi bruker <span style="display:inline-flex;align-items:center;height:32px;padding:0 11px;border-radius:16px;background:#232326;font-weight:500;vertical-align:middle;white-space:nowrap;font-variant-numeric:tabular-nums"><span>${watt}</span> W</span> med <button data-on-click="showLights" style="display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 11px;border-radius:16px;background:oklch(0.86 0.12 95 / 0.16);box-shadow:inset 0 0 0 1px oklch(0.86 0.12 95 / 0.4);font-weight:500;vertical-align:middle;white-space:nowrap"><span class="ms" style="font-size:18px;color:oklch(0.86 0.12 95);font-variation-settings:'FILL' 1">lightbulb</span><span>${lightsOn}</span> lys</button> på. Vi har <button data-on-click="openCal" style="display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 11px;border-radius:16px;background:#232326;font-weight:500;vertical-align:middle;white-space:nowrap"><span class="ms" style="font-size:18px;color:oklch(0.8 0.12 250)">event</span>${nEv == null ? '–' : nEv} ${nEv === 1 ? 'hendelse' : 'hendelser'}</button> i dag.
-    </div>
-  </header>
-
-  <section style="display:flex;flex-direction:column;gap:12px">
+    </div>`,
+        prosa: () => prVis.length ? `<div data-key="h-prosa" style="font-size:22px;font-weight:400;line-height:1.75;letter-spacing:-0.01em;text-wrap:pretty;margin-top:-6px">
+      ${prosaTxt}
+    </div>` : '',
+        rom: () => `  <section data-key="h-rom" style="display:flex;flex-direction:column;gap:12px">
     <div style="display:flex;gap:2px;padding:4px;border-radius:22px;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.14);align-self:flex-start">
       ${FLOORS.map(([k, label]) => `<button data-on-click="goFloor" data-arg="${k}" style="${S({ height: 38, padding: '0 16px', borderRadius: 19, fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', background: s.floor === k ? PINK : 'transparent', color: s.floor === k ? '#2a1720' : '#c9c7c2' })}">${label}</button>`).join('')}
     </div>
     <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:start">
-      <div style="display:flex;flex-direction:column;gap:8px">
-        ${tileHTML(lockTile)}
-        ${carousel(left, 'iL')}
-        ${tileHTML(alarmTile)}
-      </div>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        ${carousel(right, 'iR')}
-        ${tileHTML(camTile)}
-        ${tileHTML(todoTile)}
-      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;min-width:0">${COLV.map(k => TILE[k]()).join('')}</div>
+      <div style="display:flex;flex-direction:column;gap:8px;min-width:0">${COLH.map(k => TILE[k]()).join('')}</div>
     </div>
-  </section>
-
-  ${T ? `<section data-on-click="openTrash" style="display:flex;align-items:center;gap:16px;padding:16px 18px;border-radius:22px;background:#1c1c1f;cursor:pointer">
+  </section>`,
+        soppel: () => `  ${T ? `<section data-on-click="openTrash" style="display:flex;align-items:center;gap:16px;padding:16px 18px;border-radius:22px;background:#1c1c1f;cursor:pointer">
     <div style="width:56px;height:56px;border-radius:18px;background:#141416;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);display:flex;flex-direction:column;align-items:center;justify-content:center;flex:none">
       <span style="font-size:26px;font-weight:500;line-height:1;font-variant-numeric:tabular-nums">${T.days}</span>
       <span style="font-size:10px;color:#8e8d89">${T.days === 1 ? 'dag' : 'dager'}</span>
@@ -1402,9 +1504,8 @@ try {
         ${T.due.map(f => `<span style="height:26px;padding:0 10px 0 8px;border-radius:13px;display:flex;align-items:center;gap:5px;font-size:12px;background:#232326;white-space:nowrap"><span style="width:8px;height:8px;border-radius:4px;background:${f.col}"></span>${e(f.name)}</span>`).join('')}
       </div>
     </div>
-  </section>` : ''}
-
-  <section style="display:flex;flex-direction:column;gap:12px">
+  </section>` : ''}`,
+        strom: () => `  <section data-key="h-strom" style="display:flex;flex-direction:column;gap:12px">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:0 4px">
       <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Strømpriser</div>
       <div style="display:flex;padding:3px;border-radius:14px;background:#1c1c1f;gap:2px">
@@ -1455,15 +1556,34 @@ try {
       </div>
       <div style="display:flex;justify-content:space-between;font-size:9px;color:#6d6c69;font-variant-numeric:tabular-nums;padding-left:26px"><span>04</span><span>08</span><span>12</span><span>16</span><span>20</span><span style="color:#a9a7a2">00</span><span>04</span><span>08</span><span>12</span><span>16</span><span>20</span></div>
     </div>
-  </section>
+  </section>`,
+      };
+      const SECS = norm(HU.seksjoner, SEK_KEYS).filter(k => !HSKJUL.has('sek:' + k)).map(k => SEK[k]()).join('\n\n');
+
+
+      return `<div style="position:relative;box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) calc(${MB + 24}px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:22px">
+
+  <header style="display:flex;flex-direction:column;gap:16px">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+      <div style="display:flex;flex-direction:column;gap:6px;min-width:0">
+        <button data-on-click="toggleServer" style="display:flex;align-items:center;gap:4px;font-size:36px;font-weight:600;letter-spacing:-0.03em;line-height:1;white-space:nowrap"><span>${e(CUR.navn || 'Hjem')}</span><span class="ms" style="${S(serverChev)}">arrow_drop_down</span></button>
+        <button data-on-click="openWeather" style="font-size:16px;color:#8e8d89;white-space:nowrap;text-align:left">${W.head != null ? Math.round(W.head) : '–'} °C · ${e(W.cond)}</button>
+      </div>
+      <button data-on-click="openMe" data-hold="openMeSheet" title="${e(me.navn)}" style="position:relative;width:60px;height:60px;border-radius:30px;flex:none;display:grid;place-items:center;font-size:22px;font-weight:600;background:${e(me.farge)};box-shadow:${meRing};${this.pic(me)}">${e(me.navn[0])}${meB.show ? `<span style="position:absolute;right:-6px;top:-4px;width:24px;height:24px;border-radius:12px;background:#232326;box-shadow:0 0 0 2px #141416;display:grid;place-items:center"><span class="ms" style="${S(meB.style)}">${meB.icon}</span></span>` : ''}</button>
+    </div>
+  </header>
+
+  ${SECS}
 
   ${s.menu ? `<div data-key="menu-bd" data-on-click="closeMenu" style="position:fixed;inset:0;z-index:25"></div>
     <div style="position:fixed;right:max(12px, calc(50% - 198px));bottom:${MB}px;z-index:26;min-width:180px;max-height:calc(100vh - 120px);overflow-y:auto;scrollbar-width:none;box-sizing:border-box;padding:6px;border-radius:22px;background:rgba(40,40,44,0.5);backdrop-filter:blur(22px) saturate(190%);-webkit-backdrop-filter:blur(22px) saturate(190%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.3),inset 0 0 0 0.5px rgba(255,255,255,0.18),0 18px 40px rgba(0,0,0,0.45);display:flex;flex-direction:column;gap:2px">
       ${menuItems.map(([icon, label, k, col, dot]) => `<button class="kd-hov" data-on-click="menuGo" data-arg="${k}" style="height:44px;padding:0 14px 0 10px;border-radius:16px;display:flex;align-items:center;gap:10px;font-size:14px;font-weight:500;white-space:nowrap"><span class="ms" style="font-size:20px;color:${e(col)}">${e(icon)}</span><span style="flex:1;text-align:left">${e(label)}</span>${dot ? `<span style="width:7px;height:7px;border-radius:4px;background:${C.red}"></span>` : ''}</button>`).join('')}
       ${menuItems.length ? '<div style="height:1px;margin:4px 10px;background:rgba(255,255,255,0.08)"></div>' : ''}
       <button class="kd-hov" data-on-click="dockEditOpen" style="height:44px;padding:0 14px 0 10px;border-radius:16px;display:flex;align-items:center;gap:10px;font-size:14px;font-weight:500;white-space:nowrap;color:#a9a7a2"><span class="ms" style="font-size:20px">edit</span>Tilpass dokken</button>
+      <button class="kd-hov" data-on-click="hjemEditOpen" style="height:44px;padding:0 14px 0 10px;border-radius:16px;display:flex;align-items:center;gap:10px;font-size:14px;font-weight:500;white-space:nowrap;color:#a9a7a2"><span class="ms" style="font-size:20px">dashboard_customize</span>Tilpass Hjem</button>
     </div>` : ''}
   ${s.dockEdit ? dockEditHTML() : ''}
+  ${s.hjemEdit ? hjemEditHTML() : ''}
 
   ${s.quickId ? quickHTML() : ''}
   ${lockHTML()}
@@ -1486,7 +1606,7 @@ try {
       <span style="width:36px;height:4px;border-radius:2px;background:rgba(255,255,255,0.22)"></span>
       <div data-bh="pill" data-keep style="position:relative;overflow:hidden;width:100%;box-sizing:border-box;height:60px;padding:0 8px;border-radius:30px;background:rgba(38,38,41,0.82);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.07),0 8px 24px rgba(0,0,0,0.35);display:flex;align-items:center;gap:12px;pointer-events:auto" data-head="${e(sh.icon + '|' + sh.title + '|' + sh.sub)}"></div>
     </div>
-    <div data-snap="1" data-sheet-scroll="1" style="flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:none;padding-top:84px;padding-bottom:110px">
+    <div data-snap="1" data-sheet-scroll="1" style="flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;touch-action:pan-y;overscroll-behavior:contain;scrollbar-width:none;padding-top:84px;padding-bottom:110px">
       <div data-sheet-host data-keep></div>
     </div>
   </div>`}
@@ -1917,7 +2037,7 @@ try {
       }).join('');
 
       const coreIcon = { fontSize: 26, color: coreCol, fontVariationSettings: "'FILL' 1" };
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 28px;display:flex;flex-direction:column;gap:22px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 28px;display:flex;flex-direction:column;gap:22px">
 
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Strøm</div>
@@ -2386,7 +2506,7 @@ try {
       else if (tabK === 'ta') main = this._ta();
       else if (tabK === 'op') main = this._op();
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:16px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:16px">
   <header style="display:flex;align-items:center;gap:12px;padding:0 4px">
     <span style="width:40px;height:40px;border-radius:20px;background:#e9e8e4;color:#141416;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">thermostat</span></span>
     <div style="flex:1;font-size:26px;font-weight:500;letter-spacing:-0.02em">Klima</div>
@@ -2409,7 +2529,7 @@ try {
     ${this.st('switch.ki_helgemodus') ? `<button data-on-click="toggleAway" style="${S(awayPill)}"><span class="ms" style="font-size:16px;font-variation-settings:'FILL' 1">${E(away ? 'luggage' : 'home')}</span>${E(away ? 'Borte · helgemodus' : 'Hjemme · normal komfort')}</button>` : ''}
   </section>
 
-  <section data-hscroll="1" style="display:flex;gap:12px;overflow-x:auto;scrollbar-width:none;margin:0 -14px;padding:2px 18px">${modesHtml}</section>
+  <section data-hscroll="1" style="display:flex;gap:12px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:2px var(--kd-kant,10px)">${modesHtml}</section>
 
   <nav style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;padding:4px;border-radius:24px;background:#1c1c1f">${tabs}</nav>
   ${main}
@@ -2725,7 +2845,13 @@ try {
     { entity: 'lock.boddor', rom: 'Bod', type: 'lock', name: 'Boddør' },
   ];
   const LOCK_ON = ['unlocked', 'open', 'opening', 'unlocking', 'jammed'];
-  const WHO = { door: 'Dørsensor', window: 'Vindussensor', lock: 'Dørlås', motion: 'Sensor', presence: 'Sensor' };
+  const WHO = { door: 'Dørsensor', window: 'Vindussensor', lock: 'Dørlås', motion: 'Sensor', presence: 'Sensor', safety: 'Sensor' };
+  const SAFETY = ['smoke', 'moisture', 'tamper', 'vibration', 'gas', 'safety', 'carbon_monoxide'];
+  // «Legg til»-kandidater: device_class som hører hjemme i alarmoversikten
+  const ADD_DC = ['door', 'window', 'garage_door', 'opening', 'motion', 'occupancy', 'presence', 'smoke', 'moisture', 'tamper', 'vibration'];
+  const TYPE_ROOM = { door: 'Dører', window: 'Vinduer', lock: 'Låser', motion: 'Bevegelse', presence: 'Bevegelse', safety: 'Sikkerhet' };
+  const SAFETY_ICON = { smoke: 'detector_smoke', moisture: 'water_drop', tamper: 'warning', vibration: 'vibration', gas: 'detector_co', carbon_monoxide: 'detector_co' };
+  const UD = 'kd_alarm'; // brukerdata: { soner: [{ entity, name, rom, type, battery? }, …] } – samme flate form som zones
   const WD = ['søn.', 'man.', 'tir.', 'ons.', 'tor.', 'fre.', 'lør.'];
   const t = x => `<span>${e(x)}</span>`;
   const today = d => new Date(d).toDateString() === new Date().toDateString();
@@ -2751,18 +2877,89 @@ try {
       if (dom === 'lock' || z.kind === 'lock') return 'lock';
       const dc = this.at(id, 'device_class', '');
       if (dc === 'window') return 'window';
-      if (['door', 'garage_door', 'opening'].includes(dc)) return 'door';
+      if (['door', 'garage_door', 'opening', 'garage'].includes(dc) || dom === 'cover') return 'door';
+      if (SAFETY.includes(dc)) return 'safety';
       if (['occupancy', 'presence'].includes(dc) && /presence|tilstede/i.test(`${id} ${it.name || ''}`)) return 'presence';
       if (['motion', 'occupancy', 'presence', 'moving'].includes(dc) || z.kind === 'motion') return 'motion';
       return /vindu|window/i.test(`${z.title || ''} ${z.icon || ''} ${id}`) ? 'window' : 'door';
     }
-    sensorList() {
+    /** brukerens egen liste (kd_alarm.soner) om den finnes, ellers config/standard */
+    zonesSrc() { const u = KD.ud(this, UD); return u && Array.isArray(u.soner) ? u.soner : this.config.zones || []; }
+    flatZones(zones = this.zonesSrc()) {
       const flat = [];
-      for (const z of this.config.zones || []) {
+      for (const z of zones || []) {
         if (!z) continue;
         if (Array.isArray(z.items)) for (const it of z.items) { if (it && it.entity) flat.push([z, it]); }
         else if (z.entity) flat.push([{}, z]);
       }
+      return flat;
+    }
+    /** redigerbar flat liste: [{ entity, name, rom, type, battery }] i visningsrekkefølge (gruppert per rom) */
+    editList() {
+      const list = this.flatZones().map(([z, it]) => {
+        const o = { entity: it.entity, type: this.typeOf(z, it) };
+        const name = it.name || it.navn, rom = it.rom || it.room, bat = it.battery || it.batteri;
+        if (name) o.name = name;
+        if (rom) o.rom = rom;
+        if (bat) o.battery = bat;
+        return o;
+      });
+      const roomOf = o => o.rom || o.name || 'Annet', order = [...new Set(list.map(roomOf))];
+      return order.flatMap(r => list.filter(o => roomOf(o) === r));
+    }
+    saveZones(list) {
+      const u = KD.ud(this, UD) || {};
+      this.haptic('selection');
+      KD.udSave(this, UD, { ...u, soner: list });
+    }
+    editTog() { this.setState({ edit: !this.state.edit, q: '' }); }
+    editReset() {
+      const u = { ...(KD.ud(this, UD) || {}) }; delete u.soner;
+      this.haptic('selection');
+      KD.udSave(this, UD, u);
+    }
+    zMove(ev, arg) {
+      const [i, d] = String(arg).split('|').map(Number), list = this.editList(), j = i + d;
+      if (!list[i] || !list[j]) return;
+      [list[i], list[j]] = [list[j], list[i]];
+      this.saveZones(list);
+    }
+    zDel(ev, i) { const list = this.editList(); list.splice(Number(i), 1); this.saveZones(list); }
+    areaOf(id) {
+      const h = this._hass, en = h && h.entities && h.entities[id]; if (!en) return null;
+      const aid = en.area_id || (en.device_id && h.devices && h.devices[en.device_id] && h.devices[en.device_id].area_id);
+      return (aid && h.areas && h.areas[aid] && h.areas[aid].name) || null;
+    }
+    zAdd(ev, id) {
+      if (!id || !this.st(id)) return;
+      const list = this.editList();
+      if (list.some(o => o.entity === id)) return;
+      const type = this.typeOf({}, { entity: id }), area = this.areaOf(id);
+      const rom = area || TYPE_ROOM[type] || 'Annet';
+      let name = String(this.fname(id));
+      if (area && name.toLowerCase().startsWith(area.toLowerCase() + ' ')) name = name.slice(area.length + 1);
+      const o = { entity: id, name: name.charAt(0).toUpperCase() + name.slice(1), rom, type };
+      const last = list.map(x => x.rom || x.name || 'Annet').lastIndexOf(rom); // samme rom → legg etter de andre der
+      if (last >= 0) list.splice(last + 1, 0, o); else list.push(o);
+      this.saveZones(list);
+    }
+    setQ(ev) { this.setState({ q: ev.target.value }); }
+    candidates(have) {
+      const S0 = (this._hass && this._hass.states) || {}, q = String(this.state.q || '').trim().toLowerCase();
+      const out = [];
+      for (const id of Object.keys(S0)) {
+        if (have.has(id)) continue;
+        const dom = id.split('.')[0], dc = (S0[id].attributes || {}).device_class;
+        const ok = dom === 'lock' || (dom === 'binary_sensor' && ADD_DC.includes(dc)) || (dom === 'cover' && (dc === 'garage' || /garasje|garage/i.test(id)));
+        if (!ok) continue;
+        const name = String((S0[id].attributes || {}).friendly_name || id), area = this.areaOf(id) || '';
+        if (q && !`${id} ${name} ${area}`.toLowerCase().includes(q)) continue;
+        out.push({ id, name, area, type: this.typeOf({}, { entity: id }), dc });
+      }
+      return out.sort((p, r) => p.name.localeCompare(r.name, 'nb'));
+    }
+    sensorList() {
+      const flat = this.flatZones();
       const out = [];
       flat.forEach(([z, it], i) => {
         const st = this.st(it.entity);
@@ -2773,7 +2970,7 @@ try {
         let batId = it.battery || it.batteri;
         if (!batId) { const guess = 'sensor.' + it.entity.split('.')[1] + '_battery'; if (this.st(guess)) batId = guess; }
         const bat = batId ? this.n(batId) : null;
-        out.push({ id: it.entity, key: 's' + i, room: it.rom || it.room || it.name || 'Annet', type, name: it.name || it.navn || this.fname(it.entity), on, avail, bat: bat == null ? null : Math.round(bat), batId });
+        out.push({ id: it.entity, key: 's' + i, room: it.rom || it.room || it.name || 'Annet', type, dc: st.attributes.device_class, name: it.name || it.navn || this.fname(it.entity), on, avail, bat: bat == null ? null : Math.round(bat), batId });
       });
       return out;
     }
@@ -2878,6 +3075,7 @@ try {
           const on = s.type === 'lock' ? LOCK_ON.includes(ev.state) : ev.state === 'on' || ev.state === 'open';
           if (!on && s.type !== 'lock') continue; // «lukket» og «ingen bevegelse» er støy
           if (s.type === 'lock') text = `${s.room} ${on ? 'låst opp' : 'låst'}`;
+          else if (s.type === 'safety') text = `${s.room}: ${s.name.toLowerCase()} utløst`;
           else if (s.type === 'motion' || s.type === 'presence') text = `Bevegelse i ${s.room.toLowerCase()}`;
           else text = `${s.room} åpnet`;
           who = user ? `${user} · app` : ev.context_entity_id ? 'Automatisk' : WHO[s.type];
@@ -2924,9 +3122,9 @@ try {
       const alerts = sensors.filter(x => this.isAlert(x));
       const motion = sensors.filter(x => (x.type === 'motion' || x.type === 'presence') && x.on);
       const n = sensors.length;
-      const icon = x => ({ door: x.on ? 'door_open' : 'door_front', window: x.on ? 'sensor_window' : 'window', lock: x.on ? 'lock_open' : 'lock', motion: x.on ? 'directions_run' : 'directions_walk', presence: 'person' })[x.type];
-      const label = x => ({ door: x.on ? 'Åpen' : x.name, window: x.on ? 'Åpent' : x.name, lock: x.on ? `${x.name} ulåst` : x.name, motion: x.on ? 'Bevegelse nå' : x.name, presence: x.on ? 'Noen her' : x.name })[x.type];
-      const colorOf = x => this.isAlert(x) ? C.amber : x.on ? C.blue : null;
+      const icon = x => x.id.startsWith('cover.') ? (x.on ? 'garage_open' : 'garage') : ({ door: x.on ? 'door_open' : 'door_front', window: x.on ? 'sensor_window' : 'window', lock: x.on ? 'lock_open' : 'lock', motion: x.on ? 'directions_run' : 'directions_walk', presence: 'person', safety: SAFETY_ICON[x.dc] || 'sensors' })[x.type] || 'sensors';
+      const label = x => ({ door: x.on ? 'Åpen' : x.name, window: x.on ? 'Åpent' : x.name, lock: x.on ? `${x.name} ulåst` : x.name, motion: x.on ? 'Bevegelse nå' : x.name, presence: x.on ? 'Noen her' : x.name, safety: x.on ? `${x.name} utløst` : x.name })[x.type] || x.name;
+      const colorOf = x => this.isAlert(x) || (x.type === 'safety' && x.on) ? C.amber : x.on ? C.blue : null;
       const roomsOrder = [...new Set(sensors.map(x => x.room))];
       const plural = (k, one, many) => `${k} ${k === 1 ? one : many}`;
       const words = { door: ['dør', 'dører'], window: ['vindu', 'vinduer'], lock: ['lås', 'låser'] };
@@ -2960,6 +3158,7 @@ try {
       });
       const alertRows = [
         ...alerts.map(x => ({ id: x.id, icon: icon(x), text: x.type === 'lock' ? `${x.name} er ulåst` : `${x.name} er ${x.type === 'window' ? 'åpent' : 'åpen'}`, room: x.room, action: x.type === 'lock' ? 'Lås' : 'Vis' })),
+        ...sensors.filter(x => x.type === 'safety' && x.on).map(x => ({ id: x.id, icon: icon(x), text: `${x.name} utløst`, room: x.room, action: 'Vis' })),
         ...lowBat.map(x => ({ id: x.batId, icon: 'battery_alert', text: `Lavt batteri · ${x.bat} %`, room: `${x.room} · ${x.name}`, action: 'Vis' })),
       ];
       const rooms = roomsOrder.map((room, i) => {
@@ -2985,7 +3184,7 @@ try {
         return { text, who, time, dot: { width: 9, height: 9, borderRadius: 5, marginTop: 5, background: col, flex: 'none' }, line: { flex: 1, width: 1, background: i < arr.length - 1 ? 'rgba(255,255,255,0.1)' : 'transparent', marginTop: 4 } };
       });
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 28px;display:flex;flex-direction:column;gap:22px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) ${s.edit ? 'calc(120px + env(safe-area-inset-bottom))' : '28px'};display:flex;flex-direction:column;gap:22px">
 
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Sikkerhet</div>
@@ -3030,7 +3229,7 @@ try {
         </div>`).join('')}
     </section>` : ''}
 
-  <section style="display:flex;flex-direction:column;gap:2px">
+  ${s.edit ? this.editHTML() : `<section style="display:flex;flex-direction:column;gap:2px">
     <div style="display:flex;justify-content:space-between;align-items:baseline;padding:0 4px 8px">
       <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Rom</div>
       <div style="font-size:12px;color:#6d6c69;white-space:nowrap"><span>${n} sensorer</span></div>
@@ -3044,7 +3243,7 @@ try {
           ${room.sensors.map(x => `<button class="kd-sik-chip" data-on-click="info" data-arg="${e(x.id)}" style="${S(x.style)}"><span class="ms" style="${S(x.iconStyle)}">${t(x.icon)}</span>${t(x.label)}</button>`).join('')}
         </div>
       </div>`).join('')}
-  </section>
+  </section>`}
 
   ${Number(cfg.hendelser) ? `<section style="display:flex;flex-direction:column;gap:8px">
     <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:0 4px">Siste hendelser</div>
@@ -3065,7 +3264,67 @@ try {
       ${!log.length && this._lastLog ? `<div style="padding:4px 0 8px;font-size:13px;color:#6d6c69">Ingen hendelser</div>` : ''}
     </div>
   </section>` : ''}
+  ${s.edit ? `<div data-key="kd-sik-editbar" style="position:fixed;left:var(--kd-kant,10px);right:var(--kd-kant,10px);bottom:calc(100px + env(safe-area-inset-bottom));z-index:30;max-width:var(--kd-bredde,100%);overflow-x:clip;margin:0 auto;box-sizing:border-box;display:flex;align-items:center;gap:10px;padding:8px 8px 8px 16px;border-radius:30px;background:rgba(38,38,41,0.92);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.07),0 8px 24px rgba(0,0,0,0.35)">
+    <span class="ms" style="font-size:20px;color:oklch(0.82 0.1 350)">tune</span>
+    <span style="flex:1;min-width:0;display:flex;flex-direction:column"><span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Tilpass sensorene</span><span style="font-size:11px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Flytt, fjern eller legg til</span></span>
+    <button class="kd-sik-fix" data-on-click="editReset" style="height:40px;padding:0 14px;border-radius:20px;background:rgba(255,255,255,0.08);font-size:13px;font-weight:500;flex:none">Nullstill</button>
+    <button class="kd-sik-fix" data-on-click="editTog" style="height:40px;padding:0 16px;border-radius:20px;background:linear-gradient(135deg, oklch(0.78 0.13 350), oklch(0.9 0.05 20));color:#2a1720;font-size:13px;font-weight:600;flex:none">Ferdig</button>
+  </div>` : `<button class="kd-sik-fix" data-key="kd-sik-editbtn" data-on-click="editTog" style="display:flex;align-items:center;justify-content:center;gap:8px;height:48px;border-radius:24px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);color:#a9a7a2;font-size:13px;font-weight:500"><span class="ms" style="font-size:18px">tune</span>Tilpass sensorene</button>`}
 </div>`;
+    }
+
+    /* ---------- tilpass-modus: flytt / fjern / legg til sensorer (lagres per bruker i kd_alarm) ---------- */
+    editHTML() {
+      const list = this.editList(), have = new Set(list.map(o => o.entity));
+      const custom = Array.isArray((KD.ud(this, UD) || {}).soner);
+      const roomOf = o => o.rom || o.name || 'Annet';
+      const ic = (type, dc, id) => (id || '').startsWith('cover.') ? 'garage' : ({ door: 'door_front', window: 'window', lock: 'lock', motion: 'directions_walk', presence: 'person', safety: SAFETY_ICON[dc] || 'sensors' })[type] || 'sensors';
+      const ibtn = (fn, arg, icon, col, off, title) => `<button class="kd-sik-fix" data-on-click="${fn}" data-arg="${e(arg)}" title="${title}" ${off ? 'disabled' : ''} style="width:34px;height:34px;border-radius:17px;display:grid;place-items:center;flex:none;color:${col};opacity:${off ? 0.25 : 1};transition:transform .12s"><span class="ms" style="font-size:20px">${icon}</span></button>`;
+      let prev = null;
+      const rows = list.map((o, i) => {
+        const room = roomOf(o), head = room !== prev; prev = room;
+        const first = i === 0 || roomOf(list[i - 1]) !== room, last = i === list.length - 1 || roomOf(list[i + 1]) !== room;
+        const st = this.st(o.entity), name = o.name || (st ? this.fname(o.entity) : o.entity);
+        const sub = st ? o.entity : `${o.entity} · finnes ikke`;
+        return `${head ? `<div data-key="kd-sik-eh-${e(room)}" style="font-size:12px;font-weight:500;color:#8e8d89;padding:${i ? 12 : 2}px 6px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t(room)}</div>` : ''}
+        <div data-key="kd-sik-e-${e(o.entity)}" style="display:grid;grid-template-columns:28px minmax(0,1fr) auto;align-items:center;gap:8px;padding:6px 4px 6px 12px;border-radius:18px;background:#1c1c1f;opacity:${st ? 1 : 0.5}">
+          <span class="ms" style="font-size:19px;color:#8e8d89">${ic(o.type, st && st.attributes.device_class, o.entity)}</span>
+          <div style="min-width:0;display:flex;flex-direction:column;gap:1px">
+            <span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t(name)}</span>
+            <span style="font-size:11px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t(sub)}</span>
+          </div>
+          <div style="display:flex;align-items:center">
+            ${ibtn('zMove', `${i}|-1`, 'arrow_upward', '#c9c7c2', first, 'Flytt opp')}
+            ${ibtn('zMove', `${i}|1`, 'arrow_downward', '#c9c7c2', last, 'Flytt ned')}
+            ${ibtn('zDel', String(i), 'remove_circle', 'oklch(0.72 0.15 25)', false, 'Fjern')}
+          </div>
+        </div>`;
+      }).join('');
+      const MAX = 40, cand = this.candidates(have);
+      const add = cand.slice(0, MAX).map(c => `<div data-key="kd-sik-a-${e(c.id)}" style="display:grid;grid-template-columns:28px minmax(0,1fr) auto;align-items:center;gap:8px;padding:6px 4px 6px 12px;border-radius:18px;background:#1c1c1f">
+          <span class="ms" style="font-size:19px;color:#8e8d89">${ic(c.type, c.dc, c.id)}</span>
+          <div style="min-width:0;display:flex;flex-direction:column;gap:1px">
+            <span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t(c.name)}</span>
+            <span style="font-size:11px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t([c.area, c.id].filter(Boolean).join(' · '))}</span>
+          </div>
+          ${ibtn('zAdd', c.id, 'add_circle', 'oklch(0.8 0.12 150)', false, 'Legg til')}
+        </div>`).join('');
+      return `<section data-key="kd-sik-edit" style="display:flex;flex-direction:column;gap:6px;min-width:0">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:0 4px 4px">
+      <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Sensorer</div>
+      <div style="font-size:12px;color:#6d6c69;white-space:nowrap">${t(`${list.length} · ${custom ? 'din liste' : 'standard'}`)}</div>
+    </div>
+    ${rows || `<div style="padding:8px 6px;font-size:13px;color:#6d6c69">Ingen sensorer</div>`}
+  </section>
+  <section data-key="kd-sik-add" style="display:flex;flex-direction:column;gap:6px;min-width:0">
+    <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:0 4px 4px">Legg til</div>
+    <label style="display:flex;align-items:center;gap:8px;height:42px;padding:0 14px;border-radius:21px;background:#1c1c1f;min-width:0">
+      <span class="ms" style="font-size:18px;color:#8e8d89">search</span>
+      <input data-key="kd-sik-q" data-on-input="setQ" value="${e(this.state.q || '')}" placeholder="Søk etter sensor, lås eller rom" style="flex:1;min-width:0;height:100%;border:0;outline:none;background:transparent;color:#f2f1ee;font:inherit;font-size:14px">
+    </label>
+    ${add || `<div style="padding:8px 6px;font-size:13px;color:#6d6c69">${this.state.q ? 'Ingen treff' : 'Ingen flere sensorer å legge til'}</div>`}
+    ${cand.length > MAX ? `<div style="padding:4px 6px;font-size:12px;color:#6d6c69">${t(`${cand.length - MAX} til – søk for å snevre inn`)}</div>` : ''}
+  </section>`;
     }
     noMenu(ev) { ev.preventDefault(); }
     onDisconnect() { cancelAnimationFrame(this._holdRaf); super.onDisconnect(); }
@@ -3127,12 +3386,15 @@ try {
     [/veranda|terrasse|deck|balkong|patio/, 'deck'], [/stue|living/, 'weekend'], [/garasje|garage/, 'garage'], [/kj[øo]kken/, 'countertops'], [/hage|ute|yard|garden|innkj/, 'yard']];
   const slug = s => String(s || '').toLowerCase().replace(/æ/g, 'ae').replace(/ø/g, 'o').replace(/å/g, 'a').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
   const mmss = s => { s = Math.max(0, Math.round(s)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+  const UD = 'kd_kamera';
+  const PINK_GRAD = 'linear-gradient(135deg, oklch(0.78 0.13 350), oklch(0.9 0.05 20))';
+  const RED_E = 'oklch(0.72 0.15 25)', GREEN_E = 'oklch(0.8 0.12 150)';
   const dayStart = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
 
   class KDKameraCard extends KD.KDSheet {
     static head = function () { const n = this.cams().length; return ['videocam', 'Kamera', `${n} ${n === 1 ? 'kamera' : 'kameraer'}`]; };
     static defaults = { kameraer: DEFAULT_CAMS, auto: true, skjul: [], navn: { ringeklokke: 'Inngang' }, oppdater: 10, oppdater_enkel: 2, direkte: true, sirene: null, bilde_mappe: '/config/www/kamera', frigate: 'auto', lagring: null, fane: null };
-    static sheetCss = `.kd-cam-ctl:active,.kd-cam-ev:active{filter:brightness(1.15)}`;
+    static sheetCss = `.kd-cam-ctl:active,.kd-cam-ev:active,.kd-cam-ed:active{filter:brightness(1.15)}.kd-cam-ed:disabled{opacity:.3}`;
     static getStubConfig() { return {}; }
     getCardSize() { return 14; }
     constructor() { super(); this.state = { tab: 'live', view: 'alle', obj: 'all', fav: {} }; this._tick = [0, 0]; }
@@ -3146,9 +3408,21 @@ try {
       if (!this._scan.m.has(k)) this._scan.m.set(k, ids.filter(id => re.test(id)));
       return this._scan.m.get(k);
     }
+    /** Brukerens egen liste (Tilpass kameraer), lagret i HA-brukerdata 'kd_kamera' → { liste: ['camera.a', …] }. null = ingen overstyring. */
+    userList() {
+      const u = KD.ud(this, UD) || {};
+      return Array.isArray(u.liste) && u.liste.length ? u.liste.filter(x => typeof x === 'string' && x.startsWith('camera.')) : null;
+    }
     cams() {
-      const cfg = this.config, hide = new Set(cfg.skjul || []);
-      const entries = (Array.isArray(cfg.kameraer) ? cfg.kameraer : []).map(x => typeof x === 'string' ? { entity: x } : { ...x }).filter(x => x && (x.entity || x.frigate));
+      const cfg = this.config, user = this.userList();
+      const entries0 = (Array.isArray(cfg.kameraer) ? cfg.kameraer : []).map(x => typeof x === 'string' ? { entity: x } : { ...x }).filter(x => x && (x.entity || x.frigate));
+      if (user) {
+        // brukerlista bestemmer rekkefølge og utvalg; navn/ikon/bevegelse arves fra config-oppføringen for samme kamera
+        const cfgFor = id => entries0.find(c => c.entity === id || (c.frigate && 'camera.' + c.frigate === id));
+        return this._camInfo(user.filter(id => this.st(id)).map(id => ({ ...(cfgFor(id) || {}), entity: id })), false);
+      }
+      const hide = new Set(cfg.skjul || []);
+      const entries = entries0;
       const used = new Set();
       for (const c of entries) { if (c.entity) used.add(c.entity); if (c.frigate) used.add('camera.' + c.frigate); }
       // UniFi-strømmen først; finnes den ikke, Frigate-kameraet med samme navn
@@ -3158,7 +3432,11 @@ try {
       }).filter(Boolean);
       if (cfg.auto !== false) list = list.concat(this.scan(/^camera\./).filter(id => !used.has(id) && !/_(medium|low)(_resolution_channel|_res)?$|_insecure$|_(medium|low)_resolution/.test(id)).map(id => ({ entity: id })));
       list = list.filter(x => !hide.has(x.entity));
-      const seen = new Set();
+      return this._camInfo(list, true);
+    }
+    /** Beriker kameraoppføringer med navn, ikon og deteksjonssensorer. dedupe: én per enhet (auto-lista). */
+    _camInfo(list, dedupe) {
+      const cfg = this.config, seen = new Set();
       return list.map(c => {
         const id = c.entity, obj = id.split('.')[1];
         const pkg = /_package(_camera)?$/.test(obj) || /pakke|package/i.test(c.frigate || '');
@@ -3178,7 +3456,7 @@ try {
           if (hit) det[k] = hit;
         }
         const motion = c.bevegelse || (pkg ? null : devs.map(d => `binary_sensor.${d}_motion`).find(x => this.st(x)) || null);
-        const key = dev + (pkg ? '_pkg' : '');
+        const key = dedupe ? dev + (pkg ? '_pkg' : '') : id;
         if (seen.has(key)) return null; seen.add(key);
         return { ...c, id, obj, dev, pkg, name, icon, det, motion, frigate: c.frigate || null, key: obj };
       }).filter(Boolean).map((c, i, all) => {
@@ -3296,6 +3574,88 @@ try {
     }
     open(ev, id) { this.setState({ view: id }); }
 
+    /* ---------- tilpass kameraer (per bruker) ---------- */
+    editTog() { this.setState({ edit: !this.state.edit, pickFor: null, tab: 'live', view: 'alle' }); this.haptic('selection'); }
+    /** Lista som redigeres: brukerens egen, ellers det kortet viser nå. */
+    editList() {
+      const l = this.userList() || this.cams().map(c => c.id);
+      return l.filter((x, i) => l.indexOf(x) === i);
+    }
+    _saveList(l) { KD.udSave(this, UD, { liste: l }); this.haptic('selection'); }
+    camMove(ev, arg) {
+      const [i0, d] = arg.split('|'), i = Number(i0), j = i + (d === 'up' ? -1 : 1), l = this.editList();
+      if (j < 0 || j >= l.length) return;
+      [l[i], l[j]] = [l[j], l[i]];
+      this.setState({ pickFor: null }); this._saveList(l);
+    }
+    camDel(ev, i) { const l = this.editList(); l.splice(Number(i), 1); this.setState({ pickFor: null }); this._saveList(l); }
+    camAdd(ev, id) { const l = this.editList(); if (!l.includes(id)) l.push(id); this._saveList(l); }
+    camPick(ev, i) { this.setState({ pickFor: this.state.pickFor === String(i) ? null : String(i) }); this.haptic('selection'); }
+    camSet(ev, arg) {
+      const k = arg.indexOf('|'), i = Number(arg.slice(0, k)), id = arg.slice(k + 1), l = this.editList();
+      const j = l.indexOf(id);
+      if (j >= 0 && j !== i) l[j] = l[i]; // valgt kamera står allerede i lista → bytt plass
+      l[i] = id;
+      this.setState({ pickFor: null }); this._saveList(l);
+    }
+    editReset() { KD.udSave(this, UD, {}); this.setState({ pickFor: null }); this.haptic('selection'); }
+    editHTML() {
+      const s = this.state, cfg = this.config, ids = this.editList();
+      const cfgE = (Array.isArray(cfg.kameraer) ? cfg.kameraer : []).map(x => typeof x === 'string' ? { entity: x } : { ...x }).filter(Boolean);
+      const cfgFor = id => cfgE.find(c => c.entity === id || (c.frigate && 'camera.' + c.frigate === id));
+      const info = this._camInfo(ids.map(id => ({ ...(cfgFor(id) || {}), entity: id })), false);
+      const all = this.find(/^camera\./).slice().sort((p, q) => {
+        const lo = x => /_(medium|low)(_resolution|_res)|_insecure$/.test(x) ? 1 : 0;
+        return lo(p) - lo(q) || String(this.fname(p)).localeCompare(String(this.fname(q)), 'nb');
+      });
+      const ico = (icon, col) => `<span class="ms" style="font-size:20px;color:${col || '#f2f1ee'}">${icon}</span>`;
+      const sq = 'width:36px;height:36px;border-radius:18px;display:grid;place-items:center;flex:none;background:rgba(255,255,255,0.06)';
+      const rows = info.map((c, i) => {
+        const open = s.pickFor === String(i), src = this.img(c, 0), ok = !!this.st(c.id);
+        return `<div data-key="ed-${e(c.id)}" style="display:flex;flex-direction:column;gap:10px;padding:8px;border-radius:20px;background:#1c1c1f;box-shadow:${open ? 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.55)' : 'none'};min-width:0">
+        <div style="display:grid;grid-template-columns:64px minmax(0,1fr) auto;align-items:center;gap:10px;min-width:0">
+          <span style="position:relative;width:64px;height:36px;border-radius:10px;overflow:hidden;background:#0c0c0d;display:grid;place-items:center">${src ? `<img src="${e(src)}" alt="" draggable="false" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">` : `<span class="ms" style="font-size:18px;color:#6d6c69">${e(c.icon)}</span>`}</span>
+          <button class="kd-cam-ed" data-on-click="camPick" data-arg="${i}" title="Velg kamera" style="min-width:0;display:flex;align-items:center;gap:6px;text-align:left;padding:2px 0">
+            <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+              <span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(c.name)}</span>
+              <span style="font-size:11px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ok ? e(c.id) : 'Utilgjengelig · ' + e(c.id)}</span>
+            </span>
+            <span class="ms" style="font-size:18px;color:#8e8d89;flex:none">${open ? 'expand_less' : 'expand_more'}</span>
+          </button>
+          <span style="display:flex;gap:4px">
+            <button class="kd-cam-ed" data-on-click="camMove" data-arg="${i}|up" title="Flytt opp" ${i ? '' : 'disabled'} style="${sq}">${ico('arrow_upward')}</button>
+            <button class="kd-cam-ed" data-on-click="camMove" data-arg="${i}|down" title="Flytt ned" ${i < info.length - 1 ? '' : 'disabled'} style="${sq}">${ico('arrow_downward')}</button>
+            <button class="kd-cam-ed" data-on-click="camDel" data-arg="${i}" title="Fjern" style="${sq}"><span class="ms" style="font-size:20px;color:${RED_E};font-variation-settings:'FILL' 1">remove_circle</span></button>
+          </span>
+        </div>
+        ${open ? `<div style="display:flex;flex-wrap:wrap;gap:6px;padding:2px 2px 4px;min-width:0">${all.map(id => {
+          const sel = id === c.id, used = !sel && ids.includes(id);
+          return `<button class="kd-cam-ed" data-on-click="camSet" data-arg="${e(i + '|' + id)}" title="${e(id)}" style="${S({ display: 'flex', alignItems: 'center', gap: 6, maxWidth: '100%', minWidth: 0, height: 34, padding: '0 12px', borderRadius: 17, fontSize: 12, fontWeight: 500, background: sel ? 'oklch(0.78 0.13 350 / 0.2)' : 'rgba(255,255,255,0.06)', boxShadow: sel ? 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.7)' : 'none', color: sel ? '#f2f1ee' : used ? '#6d6c69' : '#c9c7c2' })}">${used ? '<span class="ms" style="font-size:14px">swap_vert</span>' : ''}<span style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(this.fname(id))}</span></button>`;
+        }).join('')}</div>` : ''}
+      </div>`;
+      }).join('');
+      const add = all.filter(id => !ids.includes(id));
+      const head = x => `<div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:6px 4px 0">${x}</div>`;
+      return `${head('Kameraer som vises')}
+  <section style="display:flex;flex-direction:column;gap:8px;min-width:0">
+    ${rows || `<div style="padding:24px 0;text-align:center;font-size:13px;color:#6d6c69">Ingen kameraer valgt</div>`}
+  </section>
+  ${add.length ? `${head('Legg til kamera')}
+  <section style="display:flex;flex-direction:column;gap:6px;min-width:0">
+    ${add.map(id => `<button class="kd-cam-ed" data-key="add-${e(id)}" data-on-click="camAdd" data-arg="${e(id)}" style="display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;padding:10px 12px 10px 14px;border-radius:18px;background:#1c1c1f;text-align:left;width:100%;min-width:0">
+        <span class="ms" style="font-size:20px;color:#8e8d89">videocam</span>
+        <span style="min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(this.fname(id))}</span><span style="font-size:11px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(id)}</span></span>
+        <span class="ms" style="font-size:24px;color:${GREEN_E};font-variation-settings:'FILL' 1">add_circle</span>
+      </button>`).join('')}
+  </section>` : ''}
+  <div data-key="kd-edit-bar" style="position:fixed;left:var(--kd-kant,10px);right:var(--kd-kant,10px);bottom:calc(100px + env(safe-area-inset-bottom));z-index:30;max-width:620px;margin:0 auto;box-sizing:border-box;display:flex;align-items:center;gap:10px;padding:8px 8px 8px 16px;border-radius:30px;background:rgba(38,38,41,0.92);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.07),0 8px 24px rgba(0,0,0,0.35)">
+    <span class="ms" style="font-size:20px;color:oklch(0.82 0.1 350);flex:none">tune</span>
+    <span style="flex:1;min-width:0;display:flex;flex-direction:column"><span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Tilpass kameraer</span><span style="font-size:11px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${this.userList() ? 'Din egen rekkefølge' : 'Trykk på navnet for å bytte'}</span></span>
+    <button class="kd-cam-ed" data-on-click="editReset" style="height:40px;padding:0 14px;border-radius:20px;background:rgba(255,255,255,0.08);font-size:13px;font-weight:500;flex:none">Nullstill</button>
+    <button class="kd-cam-ed" data-on-click="editTog" style="height:40px;padding:0 16px;border-radius:20px;background:${PINK_GRAD};color:#2a1720;font-size:13px;font-weight:600;flex:none">Ferdig</button>
+  </div>`;
+    }
+
     /* ---------- tidtaker for stillbilder ---------- */
     onConnect() {
       super.onConnect();
@@ -3396,19 +3756,19 @@ try {
         star: { fontSize: 20, color: fav ? C.amber : '#48474a', fontVariationSettings: `'FILL' ${fav ? 1 : 0}` } }; });
       const n = CAMS.length;
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:14px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) ${s.edit ? 'calc(190px + env(safe-area-inset-bottom))' : '40px'};display:flex;flex-direction:column;gap:14px">
   <header style="display:flex;align-items:center;gap:12px;padding:0 4px">
     <span style="width:40px;height:40px;border-radius:20px;background:#e9e8e4;color:#141416;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">videocam</span></span>
     <div style="flex:1;font-size:26px;font-weight:500;letter-spacing:-0.02em">Kamera</div>
     <span style="font-size:12px;color:#8e8d89;white-space:nowrap">${t(`${n} ${n === 1 ? 'kamera' : 'kameraer'}`)}</span>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
   </header>
-
+${s.edit ? this.editHTML() : `
   <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:2px;padding:4px;border-radius:22px;background:#1c1c1f">
     ${tabs.map(x => `<button data-on-click="go" data-arg="tab:${x.k}" style="${S(x.style)}">${t(x.label)}</button>`).join('')}
   </div>
 
-  <nav data-hscroll style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -14px;padding:0 14px">
+  <nav data-hscroll style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:0 var(--kd-kant,10px)">
     ${chips.map(c => `<button data-on-click="go" data-arg="view:${e(c.k)}" style="${S(c.style)}"><span class="ms" style="font-size:16px">${t(c.icon)}</span>${t(c.label)}<span style="${S(c.dot)}"></span></button>`).join('')}
   </nav>
 
@@ -3461,6 +3821,8 @@ try {
         </button>`).join('')}
       ${!ev.length ? `<div style="padding:24px 0;text-align:center;font-size:13px;color:#6d6c69">Ingen hendelser</div>` : ''}
     </section>` : ''}
+
+  ${isLive && s.view === 'alle' ? `<button class="kd-cam-ed" data-key="kd-edit-btn" data-on-click="editTog" style="display:flex;align-items:center;justify-content:center;gap:8px;height:48px;border-radius:24px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);color:#a9a7a2;font-size:13px;font-weight:500"><span class="ms" style="font-size:18px">tune</span>Tilpass kameraer</button>` : ''}`}
 </div>`;
     }
   }
@@ -3708,7 +4070,7 @@ try {
       if (pic) Object.assign(vals.avatar, { backgroundImage: `url('${KD.e(String(this._hass.hassUrl ? this._hass.hassUrl(pic) : pic).replace(/'/g, '%27'))}')`, backgroundSize: 'cover', backgroundPosition: 'center', color: 'transparent' });
       const v = vals;
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:22px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:22px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Tilstedeværelse</div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -4422,7 +4784,7 @@ try {
       }
 
       return `
-<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 28px;display:flex;flex-direction:column;gap:16px">
+<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 28px;display:flex;flex-direction:column;gap:16px">
 
   <header style="display:flex;align-items:center;gap:10px">
     <div style="flex:1;font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Vanning</div>
@@ -4609,7 +4971,7 @@ try {
       </div>`;
       }).join('');
       return `
-<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:22px">
+<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:22px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Planter</div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -4836,7 +5198,7 @@ try {
       }).join('');
 
       return `
-<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:22px">
+<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:22px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Søvn</div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -5110,7 +5472,7 @@ try {
       const pollen = this.pollen();
 
       return `
-<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:22px">
+<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:22px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Vær · <span>${e(cfg.sted || '')}</span></div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -5132,7 +5494,7 @@ try {
 
   <section style="display:flex;flex-direction:column;gap:8px">
     <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:0 4px">Neste timer</div>
-    <div data-hscroll="1" style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -18px;padding:0 18px">
+    <div data-hscroll="1" style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:0 var(--kd-kant,10px)">
       ${hours.map(h => `
         <div style="${S(h.card)}">
           <span style="font-size:11px;color:#8e8d89;font-variant-numeric:tabular-nums"><span>${h.time}</span></span>
@@ -5585,7 +5947,7 @@ try {
         : { icon: 'play_arrow', label: st === 'paused' ? 'Fortsett' : zone ? `Støvsug ${zone.navn.toLowerCase()}` : sel.length ? `Støvsug ${sel.length} rom` : 'Støvsug alt', style: { height: 64, borderRadius: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontSize: 16, fontWeight: 600, background: C.green, color: '#10231a' } };
       const e = KD.e, S = KD.S;
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:22px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:22px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89"><span>${e(cf.navn || 'Sir Sweeps')}</span></div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -5630,7 +5992,7 @@ try {
     </section>
     ${zoneBtns.length ? `<section style="display:flex;flex-direction:column;gap:8px">
       <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:0 4px">Soner</div>
-      <div data-hscroll="1" style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -18px;padding:0 18px">
+      <div data-hscroll="1" style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:0 var(--kd-kant,10px)">
         ${zoneBtns.map(z => `
           <button data-on-click="pickZone" data-arg="${e(z.entity)}" style="${S(z.style)}"><span class="ms" style="font-size:17px"><span>${e(z.ikon || 'table_restaurant')}</span></span><span>${e(z.navn)}</span></button>`).join('')}
       </div>
@@ -5963,9 +6325,9 @@ try {
       const radios = this.radios().map(r => ({ ...r, style: chip(playing && !!cur && (cur.includes(low(r.navn)) || low(r.navn).includes(cur))) }));
       const sources = cf.vis_kilder === false ? [] : (plA.source_list || []).map(src => ({ src, style: chip(low(src) === low(plA.source)) }));
       const secHead = (t) => `<div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:0 4px"><span>${e(t)}</span></div>`;
-      const chipRow = (items, fn) => `<div data-hscroll="1" style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -18px;padding:0 18px">${items.map(fn).join('')}</div>`;
+      const chipRow = (items, fn) => `<div data-hscroll="1" style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:0 var(--kd-kant,10px)">${items.map(fn).join('')}</div>`;
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Media</div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -6317,7 +6679,7 @@ try {
       const pill = 'display:inline-flex;align-items:center;height:30px;padding:0 11px;border-radius:15px;background:#232326;font-weight:500;vertical-align:middle;white-space:nowrap';
       const pill2 = 'display:inline-block;padding:0 10px;border-radius:14px;background:#f2f1ee;color:#141416;font-weight:500;line-height:1.6';
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89"><span>${e(cf.navn)}</span></div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -6639,7 +7001,7 @@ try {
           bar: { width: `${pct || 0}%`, height: '100%', background: pct != null && pct < 15 ? AMBER : '#c9c7c2' } };
       });
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89"><span>${e(cf.navn)}</span></div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -7129,7 +7491,7 @@ try {
       const statusStyle = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 500, color: '#c9c7c2' };
       const statusDot = { width: 8, height: 8, borderRadius: 4, flex: 'none', background: V.ok, boxShadow: `0 0 10px ${V.ok}` };
       const tl = tabs.map(t => tab(...t));
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
   <header style="display:flex;align-items:center;gap:12px">
     <span style="width:40px;height:40px;border-radius:20px;background:#e9e8e4;color:#141416;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">dns</span></span>
     <div style="flex:1;font-size:26px;font-weight:500;letter-spacing:-0.02em">Server</div>
@@ -7396,7 +7758,7 @@ try {
       const items = (L[s.tab] || []).map((r, i) => { const w = sw(r.on); return { ...r, track: w.track, knob: w.knob,
         row: { display: 'flex', alignItems: 'center', gap: 12, padding: '12px 4px', width: '100%', borderTop: i ? '1px solid rgba(255,255,255,0.05)' : 'none' },
         iconWrap: { width: 40, height: 40, borderRadius: 20, flex: 'none', display: 'grid', placeItems: 'center', background: '#1c1c1f', color: r.on ? '#f2f1ee' : '#6d6c69' } }; });
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Innstillinger</div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -7771,7 +8133,7 @@ try {
             steps: [1, 2, 3, 4].map(k => ({ flex: 1, height: 4, borderRadius: 2, background: k <= p.step ? C.red : '#2a2a2d' })) })) };
       }
 
-      html = `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
+      html = `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Kalender</div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -7837,7 +8199,7 @@ ${isMonth ? `
       ${!CV.selItems.length ? `<div style="padding:14px 0;font-size:13px;color:#6d6c69">Ingen hendelser</div>` : ''}
     </section>` : ''}
 ${H ? `
-    <div data-hscroll="1" data-kd-hut="1" data-on-scroll="hutScroll" style="display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;margin:0 -18px;padding:0 18px">
+    <div data-hscroll="1" data-kd-hut="1" data-on-scroll="hutScroll" style="display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:0 var(--kd-kant,10px)">
       ${H.heroes.map(h => `<div style="${S(h.card)}">
           <div style="display:flex;align-items:center;gap:10px">
             <span style="font-size:19px;font-weight:600;white-space:nowrap"><span>${e(h.title)}</span></span>
@@ -8114,7 +8476,7 @@ try {
         box: { width: 26, height: 26, borderRadius: 9, flex: 'none', marginTop: 1, display: 'grid', placeItems: 'center', background: x.done ? GREEN : 'transparent', boxShadow: x.done ? 'none' : 'inset 0 0 0 1.5px #5d5c5a', transition: 'background .2s' },
         check: { fontSize: 18, color: '#141416', opacity: x.done ? 1 : 0, fontVariationSettings: "'wght' 600" },
         textStyle: { fontSize: 14, lineHeight: 1.4, textWrap: 'pretty', textDecoration: x.done ? 'line-through' : 'none' } }));
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Gjøremål</div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -8273,7 +8635,7 @@ try {
           style: { aspectRatio: '1', borderRadius: 14, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, background: hits.length ? '#262629' : 'transparent', boxShadow: t ? 'inset 0 0 0 1.5px #f2f1ee' : 'none', opacity: inM ? 1 : 0.25 },
           num: { fontSize: 13, fontWeight: t ? 600 : 500, fontVariantNumeric: 'tabular-nums' } }; });
       const legend = F.map(f => ({ name: f.name.split(' ')[0], dot: { width: 8, height: 8, borderRadius: 4, background: f.col } }));
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:16px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:16px">
   <header style="display:flex;align-items:center;gap:12px">
     <span style="width:40px;height:40px;border-radius:20px;background:#e9e8e4;color:#141416;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">delete</span></span>
     <div style="flex:1;font-size:26px;font-weight:500;letter-spacing:-0.02em">Søppel</div>
@@ -8827,7 +9189,7 @@ a:hover{color:oklch(0.86 0.12 95)}`;
       else if (tab === 'f1' || tab === 'f2') inner = this._floor(tab, fl[tab]);
       else inner = this._on(fl);
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:12px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:12px">
   <header style="display:flex;align-items:center;gap:12px;padding:0 4px">
     <span style="width:40px;height:40px;border-radius:20px;background:#e9e8e4;color:#141416;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">lightbulb</span></span>
     <div style="flex:1;font-size:26px;font-weight:500;letter-spacing:-0.02em">Lys</div>
@@ -8951,7 +9313,7 @@ ${inner}
         bubble: { width: 58, height: 58, borderRadius: 29, display: 'grid', placeItems: 'center', background: act ? PINK : '#1c1c1f', color: act ? '#2a1720' : '#c9c7c2', transform: act ? 'scale(1.06)' : 'scale(1)', transition: 'transform .35s cubic-bezier(.34,1.8,.64,1), background .25s' },
         iconStyle: { fontSize: 24, fontVariationSettings: `'FILL' ${act ? 1 : 0}` }, labelStyle: { fontSize: 11, fontWeight: 500, color: act ? '#f2f1ee' : '#8e8d89' } }; });
       return `
-    <section data-hscroll="1" style="display:flex;gap:12px;overflow-x:auto;scrollbar-width:none;margin:0 -14px;padding:2px 18px">
+    <section data-hscroll="1" style="display:flex;gap:12px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:2px var(--kd-kant,10px)">
       ${scenes.map(c => `<button data-on-click="sceneGo" data-arg="${c.k}" style="flex:none;display:flex;flex-direction:column;align-items:center;gap:6px;width:62px">
           <span style="${S(c.bubble)}"><span class="ms" style="${S(c.iconStyle)}">${c.icon}</span></span>
           <span style="${S(c.labelStyle)}">${E(c.label)}</span>
@@ -9204,18 +9566,50 @@ try {
       const r = this._room(), ud = JSON.parse(JSON.stringify(H.userHideNow(this) || {}));
       delete ud[r.id]; H.saveUserHide(this, ud); this._queue();
     }
+    sensorAll(ev, k) { this.setState({ sensAll: this.state.sensAll === k ? null : k, sensQ: '' }); }
+    sensorQ(ev, arg, el) { this._sensQ = el.value; clearTimeout(this._sqT); this._sqT = setTimeout(() => this.setState({ sensQ: this._sensQ }), 150); }
+    /** Animasjonen i topp-pillen (innflyging + pulserende glød) – av/på per bruker, gjelder alle popups */
+    animTog() {
+      const v = { ...KD.ud(this, 'kd_innst') }; v.topp_animasjon = v.topp_animasjon === false;
+      this.haptic('selection'); KD.udSave(this, 'kd_innst', v);
+      if (v.topp_animasjon === false) KD.stopSheetTop(document.body);
+    }
+    /** alle temperatur-/fuktsensorer i HA (enhet/device_class), rommets egne først */
+    _allSensors(k, r) {
+      const all = this.all(), words = String(r.navn || r.id).toLowerCase().split(/\s+/)[0];
+      const ok = id => { if (!id.startsWith('sensor.')) return false; const A = all[id].attributes || {}, u = String(A.unit_of_measurement || '');
+        return k === 'temp' ? (A.device_class === 'temperature' || /°\s*[cf]/i.test(u)) : (A.device_class === 'humidity' || (u === '%' && /fukt|humid/i.test(id + ' ' + (A.friendly_name || '')))); };
+      const q = String(this.state.sensQ || '').toLowerCase();
+      return Object.keys(all).filter(ok).filter(id => !q || (id + ' ' + this.fname(id)).toLowerCase().includes(q))
+        .sort((x, y) => (y.includes(r.id) || this.fname(y).toLowerCase().includes(words)) - (x.includes(r.id) || this.fname(x).toLowerCase().includes(words)) || this.fname(x).localeCompare(this.fname(y), 'nb'));
+    }
     _sensorPicker(r, L) {
-      const U = KD.userRoom(this, r.id);
-      const row = (k, title, icon, list, cur, unit) => list.length ? `<div style="display:flex;flex-direction:column;gap:8px">
-      <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:#8e8d89"><span class="ms" style="font-size:16px">${icon}</span><span>${title}</span></div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px">${list.map(id => {
+      const U = KD.userRoom(this, r.id), s = this.state;
+      const chip = (k, id, cur, unit) => {
         const sel = id === cur, fixed = U[k] === id, v = this.n(id);
         return `<button class="kdr-a92" data-key="kd-sv-${k}-${E(id)}" data-on-click="sensorPick" data-arg="${E(k + '|' + id)}" style="${S({ display: 'flex', alignItems: 'center', gap: 6, maxWidth: '100%', minWidth: 0, height: 34, padding: '0 12px', borderRadius: 17, fontSize: 12, fontWeight: 500, background: sel ? 'oklch(0.78 0.13 350 / 0.2)' : 'rgba(255,255,255,0.06)', boxShadow: sel ? 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.7)' : 'none', color: sel ? '#f2f1ee' : '#a9a7a2' })}">${fixed ? '<span class="ms" style="font-size:14px">push_pin</span>' : ''}<span style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(this.fname(id))}</span><span style="color:#8e8d89;white-space:nowrap">${v != null ? E(nf(v, unit === '%' ? 0 : 1) + (unit === '%' ? ' %' : '°')) : '–'}</span></button>`;
-      }).join('')}</div></div>` : '';
+      };
+      const row = (k, title, icon, list0, cur, unit) => {
+        const list = [...new Set([...(U[k] ? [U[k]] : []), ...list0])];
+        const open = s.sensAll === k, more = open ? this._allSensors(k, r).filter(id => !list.includes(id)) : [];
+        return `<div style="display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:#8e8d89"><span class="ms" style="font-size:16px">${icon}</span><span style="flex:1">${title}</span>
+        <button class="kdr-a92" data-on-click="sensorAll" data-arg="${k}" style="height:28px;padding:0 10px;border-radius:14px;font-size:11px;font-weight:500;background:${open ? 'oklch(0.78 0.13 350 / 0.2)' : 'rgba(255,255,255,0.06)'};color:#c9c7c2;display:flex;align-items:center;gap:4px"><span class="ms" style="font-size:15px">${open ? 'expand_less' : 'search'}</span>${open ? 'Lukk' : 'Alle sensorer'}</button></div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">${list.map(id => chip(k, id, cur, unit)).join('') || '<span style="font-size:12px;color:#6d6c69">Ingen forslag i rommet – søk i alle sensorer</span>'}</div>
+      ${open ? `<input data-key="kd-sq-${k}" data-keep="1" data-on-input="sensorQ" placeholder="Søk etter sensor …" autocomplete="off" style="height:38px;padding:0 14px;border-radius:19px;border:none;outline:none;background:#262629;color:#f2f1ee;font:inherit;font-size:13px;box-sizing:border-box;width:100%">
+      <div style="display:flex;flex-wrap:wrap;gap:6px;max-height:260px;overflow-y:auto;overscroll-behavior:contain">${more.slice(0, 60).map(id => chip(k, id, cur, unit)).join('') || '<span style="font-size:12px;color:#6d6c69">Ingen treff</span>'}</div>
+      ${more.length > 60 ? `<span style="font-size:11px;color:#6d6c69">${more.length - 60} til – søk for å snevre inn</span>` : ''}` : ''}
+    </div>`;
+      };
       const t = row('temp', 'Temperatur fra', 'device_thermostat', L.tempValg || [], L.tempId, '°');
       const f = row('fukt', 'Fukt fra', 'humidity_percentage', L.humValg || [], L.humId, '%');
-      if (!t && !f) return '';
-      return `<section data-key="kd-sensorvalg" style="display:flex;flex-direction:column;gap:14px;padding:14px 16px;border-radius:24px;background:#1c1c1f">${t}${f}</section>`;
+      const anim = KD.ud(this, 'kd_innst').topp_animasjon !== false;
+      return `<section data-key="kd-sensorvalg" style="display:flex;flex-direction:column;gap:14px;padding:14px 16px;border-radius:24px;background:#1c1c1f">${t}${f}
+      <button class="kdr-a92" data-on-click="animTog" style="display:flex;align-items:center;gap:10px;min-height:44px;text-align:left">
+        <span class="ms" style="font-size:18px;color:#8e8d89">animation</span>
+        <span style="flex:1;min-width:0;display:flex;flex-direction:column"><span style="font-size:13px;font-weight:500">Animasjon i toppen</span><span style="font-size:11px;color:#8e8d89">Innflyging og glød i topp-pillen (alle popups)</span></span>
+        <span style="${S({ width: 44, height: 26, borderRadius: 13, flex: 'none', position: 'relative', background: anim ? 'oklch(0.78 0.13 350)' : '#3a3a3d', transition: 'background .2s' })}"><span style="${S({ position: 'absolute', top: 3, left: anim ? 21 : 3, width: 20, height: 20, borderRadius: 10, background: '#f4f3ef', transition: 'left .25s cubic-bezier(.34,1.56,.64,1)' })}"></span></span>
+      </button></section>`;
     }
     afterRender() {
       const root = this.$('.kd-root > div, .kd-sheet-body > div');
@@ -9402,7 +9796,7 @@ try {
       const setVal = k ? (Number.isInteger(k.set) ? String(k.set) : nf(k.set, 1)) : '';
       this._headVals = [r.ikon, r.navn, `${temp != null ? nf(temp, 1) : '–'}° · ${hum != null ? nf(hum, 0) : '–'} %`];
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:18px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) ${s.edit ? 'calc(190px + env(safe-area-inset-bottom))' : '40px'};display:flex;flex-direction:column;gap:18px">
   <header style="display:flex;align-items:center;gap:12px;padding:0 4px">
     <span style="${S(headIcon)}"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">${E(r.ikon)}</span></span>
     <div style="flex:1;font-size:26px;font-weight:500;letter-spacing:-0.02em">${E(r.navn)}</div>
@@ -9434,7 +9828,7 @@ try {
       </button>`).join('')}
   </section>
 
-  ${scenes.length ? `<section data-hscroll="1" style="display:flex;gap:14px;overflow-x:auto;scrollbar-width:none;margin:0 -14px;padding:2px 18px">
+  ${scenes.length ? `<section data-hscroll="1" style="display:flex;gap:14px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:2px var(--kd-kant,10px)">
     ${scenes.map(x => { const act = s.scene === x.key;
       const bubble = { width: 58, height: 58, borderRadius: 29, display: 'grid', placeItems: 'center', background: act ? PINK : '#1c1c1f', color: act ? '#2a1720' : '#c9c7c2', boxShadow: act ? '0 6px 18px rgba(240,140,190,0.3)' : 'inset 0 0 0 1px rgba(255,255,255,0.05)', transform: act ? 'scale(1.06)' : 'scale(1)', transition: 'transform .35s cubic-bezier(.34,1.8,.64,1), background .25s' };
       return `<button data-key="${E(x.key)}" data-on-click="sceneGo" data-arg="${E(x.key)}" style="flex:none;display:flex;flex-direction:column;align-items:center;gap:6px;width:62px">
@@ -9502,7 +9896,7 @@ try {
     </div>
   </section>` : ''}
 
-  ${s.edit ? `<div data-key="kd-edit-bar" style="position:sticky;bottom:96px;z-index:4;display:flex;align-items:center;gap:10px;padding:8px 8px 8px 16px;border-radius:30px;background:rgba(38,38,41,0.92);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.07),0 8px 24px rgba(0,0,0,0.35)">
+  ${s.edit ? `<div data-key="kd-edit-bar" style="position:fixed;left:var(--kd-kant,10px);right:var(--kd-kant,10px);bottom:calc(100px + env(safe-area-inset-bottom));z-index:30;max-width:620px;margin:0 auto;display:flex;align-items:center;gap:10px;padding:8px 8px 8px 16px;border-radius:30px;background:rgba(38,38,41,0.92);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.07),0 8px 24px rgba(0,0,0,0.35)">
     <span class="ms" style="font-size:20px;color:oklch(0.82 0.1 350)">visibility</span>
     <span style="flex:1;min-width:0;display:flex;flex-direction:column"><span style="font-size:14px;font-weight:500">Tilpass rommet</span><span style="font-size:11px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Trykk for å skjule eller vise</span></span>
     <button class="kdr-a92" data-on-click="editReset" style="height:40px;padding:0 14px;border-radius:20px;background:rgba(255,255,255,0.08);font-size:13px;font-weight:500">Nullstill</button>

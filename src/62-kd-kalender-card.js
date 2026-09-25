@@ -328,7 +328,7 @@
             steps: [1, 2, 3, 4].map(k => ({ flex: 1, height: 4, borderRadius: 2, background: k <= p.step ? C.red : '#2a2a2d' })) })) };
       }
 
-      html = `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
+      html = `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Kalender</div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
@@ -394,7 +394,7 @@ ${isMonth ? `
       ${!CV.selItems.length ? `<div style="padding:14px 0;font-size:13px;color:#6d6c69">Ingen hendelser</div>` : ''}
     </section>` : ''}
 ${H ? `
-    <div data-hscroll="1" data-kd-hut="1" data-on-scroll="hutScroll" style="display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;margin:0 -18px;padding:0 18px">
+    <div data-hscroll="1" data-kd-hut="1" data-on-scroll="hutScroll" style="display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:0 var(--kd-kant,10px)">
       ${H.heroes.map(h => `<div style="${S(h.card)}">
           <div style="display:flex;align-items:center;gap:10px">
             <span style="font-size:19px;font-weight:600;white-space:nowrap"><span>${e(h.title)}</span></span>

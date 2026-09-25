@@ -66,6 +66,17 @@
   };
   const dayKey = (d) => d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
   const isOre = (u, A) => KD.isOre(u, A);
+  // Tilpass Hjem: seksjoner, fliser og delene av setningen øverst
+  const SEK_KEYS = ['personer', 'prosa', 'rom', 'soppel', 'strom'];
+  const PROSA_KEYS = ['ute', 'strom', 'effekt', 'lys', 'hendelser'];
+  const TILE_V = ['las', 'romV', 'alarm'], TILE_H = ['romH', 'kamera', 'gjoremal'];
+  const HLABEL = {
+    sek: { personer: ['group', 'Personer'], prosa: ['notes', 'Setningen øverst'], rom: ['meeting_room', 'Rom og fliser'], soppel: ['delete', 'Søppel'], strom: ['bolt', 'Strømpriser'] },
+    flis: { las: ['key', 'Dørlås'], romV: ['weekend', 'Romkort (venstre)'], alarm: ['shield', 'Alarm'], romH: ['desk', 'Romkort (høyre)'], kamera: ['videocam', 'Kamera'], gjoremal: ['handyman', 'Gjøremål'] },
+    prosa: { ute: ['thermostat', 'Ute-temperatur'], strom: ['payments', 'Strømpris'], effekt: ['bolt', 'Effekt (W)'], lys: ['lightbulb', 'Lys på'], hendelser: ['event', 'Hendelser i dag'] },
+  };
+  /** brukerens rekkefølge, men bare gyldige nøkler og alle med */
+  const norm = (list, def) => { const out = (Array.isArray(list) ? list : []).filter((k, i, a) => def.includes(k) && a.indexOf(k) === i); for (const k of def) if (!out.includes(k)) out.push(k); return out; };
 
   class KDHjem extends KD.KDCard {
     static defaults = {
@@ -94,7 +105,7 @@
       dokk_navn: true,    // vis navn under ikonene i dokken (kan også slås av/på i «Tilpass dokken»)
       dokk_krymp: true,   // krymp dokken når man scroller nedover
       dokk: [
-        { ikon: 'cleaning_services', navn: 'Støvsuger', ark: 'vac', prikk: ['binary_sensor.sir_sweeps_a_lot_water_shortage'], prikk_av: ['binary_sensor.sir_sweeps_a_lot_water_box_attached'] },
+        { ikon: 'home', navn: 'Hjem', hjem: true },
         { ikon: 'power', navn: 'Strøm', ark: 'strom' },
         { ikon: 'music_note', navn: 'Musikk', ark: 'media' },
         { ikon: 'directions_car', navn: 'Bil', ark: 'car' },
@@ -102,6 +113,7 @@
         { ikon: 'tune', navn: 'Innstillinger', ark: 'settings' },
       ],
       meny: [
+        { ikon: 'cleaning_services', navn: 'Støvsuger', ark: 'vac', farge: 'oklch(0.8 0.12 150)', prikk: ['binary_sensor.sir_sweeps_a_lot_water_shortage'], prikk_av: ['binary_sensor.sir_sweeps_a_lot_water_box_attached'] },
         { ikon: 'thermostat', navn: 'Klima', ark: 'klima', farge: 'oklch(0.72 0.15 25)' },
         { ikon: 'delete', navn: 'Søppel', ark: 'trash', farge: '#c9c7c2' },
         { ikon: 'sprinkler', navn: 'Vanning', ark: 'vann', farge: 'oklch(0.8 0.12 235)' },
@@ -139,18 +151,26 @@
        bakgrunn: false slår det av; en farge overstyrer. Settes tilbake når kortet forsvinner. */
     _paintPage(on) {
       const col = this.config.bakgrunn === false ? null : (this.config.bakgrunn || '#141416');
-      const root = document.documentElement, VARS = ['--lovelace-background', '--primary-background-color', '--app-header-background-color', '--kiosk-header-color'];
+      const root = document.documentElement, VARS = ['--lovelace-background', '--primary-background-color', '--app-header-background-color', '--kiosk-header-color', '--view-background', '--secondary-background-color'];
       const meta = document.querySelector('meta[name="theme-color"]');
+      // Tema kan være satt direkte på elementer nærmere kortet (home-assistant, hui-root, hui-view …) – sett variablene
+      // på hele kjeden opp fra kortet, ellers vinner temaet og det blir en fargekant mellom kortet og siden.
+      const chain = () => { const out = [root]; let n = this; while (n) { n = n.parentNode || n.host; if (n && n.nodeType === 1 && n.style) out.push(n); } return out; };
       if (on && col) {
-        if (!this._oldVars) { this._oldVars = VARS.map(v => [v, root.style.getPropertyValue(v)]); this._oldMeta = meta && meta.getAttribute('content'); this._oldBody = document.body.style.background; }
-        VARS.forEach(v => root.style.setProperty(v, col));
+        if (!this._oldVars) {
+          this._painted = chain();
+          this._oldVars = this._painted.map(el => [el, VARS.map(v => [v, el.style.getPropertyValue(v)]), el.style.background]);
+          this._oldMeta = meta && meta.getAttribute('content'); this._oldBody = document.body.style.background;
+        }
+        for (const el of this._painted) VARS.forEach(v => el.style.setProperty(v, col));
+        for (const el of this._painted) if (/^(HUI-VIEW|HUI-PANEL-VIEW|HUI-MASONRY-VIEW|HUI-SECTIONS-VIEW|HUI-VIEW-CONTAINER|HUI-VIEW-BACKGROUND)$/.test(el.tagName)) el.style.background = col;
         document.body.style.background = col;
         if (meta) meta.setAttribute('content', col);
       } else if (this._oldVars) {
-        this._oldVars.forEach(([v, x]) => x ? root.style.setProperty(v, x) : root.style.removeProperty(v));
+        for (const [el, vars, bg] of this._oldVars) { vars.forEach(([v, x]) => x ? el.style.setProperty(v, x) : el.style.removeProperty(v)); if (el !== root) el.style.background = bg || ''; }
         document.body.style.background = this._oldBody || '';
         if (meta && this._oldMeta != null) meta.setAttribute('content', this._oldMeta);
-        this._oldVars = null;
+        this._oldVars = null; this._painted = null;
       }
     }
     onDisconnect() {
@@ -335,6 +355,13 @@
     /** Utfør en dokk-/menyknapp: ark | hash | sti | url | entity (+ handling: toggle/more-info) */
     runItem(it) {
       if (!it) return;
+      if (it.hjem) { // tilbake til Hjem: lukk arket/popupen og rull til toppen
+        this.setState({ menu: false });
+        if (this.state.sheetOpen) this.closeSheet();
+        else if (location.hash) { history.replaceState(null, '', location.pathname + location.search); window.dispatchEvent(new CustomEvent('location-changed', { detail: { replace: true } })); }
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return this._queue();
+      }
       if (it.ark) return this.openSheet(it.ark, it.ark === 'rom' ? { roomId: it.rom } : it.ark === 'person' ? { personId: it.person } : {});
       if (it.hash) return this.nav(it.hash.startsWith('#') ? it.hash : '#' + it.hash);
       if (it.sti) return this.nav(it.sti);
@@ -346,7 +373,7 @@
     /** alle knapper fra dokk + meny, med en stabil nøkkel */
     dockPool() {
       const c = this.config, seen = new Set(), out = [];
-      const key = it => it.id || it.ark && (it.ark + (it.rom ? ':' + it.rom : '') + (it.person ? ':' + it.person : '')) || it.hash || it.sti || it.url || it.entity || it.navn;
+      const key = it => it.id || it.hjem && 'hjem' || it.ark && (it.ark + (it.rom ? ':' + it.rom : '') + (it.person ? ':' + it.person : '')) || it.hash || it.sti || it.url || it.entity || it.navn;
       [...(c.dokk || []), ...(c.meny || [])].filter(Boolean).forEach((it, i) => {
         const k = String(key(it) || 'i' + i); if (seen.has(k)) return; seen.add(k);
         out.push({ ...it, _k: k, _dock: i < (c.dokk || []).filter(Boolean).length });
@@ -376,6 +403,41 @@
       return { pool, dock, menu: pool.filter(p => !inDock.has(p._k)) };
     }
     dockItems() { return this.dockLayout().dock; }
+    /* ----- Tilpass Hjem ----- */
+    hjemCols(HU) {
+      const all = [...TILE_V, ...TILE_H];
+      const V = (Array.isArray(HU.venstre) ? HU.venstre : TILE_V).filter((k, i, a) => all.includes(k) && a.indexOf(k) === i);
+      const H = (Array.isArray(HU.hoyre) ? HU.hoyre : TILE_H).filter((k, i, a) => all.includes(k) && !V.includes(k) && a.indexOf(k) === i);
+      for (const k of all) if (!V.includes(k) && !H.includes(k)) (TILE_V.includes(k) ? V : H).push(k);
+      return [V, H];
+    }
+    hjemEditOpen() { this.setState({ hjemEdit: true, menu: false, dockEdit: false }); }
+    hjemEditClose() { this.setState({ hjemEdit: false }); }
+    hjemReset() { this.haptic('selection'); KD.udSave(this, 'kd_hjem', {}); }
+    /** arg: gruppe|nøkkel|handling – gruppe: sek | prosa | venstre | hoyre, handling: opp | ned | skjul | bytt */
+    hjemOp(ev, arg) {
+      const [g, k, op] = String(arg).split('|');
+      const HU = JSON.parse(JSON.stringify(KD.ud(this, 'kd_hjem') || {}));
+      const skjul = new Set(HU.skjul || []);
+      const move = (arr, i, d) => { const j = i + d; if (j < 0 || j >= arr.length) return false; [arr[i], arr[j]] = [arr[j], arr[i]]; return true; };
+      if (g === 'venstre' || g === 'hoyre') {
+        const [V, H] = this.hjemCols(HU), A = g === 'venstre' ? V : H, B = g === 'venstre' ? H : V, i = A.indexOf(k);
+        if (i < 0) return;
+        if (op === 'skjul') { skjul.has('flis:' + k) ? skjul.delete('flis:' + k) : skjul.add('flis:' + k); }
+        else if (op === 'bytt') { A.splice(i, 1); B.push(k); }
+        else if (!move(A, i, op === 'opp' ? -1 : 1)) return;
+        HU.venstre = V; HU.hoyre = H;
+      } else {
+        const field = g === 'sek' ? 'seksjoner' : 'prosa', list = norm(HU[field], g === 'sek' ? SEK_KEYS : PROSA_KEYS), i = list.indexOf(k);
+        if (i < 0) return;
+        if (op === 'skjul') { const t = g + ':' + k; skjul.has(t) ? skjul.delete(t) : skjul.add(t); }
+        else if (!move(list, i, op === 'opp' ? -1 : 1)) return;
+        HU[field] = list;
+      }
+      HU.skjul = [...skjul];
+      this.haptic('selection');
+      KD.udSave(this, 'kd_hjem', HU);
+    }
     dockEditOpen() { this.setState({ dockEdit: true, menu: false }); }
     dockEditClose() { this.setState({ dockEdit: false }); }
     dockMove(ev, arg) {
@@ -400,7 +462,7 @@
       if (i >= items.length) return this.setState({ menu: !this.state.menu, dockEdit: false });
       const it = items[i];
       if (this.state.menu) this.setState({ menu: false });
-      if (it.ark || it.hash) this.pickTab(i);
+      this.setState({ compact: false });
       this.runItem(it);
     }
     /** Dra fingeren langs dokken: glasslinsen følger fingeren, slipp for å velge */
@@ -468,6 +530,8 @@
     }
 
     afterRender() {
+      // HA kan legge temaet på nytt (navigasjon/tema-bytte) – mal over igjen hvis noe er overskrevet
+      if (this._painted && this._painted.some(el => el.style.getPropertyValue('--lovelace-background') !== (this.config.bakgrunn || '#141416'))) { const col = this.config.bakgrunn || '#141416'; for (const el of this._painted) ['--lovelace-background', '--primary-background-color', '--view-background'].forEach(v => el.style.setProperty(v, col)); }
       if (this._animHead && this.state.sheetOpen) { this._animHead = false; requestAnimationFrame(() => KD.animateSheetTop(this.shadowRoot)); }
     }
 
@@ -663,18 +727,27 @@
       const T = this.trash();
 
       /* ----- dokk ----- */
-      const tab = s.tab ?? 0, compact = !!s.compact, moving = !!s.moving;
+      const compact = !!s.compact;
       const arr = x => Array.isArray(x) ? x : x ? [x] : [];
       const dotOf = it => arr(it.prikk).some(id => ['on', 'open', 'unlocked', 'problem', 'playing'].includes(this.v(id))) || arr(it.prikk_av).some(id => this.v(id) === 'off');
       const LAY = this.dockLayout(), OPT = this.dockOpts(), NAVN = OPT.navn, BRED = OPT.bred, ACC = 'oklch(0.8 0.13 350)';
+      // aktiv fane = åpent ark (eller #hash med bubble-card); ingen ark → Hjem-knappen; ark fra «Mer» → Mer
+      const hashKey = HASH[(location.hash || '').slice(1)] || (location.hash && Object.values(this.roomsAll || {}).some(r => r.hash === location.hash) ? 'rom' : null);
+      const curKey = s.sheetOpen && s.sheetFile ? s.sheetFile : c.ark === 'bubble' ? hashKey : null;
+      const curRoom = curKey === 'rom' ? s.sheetRoomId : null;
+      const hitIt = it => it.ark === curKey && (curKey !== 'rom' || !it.rom || it.rom === curRoom) || (it.hash && location.hash === (it.hash.startsWith('#') ? it.hash : '#' + it.hash));
+      let tab = curKey ? LAY.dock.findIndex(hitIt) : LAY.dock.findIndex(it => it.hjem);
+      if (tab < 0 && curKey && LAY.menu.some(hitIt)) tab = LAY.dock.length; // «Mer»
+      if (tab !== this._lastTab) { this._prevTab = this._lastTab ?? tab; this._lastTab = tab; this._movingT = Date.now(); clearTimeout(this._mvT); this._mvT = setTimeout(() => this._queue(), 300); }
+      const moving = Date.now() - (this._movingT || 0) < 260;
       const ITEMS = LAY.dock.map(it => [it.ikon || 'circle', it.navn || '', dotOf(it)]);
       ITEMS.push(['more_horiz', 'Mer', LAY.menu.some(dotOf)]);
       const GAP = 2, PAD = 6, AVAIL = Math.min(window.innerWidth || 460, 560) - 16 - 2 * PAD, FIT = Math.floor((AVAIL - GAP * (ITEMS.length - 1)) / ITEMS.length);
       const SZ = Math.max(38, Math.min(NAVN ? 58 : 44, FIT)), SH = BRED ? (NAVN ? 58 : 50) : NAVN ? 52 : 44, N = ITEMS.length, MB = 18 + SH + 2 * PAD + 10;
-      const CELL = `((100% - ${2 * PAD}px - ${(N - 1) * GAP}px) / ${N})`, dist = Math.abs(tab - (s.prevTab ?? tab)), lx = s.lx;
+      const CELL = `((100% - ${2 * PAD}px - ${(N - 1) * GAP}px) / ${N})`, dist = Math.abs(tab - (this._prevTab ?? tab)), lx = s.lx;
       const navStyle = {
         position: 'fixed', left: '50%', bottom: 18, zIndex: 24, display: 'flex', gap: GAP, touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none', maxWidth: 'calc(100vw - 16px)', padding: PAD, borderRadius: BRED ? (SH + 2 * PAD) / 2 : NAVN ? 32 : 30, overflow: 'hidden', isolation: 'isolate',
-        ...(BRED ? { width: 'calc(min(100vw, var(--kd-bredde,560px)) - 2 * var(--kd-kant,10px))', boxSizing: 'border-box' } : {}),
+        ...(BRED ? { width: 'min(calc(100vw - 2 * var(--kd-kant,10px)), 640px)', boxSizing: 'border-box' } : {}),
         background: BRED ? 'rgba(36,36,39,0.72)' : 'rgba(40,40,44,0.38)', backdropFilter: 'blur(22px) saturate(190%) brightness(1.1)', WebkitBackdropFilter: 'blur(22px) saturate(190%) brightness(1.1)',
         boxShadow: BRED ? 'inset 0 0 0 0.5px rgba(255,255,255,0.14), inset 0 1px 0 rgba(255,255,255,0.1), 0 18px 40px rgba(0,0,0,0.5)' : '0 18px 40px rgba(0,0,0,0.45), 0 2px 6px rgba(0,0,0,0.25)',
         transform: `translateX(-50%) scale(${compact ? 0.8 : 1}) translateY(${compact ? 8 : 0}px)`, transformOrigin: 'bottom center',
@@ -682,15 +755,15 @@
       };
       const navSheen = { position: 'absolute', inset: 0, borderRadius: 'inherit', pointerEvents: 'none', opacity: lx == null ? 0 : 1, transition: 'opacity .3s', background: `radial-gradient(120px 60px at ${lx ?? 50}% 0%, rgba(255,255,255,0.28), transparent 70%)` };
       const indicator = {
-        position: 'absolute', top: PAD, pointerEvents: 'none',
-        ...(BRED ? { left: `calc(${PAD}px + ${Math.min(tab, N - 1)} * (${CELL} + ${GAP}px))`, width: `calc(${CELL})`, height: SH, borderRadius: SH / 2,
+        position: 'absolute', top: PAD, pointerEvents: 'none', opacity: tab < 0 ? 0 : 1,
+        ...(BRED ? { left: `calc(${PAD}px + ${Math.max(0, Math.min(tab, N - 1))} * (${CELL} + ${GAP}px))`, width: `calc(${CELL})`, height: SH, borderRadius: SH / 2,
           background: 'rgba(0,0,0,0.42)', boxShadow: 'inset 0 0 0 0.5px rgba(255,255,255,0.06), inset 0 1px 2px rgba(0,0,0,0.3)' }
-          : { left: PAD + Math.min(tab, N - 1) * (SZ + GAP), width: SZ, height: SH, borderRadius: NAVN ? 26 : 22,
+          : { left: PAD + Math.max(0, Math.min(tab, N - 1)) * (SZ + GAP), width: SZ, height: SH, borderRadius: NAVN ? 26 : 22,
           background: 'linear-gradient(180deg, rgba(255,255,255,0.34), rgba(255,255,255,0.14))',
           boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.6), inset 0 -1px 1px rgba(255,255,255,0.15), 0 4px 14px rgba(0,0,0,0.25)' }),
         backdropFilter: 'blur(6px) saturate(200%)', WebkitBackdropFilter: 'blur(6px) saturate(200%)',
         transform: moving ? `scaleX(${1 + Math.min(dist, 4) * 0.12}) scaleY(${1 - Math.min(dist, 4) * 0.04})` : 'scale(1)',
-        transition: 'left .5s cubic-bezier(.34,1.4,.64,1), transform .45s cubic-bezier(.34,1.8,.64,1)',
+        transition: 'left .5s cubic-bezier(.34,1.4,.64,1), transform .45s cubic-bezier(.34,1.8,.64,1), opacity .25s',
       };
       const dock = ITEMS.map(([icon, title, dot], i) => { const act = i === tab; return { i, icon, title,
         style: { position: 'relative', zIndex: 1, ...(BRED ? { flex: '1 1 0', minWidth: 0 } : { flex: 'none', width: SZ }), height: SH, borderRadius: 22, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, color: '#f2f1ee', transition: 'transform .35s cubic-bezier(.34,1.8,.64,1)', WebkitTapHighlightColor: 'transparent' },
@@ -699,6 +772,29 @@
         iconStyle: BRED ? { fontSize: 24, color: act ? ACC : '#f2f1ee', transform: act ? 'scale(1.06)' : 'scale(1)', fontVariationSettings: "'FILL' 1", transition: 'transform .4s cubic-bezier(.34,1.8,.64,1), color .25s' } : { fontSize: 22, opacity: act ? 1 : 0.72, transform: act ? 'scale(1.08)' : 'scale(1)', fontVariationSettings: `'FILL' ${act ? 1 : 0}`, transition: 'transform .4s cubic-bezier(.34,1.8,.64,1), opacity .2s', textShadow: '0 1px 2px rgba(0,0,0,0.3)' },
         dot: { position: 'absolute', right: BRED ? 'calc(50% - 16px)' : NAVN ? 13 : 9, top: NAVN ? 5 : 9, width: 7, height: 7, borderRadius: 4, background: dot ? C.red : 'transparent', boxShadow: dot ? '0 0 0 1.5px rgba(30,30,34,0.6)' : 'none' } }; });
       const menuItems = LAY.menu.map((m, i) => [m.ikon || 'circle', m.navn || '', i, m.farge || '#c9c7c2', dotOf(m)]);
+      const hjemEditHTML = () => {
+        const HU = KD.ud(this, 'kd_hjem'), SK = new Set(HU.skjul || []), [V, H] = this.hjemCols(HU);
+        const ib = (arg, icon, title, col, dis) => `<button class="kd-press" data-on-click="hjemOp" data-arg="${e(arg)}" title="${title}" style="${S({ width: 34, height: 34, borderRadius: 17, flex: 'none', display: 'grid', placeItems: 'center', color: col || '#8e8d89', opacity: dis ? 0.25 : 1, pointerEvents: dis ? 'none' : null })}"><span class="ms" style="font-size:20px">${icon}</span></button>`;
+        const rows = (g, keys, lab, hideKey) => keys.map((k, i) => { const hid = SK.has(hideKey + ':' + k), [icon, name] = lab[k];
+          return `<div data-key="he-${g}-${k}" style="min-height:46px;padding:0 4px 0 12px;border-radius:16px;display:flex;align-items:center;gap:10px;opacity:${hid ? 0.45 : 1}">
+            <span class="ms" style="font-size:20px;color:#c9c7c2">${icon}</span>
+            <span style="flex:1;min-width:0;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(name)}</span>
+            ${ib(g + '|' + k + '|opp', 'arrow_upward', 'Flytt opp', null, i === 0)}${ib(g + '|' + k + '|ned', 'arrow_downward', 'Flytt ned', null, i === keys.length - 1)}
+            ${g === 'venstre' || g === 'hoyre' ? ib(g + '|' + k + '|bytt', 'swap_horiz', 'Bytt kolonne') : ''}
+            ${ib(g + '|' + k + '|skjul', hid ? 'visibility_off' : 'visibility', hid ? 'Vis' : 'Skjul', hid ? '#6d6c69' : 'oklch(0.82 0.1 350)')}
+          </div>`; }).join('');
+        const head = t => `<div style="padding:12px 14px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">${t}</div>`;
+        return `<div data-key="he-bd" data-on-click="hjemEditClose" style="position:fixed;inset:0;z-index:27;background:rgba(0,0,0,0.35)"></div>
+    <div data-key="he-panel" style="position:fixed;left:50%;transform:translateX(-50%);bottom:${MB}px;z-index:28;width:min(420px, calc(100vw - 24px));max-height:calc(100vh - ${MB + 40}px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;box-sizing:border-box;padding:8px;border-radius:26px;background:rgba(40,40,44,0.78);backdrop-filter:blur(26px) saturate(190%);-webkit-backdrop-filter:blur(26px) saturate(190%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.3),inset 0 0 0 0.5px rgba(255,255,255,0.18),0 18px 40px rgba(0,0,0,0.5);display:flex;flex-direction:column;gap:2px">
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 6px 6px 14px"><span style="flex:1;font-size:16px;font-weight:600">Tilpass Hjem</span>
+        <button class="kd-hov8" data-on-click="hjemReset" style="height:34px;padding:0 12px;border-radius:17px;font-size:12px;color:#a9a7a2">Nullstill</button>
+        <button data-on-click="hjemEditClose" style="height:34px;padding:0 14px;border-radius:17px;font-size:13px;font-weight:600;background:linear-gradient(135deg, oklch(0.78 0.13 350), oklch(0.9 0.05 20));color:#2a1720">Ferdig</button></div>
+      ${head('Seksjoner')}${rows('sek', norm(HU.seksjoner, SEK_KEYS), HLABEL.sek, 'sek')}
+      ${head('Setningen øverst')}${rows('prosa', norm(HU.prosa, PROSA_KEYS), HLABEL.prosa, 'prosa')}
+      ${head('Fliser – venstre kolonne')}${rows('venstre', V, HLABEL.flis, 'flis')}
+      ${head('Fliser – høyre kolonne')}${rows('hoyre', H, HLABEL.flis, 'flis')}
+    </div>`;
+      };
       const dockEditHTML = () => {
         const sw = on => `<span style="${S({ width: 44, height: 26, borderRadius: 13, flex: 'none', position: 'relative', background: on ? 'oklch(0.78 0.13 350)' : '#3a3a3d', transition: 'background .2s' })}"><span style="${S({ position: 'absolute', top: 3, left: on ? 21 : 3, width: 20, height: 20, borderRadius: 10, background: '#f4f3ef', transition: 'left .25s cubic-bezier(.34,1.56,.64,1)' })}"></span></span>`;
         const opt = (k, label, sub, on) => `<button class="kd-hov8" data-on-click="dockOpt" data-arg="${k}" style="min-height:52px;padding:6px 10px 6px 14px;border-radius:16px;display:flex;align-items:center;gap:12px;text-align:left"><span style="flex:1;min-width:0;display:flex;flex-direction:column"><span style="font-size:14px;font-weight:500">${label}</span><span style="font-size:11px;color:#8e8d89">${sub}</span></span>${sw(on)}</button>`;
@@ -731,7 +827,7 @@
 
       /* ----- ark ----- */
       const sheetBackdrop = { position: 'fixed', inset: 0, zIndex: 20, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', opacity: s.sheetOpen ? 1 : 0, pointerEvents: s.sheetOpen ? 'auto' : 'none', transition: 'opacity .35s' };
-      const sheetPanel = { position: 'fixed', left: '50%', bottom: 0, zIndex: 21, width: '100%', maxWidth: 540, height: 'calc(100vh - 52px)', display: 'flex', flexDirection: 'column', borderRadius: '38px 38px 0 0', overflow: 'hidden', background: '#141416', boxShadow: '0 -20px 50px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08)', transform: `translateX(-50%) translateY(${s.sheetOpen ? 0 : 105}%)`, transition: 'transform .5s cubic-bezier(.32,1.2,.5,1)' };
+      const sheetPanel = { position: 'fixed', left: '50%', bottom: 0, zIndex: 21, width: '100%', maxWidth: 'var(--kd-ark-bredde, 100%)', height: 'calc(100vh - 52px)', display: 'flex', flexDirection: 'column', borderRadius: '38px 38px 0 0', overflow: 'hidden', background: '#141416', boxShadow: '0 -20px 50px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08)', transform: `translateX(-50%) translateY(${s.sheetOpen ? 0 : 105}%)`, transition: 'transform .5s cubic-bezier(.32,1.2,.5,1)' };
       const sh = this.sheetHeadVals();
 
       /* ----- dialoger ----- */
@@ -789,47 +885,36 @@
     </div>`;
       };
 
-      return `<div style="position:relative;box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) calc(${MB + 24}px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:22px">
-
-  <header style="display:flex;flex-direction:column;gap:16px">
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
-      <div style="display:flex;flex-direction:column;gap:6px;min-width:0">
-        <button data-on-click="toggleServer" style="display:flex;align-items:center;gap:4px;font-size:36px;font-weight:600;letter-spacing:-0.03em;line-height:1;white-space:nowrap"><span>${e(CUR.navn || 'Hjem')}</span><span class="ms" style="${S(serverChev)}">arrow_drop_down</span></button>
-        <button data-on-click="openWeather" style="font-size:16px;color:#8e8d89;white-space:nowrap;text-align:left">${W.head != null ? Math.round(W.head) : '–'} °C · ${e(W.cond)}</button>
-      </div>
-      <button data-on-click="openMe" data-hold="openMeSheet" title="${e(me.navn)}" style="position:relative;width:60px;height:60px;border-radius:30px;flex:none;display:grid;place-items:center;font-size:22px;font-weight:600;background:${e(me.farge)};box-shadow:${meRing};${this.pic(me)}">${e(me.navn[0])}${meB.show ? `<span style="position:absolute;right:-6px;top:-4px;width:24px;height:24px;border-radius:12px;background:#232326;box-shadow:0 0 0 2px #141416;display:grid;place-items:center"><span class="ms" style="${S(meB.style)}">${meB.icon}</span></span>` : ''}</button>
-    </div>
-    <div style="display:flex;gap:14px">
+      /* ----- Tilpass Hjem: rekkefølge/synlighet (per bruker, 'kd_hjem') ----- */
+      const HU = KD.ud(this, 'kd_hjem'), HSKJUL = new Set(HU.skjul || []);
+      const P_UTE = `<button data-on-click="openWeather" style="display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 11px;border-radius:16px;background:#232326;font-weight:500;vertical-align:middle;white-space:nowrap"><span class="ms" style="font-size:18px;color:#bdbbb6">${W.icon}</span>${W.t != null ? nf(W.t, 1) : '–'}°</button>`, P_PRIS = `<button data-on-click="goPower" style="${S(pricePill)}"><span style="${S(priceDot)}"></span><span>${pNow != null ? nf(pNow) : '–'}</span> kr</button>`, P_WATT = `<span style="display:inline-flex;align-items:center;height:32px;padding:0 11px;border-radius:16px;background:#232326;font-weight:500;vertical-align:middle;white-space:nowrap;font-variant-numeric:tabular-nums"><span>${watt}</span> W</span>`, P_LYS = `<button data-on-click="showLights" style="display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 11px;border-radius:16px;background:oklch(0.86 0.12 95 / 0.16);box-shadow:inset 0 0 0 1px oklch(0.86 0.12 95 / 0.4);font-weight:500;vertical-align:middle;white-space:nowrap"><span class="ms" style="font-size:18px;color:oklch(0.86 0.12 95);font-variation-settings:'FILL' 1">lightbulb</span><span>${lightsOn}</span> lys</button>`, P_CAL = `<button data-on-click="openCal" style="display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 11px;border-radius:16px;background:#232326;font-weight:500;vertical-align:middle;white-space:nowrap"><span class="ms" style="font-size:18px;color:oklch(0.8 0.12 250)">event</span>${nEv == null ? '–' : nEv} ${nEv === 1 ? 'hendelse' : 'hendelser'}</button>`;
+      const PROSA_DEL = { ute: () => `Ute er det ${P_UTE}.`, strom: () => `Strømmen koster ${P_PRIS}.`, effekt: () => `Vi bruker ${P_WATT}.`, lys: () => `Det er ${P_LYS} på.`, hendelser: () => `Vi har ${P_CAL} i dag.` };
+      const PR = norm(HU.prosa, PROSA_KEYS), prVis = PR.filter(k => !HSKJUL.has('prosa:' + k));
+      const prosaTxt = prVis.join() === PROSA_KEYS.join() ? `Ute er det ${P_UTE}. Strømmen koster ${P_PRIS} og vi bruker ${P_WATT} med ${P_LYS} på. Vi har ${P_CAL} i dag.` : prVis.map(k => PROSA_DEL[k]()).join(' ');
+      const TILE = { las: () => tileHTML(lockTile), romV: () => carousel(left, 'iL'), alarm: () => tileHTML(alarmTile), romH: () => carousel(right, 'iR'), kamera: () => tileHTML(camTile), gjoremal: () => tileHTML(todoTile) };
+      const [COLV0, COLH0] = this.hjemCols(HU);
+      const COLV = COLV0.filter(k => !HSKJUL.has('flis:' + k)), COLH = COLH0.filter(k => !HSKJUL.has('flis:' + k));
+      const SEK = {
+        personer: () => `    <div data-key="h-personer" style="display:flex;gap:14px;flex-wrap:wrap;margin-top:-6px">
       ${people.map(({ p, b, avatar }) => `<button data-on-click="openPerson" data-arg="${e(p.id)}" title="${e(p.navn)}" style="position:relative;display:flex;flex-direction:column;align-items:center;gap:5px">
           <span style="${S(avatar)}${this.pic(p)}">${e(p.navn[0])}</span>
           ${b.show ? `<span style="position:absolute;right:-8px;top:-6px;width:24px;height:24px;border-radius:12px;background:#232326;box-shadow:0 0 0 2px #141416;display:grid;place-items:center"><span class="ms" style="${S(b.style)}">${b.icon}</span></span>` : ''}
           <span style="font-size:11px;color:#8e8d89">${e(p.navn)}</span>
         </button>`).join('')}
-    </div>
-    <div style="font-size:22px;font-weight:400;line-height:1.75;letter-spacing:-0.01em;text-wrap:pretty">
-      Ute er det <button data-on-click="openWeather" style="display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 11px;border-radius:16px;background:#232326;font-weight:500;vertical-align:middle;white-space:nowrap"><span class="ms" style="font-size:18px;color:#bdbbb6">${W.icon}</span>${W.t != null ? nf(W.t, 1) : '–'}°</button>. Strømmen koster <button data-on-click="goPower" style="${S(pricePill)}"><span style="${S(priceDot)}"></span><span>${pNow != null ? nf(pNow) : '–'}</span> kr</button> og vi bruker <span style="display:inline-flex;align-items:center;height:32px;padding:0 11px;border-radius:16px;background:#232326;font-weight:500;vertical-align:middle;white-space:nowrap;font-variant-numeric:tabular-nums"><span>${watt}</span> W</span> med <button data-on-click="showLights" style="display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 11px;border-radius:16px;background:oklch(0.86 0.12 95 / 0.16);box-shadow:inset 0 0 0 1px oklch(0.86 0.12 95 / 0.4);font-weight:500;vertical-align:middle;white-space:nowrap"><span class="ms" style="font-size:18px;color:oklch(0.86 0.12 95);font-variation-settings:'FILL' 1">lightbulb</span><span>${lightsOn}</span> lys</button> på. Vi har <button data-on-click="openCal" style="display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 11px;border-radius:16px;background:#232326;font-weight:500;vertical-align:middle;white-space:nowrap"><span class="ms" style="font-size:18px;color:oklch(0.8 0.12 250)">event</span>${nEv == null ? '–' : nEv} ${nEv === 1 ? 'hendelse' : 'hendelser'}</button> i dag.
-    </div>
-  </header>
-
-  <section style="display:flex;flex-direction:column;gap:12px">
+    </div>`,
+        prosa: () => prVis.length ? `<div data-key="h-prosa" style="font-size:22px;font-weight:400;line-height:1.75;letter-spacing:-0.01em;text-wrap:pretty;margin-top:-6px">
+      ${prosaTxt}
+    </div>` : '',
+        rom: () => `  <section data-key="h-rom" style="display:flex;flex-direction:column;gap:12px">
     <div style="display:flex;gap:2px;padding:4px;border-radius:22px;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.14);align-self:flex-start">
       ${FLOORS.map(([k, label]) => `<button data-on-click="goFloor" data-arg="${k}" style="${S({ height: 38, padding: '0 16px', borderRadius: 19, fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', background: s.floor === k ? PINK : 'transparent', color: s.floor === k ? '#2a1720' : '#c9c7c2' })}">${label}</button>`).join('')}
     </div>
     <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:start">
-      <div style="display:flex;flex-direction:column;gap:8px">
-        ${tileHTML(lockTile)}
-        ${carousel(left, 'iL')}
-        ${tileHTML(alarmTile)}
-      </div>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        ${carousel(right, 'iR')}
-        ${tileHTML(camTile)}
-        ${tileHTML(todoTile)}
-      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;min-width:0">${COLV.map(k => TILE[k]()).join('')}</div>
+      <div style="display:flex;flex-direction:column;gap:8px;min-width:0">${COLH.map(k => TILE[k]()).join('')}</div>
     </div>
-  </section>
-
-  ${T ? `<section data-on-click="openTrash" style="display:flex;align-items:center;gap:16px;padding:16px 18px;border-radius:22px;background:#1c1c1f;cursor:pointer">
+  </section>`,
+        soppel: () => `  ${T ? `<section data-on-click="openTrash" style="display:flex;align-items:center;gap:16px;padding:16px 18px;border-radius:22px;background:#1c1c1f;cursor:pointer">
     <div style="width:56px;height:56px;border-radius:18px;background:#141416;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);display:flex;flex-direction:column;align-items:center;justify-content:center;flex:none">
       <span style="font-size:26px;font-weight:500;line-height:1;font-variant-numeric:tabular-nums">${T.days}</span>
       <span style="font-size:10px;color:#8e8d89">${T.days === 1 ? 'dag' : 'dager'}</span>
@@ -840,9 +925,8 @@
         ${T.due.map(f => `<span style="height:26px;padding:0 10px 0 8px;border-radius:13px;display:flex;align-items:center;gap:5px;font-size:12px;background:#232326;white-space:nowrap"><span style="width:8px;height:8px;border-radius:4px;background:${f.col}"></span>${e(f.name)}</span>`).join('')}
       </div>
     </div>
-  </section>` : ''}
-
-  <section style="display:flex;flex-direction:column;gap:12px">
+  </section>` : ''}`,
+        strom: () => `  <section data-key="h-strom" style="display:flex;flex-direction:column;gap:12px">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:0 4px">
       <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Strømpriser</div>
       <div style="display:flex;padding:3px;border-radius:14px;background:#1c1c1f;gap:2px">
@@ -893,15 +977,34 @@
       </div>
       <div style="display:flex;justify-content:space-between;font-size:9px;color:#6d6c69;font-variant-numeric:tabular-nums;padding-left:26px"><span>04</span><span>08</span><span>12</span><span>16</span><span>20</span><span style="color:#a9a7a2">00</span><span>04</span><span>08</span><span>12</span><span>16</span><span>20</span></div>
     </div>
-  </section>
+  </section>`,
+      };
+      const SECS = norm(HU.seksjoner, SEK_KEYS).filter(k => !HSKJUL.has('sek:' + k)).map(k => SEK[k]()).join('\n\n');
+
+
+      return `<div style="position:relative;box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) calc(${MB + 24}px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:22px">
+
+  <header style="display:flex;flex-direction:column;gap:16px">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+      <div style="display:flex;flex-direction:column;gap:6px;min-width:0">
+        <button data-on-click="toggleServer" style="display:flex;align-items:center;gap:4px;font-size:36px;font-weight:600;letter-spacing:-0.03em;line-height:1;white-space:nowrap"><span>${e(CUR.navn || 'Hjem')}</span><span class="ms" style="${S(serverChev)}">arrow_drop_down</span></button>
+        <button data-on-click="openWeather" style="font-size:16px;color:#8e8d89;white-space:nowrap;text-align:left">${W.head != null ? Math.round(W.head) : '–'} °C · ${e(W.cond)}</button>
+      </div>
+      <button data-on-click="openMe" data-hold="openMeSheet" title="${e(me.navn)}" style="position:relative;width:60px;height:60px;border-radius:30px;flex:none;display:grid;place-items:center;font-size:22px;font-weight:600;background:${e(me.farge)};box-shadow:${meRing};${this.pic(me)}">${e(me.navn[0])}${meB.show ? `<span style="position:absolute;right:-6px;top:-4px;width:24px;height:24px;border-radius:12px;background:#232326;box-shadow:0 0 0 2px #141416;display:grid;place-items:center"><span class="ms" style="${S(meB.style)}">${meB.icon}</span></span>` : ''}</button>
+    </div>
+  </header>
+
+  ${SECS}
 
   ${s.menu ? `<div data-key="menu-bd" data-on-click="closeMenu" style="position:fixed;inset:0;z-index:25"></div>
     <div style="position:fixed;right:max(12px, calc(50% - 198px));bottom:${MB}px;z-index:26;min-width:180px;max-height:calc(100vh - 120px);overflow-y:auto;scrollbar-width:none;box-sizing:border-box;padding:6px;border-radius:22px;background:rgba(40,40,44,0.5);backdrop-filter:blur(22px) saturate(190%);-webkit-backdrop-filter:blur(22px) saturate(190%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.3),inset 0 0 0 0.5px rgba(255,255,255,0.18),0 18px 40px rgba(0,0,0,0.45);display:flex;flex-direction:column;gap:2px">
       ${menuItems.map(([icon, label, k, col, dot]) => `<button class="kd-hov" data-on-click="menuGo" data-arg="${k}" style="height:44px;padding:0 14px 0 10px;border-radius:16px;display:flex;align-items:center;gap:10px;font-size:14px;font-weight:500;white-space:nowrap"><span class="ms" style="font-size:20px;color:${e(col)}">${e(icon)}</span><span style="flex:1;text-align:left">${e(label)}</span>${dot ? `<span style="width:7px;height:7px;border-radius:4px;background:${C.red}"></span>` : ''}</button>`).join('')}
       ${menuItems.length ? '<div style="height:1px;margin:4px 10px;background:rgba(255,255,255,0.08)"></div>' : ''}
       <button class="kd-hov" data-on-click="dockEditOpen" style="height:44px;padding:0 14px 0 10px;border-radius:16px;display:flex;align-items:center;gap:10px;font-size:14px;font-weight:500;white-space:nowrap;color:#a9a7a2"><span class="ms" style="font-size:20px">edit</span>Tilpass dokken</button>
+      <button class="kd-hov" data-on-click="hjemEditOpen" style="height:44px;padding:0 14px 0 10px;border-radius:16px;display:flex;align-items:center;gap:10px;font-size:14px;font-weight:500;white-space:nowrap;color:#a9a7a2"><span class="ms" style="font-size:20px">dashboard_customize</span>Tilpass Hjem</button>
     </div>` : ''}
   ${s.dockEdit ? dockEditHTML() : ''}
+  ${s.hjemEdit ? hjemEditHTML() : ''}
 
   ${s.quickId ? quickHTML() : ''}
   ${lockHTML()}
@@ -924,7 +1027,7 @@
       <span style="width:36px;height:4px;border-radius:2px;background:rgba(255,255,255,0.22)"></span>
       <div data-bh="pill" data-keep style="position:relative;overflow:hidden;width:100%;box-sizing:border-box;height:60px;padding:0 8px;border-radius:30px;background:rgba(38,38,41,0.82);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.07),0 8px 24px rgba(0,0,0,0.35);display:flex;align-items:center;gap:12px;pointer-events:auto" data-head="${e(sh.icon + '|' + sh.title + '|' + sh.sub)}"></div>
     </div>
-    <div data-snap="1" data-sheet-scroll="1" style="flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:none;padding-top:84px;padding-bottom:110px">
+    <div data-snap="1" data-sheet-scroll="1" style="flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;touch-action:pan-y;overscroll-behavior:contain;scrollbar-width:none;padding-top:84px;padding-bottom:110px">
       <div data-sheet-host data-keep></div>
     </div>
   </div>`}
