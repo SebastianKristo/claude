@@ -1,0 +1,65 @@
+# Variant med bubble-card-popups (krever bubble-card i HACS + /local/ki-hjem-design.js).
+# kd-hjem-card navigerer bare til #hash; hver popup inneholder ett kd-ark som tegner designets topp-pille selv.
+# Bubble-cardets egen topp er skjult og rammen er stilt som designets bunnark (#141416, 38 px hjørner, maks 440 px).
+
+views:
+  - title: Hjem
+    path: hjem
+    icon: mdi:home
+    type: panel
+    background: '#0f0f10'
+    cards:
+      - type: vertical-stack
+        cards:
+          - type: custom:kd-hjem-card
+            ark: bubble
+          - &ark
+            type: custom:bubble-card
+            card_type: pop-up
+            hash: '#strom'
+            show_header: false
+            is_sidebar_hidden: true
+            bg_color: '#141416'
+            bg_opacity: '100'
+            bg_blur: '4'
+            shadow_opacity: '50'
+            margin_top_mobile: 52px
+            margin_top_desktop: 52px
+            width_desktop: 440px
+            styles: |
+              .bubble-pop-up { border-radius: 38px 38px 0 0 !important; background: #141416 !important;
+                box-shadow: 0 -20px 50px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08) !important; }
+              .bubble-pop-up-container { padding: 0 0 110px !important; --vertical-stack-card-gap: 0px !important; }
+              .bubble-header-container { display: none !important; }
+            cards:
+              - type: custom:kd-strom-card
+          - { <<: *ark, hash: '#klima', cards: [{ type: custom:kd-klima-card }] }
+          - { <<: *ark, hash: '#alarm', cards: [{ type: custom:kd-sikkerhet-card }] }
+          - { <<: *ark, hash: '#kamera', cards: [{ type: custom:kd-kamera-card }] }
+          - { <<: *ark, hash: '#personer', cards: [{ type: custom:kd-person-card }] }
+          - { <<: *ark, hash: '#vanning', cards: [{ type: custom:kd-vanning-card }] }
+          - { <<: *ark, hash: '#planter', cards: [{ type: custom:kd-planter-card }] }
+          - { <<: *ark, hash: '#sovn', cards: [{ type: custom:kd-sovn-card }] }
+          - { <<: *ark, hash: '#weather', cards: [{ type: custom:kd-vaer-card }] }
+          - { <<: *ark, hash: '#rolf', cards: [{ type: custom:kd-stovsuger-card }] }
+          - { <<: *ark, hash: '#media', cards: [{ type: custom:kd-media-card }] }
+          - { <<: *ark, hash: '#tesla', cards: [{ type: custom:kd-bil-card }] }
+          - { <<: *ark, hash: '#3d', cards: [{ type: custom:kd-printer-card }] }
+          - { <<: *ark, hash: '#server', cards: [{ type: custom:kd-server-card }] }
+          - { <<: *ark, hash: '#settings', cards: [{ type: custom:kd-innstillinger-card }] }
+          - { <<: *ark, hash: '#kalender', cards: [{ type: custom:kd-kalender-card }] }
+          - { <<: *ark, hash: '#gjoremal', cards: [{ type: custom:kd-gjoremal-card }] }
+          - { <<: *ark, hash: '#soppel', cards: [{ type: custom:kd-soppel-card }] }
+          - { <<: *ark, hash: '#lys', cards: [{ type: custom:kd-lys-card }] }
+          - { <<: *ark, hash: '#stue', cards: [{ type: custom:kd-rom-card, rom: stue }] }
+          - { <<: *ark, hash: '#kjokken', cards: [{ type: custom:kd-rom-card, rom: kjokken }] }
+          - { <<: *ark, hash: '#pult', cards: [{ type: custom:kd-rom-card, rom: pult }] }
+          - { <<: *ark, hash: '#soverom', cards: [{ type: custom:kd-rom-card, rom: soverom }] }
+          - { <<: *ark, hash: '#bad', cards: [{ type: custom:kd-rom-card, rom: bad }] }
+          - { <<: *ark, hash: '#gang', cards: [{ type: custom:kd-rom-card, rom: inngang }] }
+          - { <<: *ark, hash: '#do', cards: [{ type: custom:kd-rom-card, rom: do }] }
+          - { <<: *ark, hash: '#cybele', cards: [{ type: custom:kd-rom-card, rom: cybele_soverom }] }
+          - { <<: *ark, hash: '#rune', cards: [{ type: custom:kd-rom-card, rom: rune_soverom }] }
+          - { <<: *ark, hash: '#kontor', cards: [{ type: custom:kd-rom-card, rom: rune_kontor }] }
+          - { <<: *ark, hash: '#vaskegang', cards: [{ type: custom:kd-rom-card, rom: vaskegang }] }
+          - { <<: *ark, hash: '#ute', cards: [{ type: custom:kd-rom-card, rom: ute }] }

@@ -1,0 +1,37 @@
+# KI Hjem Design – «Hjem mobil» fra Claude Design som dashboard.
+# Lim inn i Rediger dashboard → ⋮ → Rå konfigurasjonsredigering.
+# Krever ressursen /local/ki-hjem-design.js (JavaScript-modul). Ingen andre HACS-kort er nødvendige.
+#
+# Alle ark (Strøm, Sikkerhet, Vanning, Støvsuger, Media, Bil, Server, Innstillinger, Kalender, Person,
+# Vær, Lys, Kamera, Klima, Søppel, Gjøremål, Planter, Søvn, 3D-printer og rommene) åpnes i kortets eget
+# bunnark – nøyaktig som i designet. De reagerer også på #hash (#strom, #alarm, #rolf, #media, #tesla,
+# #server, #settings, #kalender, #personer, #weather, #lys, #kamera, #klima, #soppel, #gjoremal, #planter,
+# #sovn, #3d, #vanning, #stue, #kjokken, #pult, #soverom, #bad, #gang, #do, #cybele, #rune, #kontor, #ute …).
+
+kiosk_mode:
+  mobile_settings:
+    hide_header: '{{ is_state("input_boolean.kiosk_mode", "on") }}'
+    custom_width: 1000
+  non_admin_settings:
+    kiosk: true
+
+views:
+  - title: Hjem
+    path: hjem
+    icon: mdi:home
+    type: panel
+    background: '#0f0f10'
+    cards:
+      - type: custom:kd-hjem-card
+        # Alt under er valgfritt – standardverdiene er dine entiteter.
+        # hjem:
+        #   venstre: [stue, inngang, ute]
+        #   hoyre: [pult, kjokken]
+        # servere:
+        #   - { navn: Strømstad, sub: Lokal · tilkoblet, ikon: home }
+        #   - { navn: Toten, sub: Nabu Casa, ikon: cottage, url: https://toten.eksempel.no/dashboard-mysmarthome }
+        #   - { navn: Oslo, sub: Nabu Casa, ikon: apartment, url: https://oslo.eksempel.no/dashboard-mysmarthome }
+        # ark_config:           # konfig som sendes til arkene (nøkkel = ark)
+        #   strom: {}
+        #   rom_per:
+        #     stue: { skjul: [media_player.tv_stue_a75_3] }
