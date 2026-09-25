@@ -15,6 +15,13 @@
   // [nøkkel i designet, tekst] → fan_speed-verdier som godtas (første som finnes i fan_speed_list brukes)
   const SUG = [['quiet', 'Stille', ['quiet', 'silent', 'low']], ['std', 'Standard', ['balanced', 'standard', 'medium', 'normal']],
     ['turbo', 'Turbo', ['turbo', 'strong', 'high']], ['max', 'Maks', ['max', 'max_plus', 'maximum', 'full']]];
+  // norske navn på valg i select-entiteter (moppeintensitet, moppemodus, rengjøringsmodus …)
+  const OPT = { off: 'Av', on: 'På', mild: 'Mild', low: 'Lav', slight: 'Lav', moderate: 'Middels', medium: 'Middels', middle: 'Middels', intense: 'Intens', high: 'Høy',
+    standard: 'Standard', normal: 'Normal', deep: 'Dyp', deep_plus: 'Dyp+', fast: 'Rask', custom: 'Egen', custom_water_flow: 'Egen', smart_mode: 'Smart', extreme: 'Ekstrem',
+    sweeping: 'Støvsug', mopping: 'Mopp', sweeping_and_mopping: 'Begge', mopping_after_sweeping: 'Etter', vacuum: 'Støvsug', mop: 'Mopp', vacuum_and_mop: 'Begge',
+    quiet: 'Stille', silent: 'Stille', balanced: 'Normal', turbo: 'Turbo', max: 'Maks', strong: 'Sterk' };
+  const SNAVN = { mop_intensity: 'Vannmengde', water_box_mode: 'Vannmengde', water_level: 'Vannmengde', water_volume: 'Vannmengde', mop_mode: 'Moppemodus', mop_route: 'Moppemodus',
+    cleaning_mode: 'Rengjøringsmodus', clean_mode: 'Rengjøringsmodus', suction_level: 'Sugenivå', mop_pad_humidity: 'Moppefukt' };
 
   class KDStovsugerCard extends KD.KDSheet {
     static head = ['cleaning_services', 'Støvsuger', 'Sir Sweeps'];
@@ -55,7 +62,9 @@
       ],
       mopp_pa: 'moderate',
     };
-    static sheetCss = `.kd-vac-ctl:active{transform:scale(0.95)}`;
+    static sheetCss = `.kd-vac-ctl:active{transform:scale(0.96)}
+@keyframes kdvspin{to{transform:rotate(360deg)}}
+@keyframes kdvpulse{0%,100%{opacity:1}50%{opacity:.35}}`;
 
     constructor() { super(); this.state = { tab: 'clean', zone: null }; }
 
@@ -80,6 +89,7 @@
         stille: this.pick('stille', `switch.${b}_do_not_disturb`, `switch.${b}_dnd`),
         stille_fra: this.pick('stille_fra', `time.${b}_do_not_disturb_begin`),
         stille_til: this.pick('stille_til', `time.${b}_do_not_disturb_end`),
+        rom_na: this.pick('rom_na', `sensor.${b}_current_room`, `sensor.${b}_room`),
       };
     }
     rooms() {
@@ -111,6 +121,22 @@
         const reset = p.reset || this.find(new RegExp(`^button\\.${b}_reset_.*${k.replace('filter', '(air_)?filter')}`))[0] || null;
         return { navn: p.navn, id, left, life, pct: KD.clamp(Math.round(left / life * 100), 0, 100), reset };
       }).filter(Boolean);
+    }
+    /** select-entiteter for modus (moppeintensitet/-modus, rengjøringsmodus …) – config `valg: [select.x]` legger til egne */
+    selects() {
+      const b = this.base, E = this.ents();
+      const ids = [E.mopp, ...(Array.isArray(this.config.valg) ? this.config.valg : []), ...Object.keys(SNAVN).map(k => `select.${b}_${k}`)];
+      return [...new Set(ids.filter(Boolean))].filter(id => this.ok(id)).map(id => {
+        const k = id.slice(`select.${b}_`.length);
+        return { id, navn: SNAVN[k] || this.fname(id).replace(/^sir sweeps a lot\s*/i, ''), opts: (this.at(id, 'options', []) || []).map(String) };
+      }).filter(x => x.opts.length > 1 && x.opts.length <= 7);
+    }
+    /** kartbilder: image./camera.-entiteter med robotens navn som har et bilde */
+    maps() {
+      const b = this.base;
+      const ids = [...(Array.isArray(this.config.kart) ? this.config.kart : this.config.kart ? [this.config.kart] : []), ...this.find(new RegExp(`^(image|camera)\\.${b}_`))];
+      return [...new Set(ids)].filter(id => this.ok(id) && this.at(id, 'entity_picture')).map(id => ({
+        id, src: this.at(id, 'entity_picture'), navn: this.fname(id).replace(/^sir sweeps a lot\s*/i, '').replace(/_/g, ' ') || 'Kart' }));
     }
     /** total rengjøringstid → timer (støtter «HH:MM:SS», s, min, h) */
     hours(id) {
@@ -158,6 +184,10 @@
       } else if (k === 'quiet' && E.stille) this.call('switch', 'toggle', { entity_id: E.stille });
     }
     resetPart(e, id) { if (id) this.press(id); }
+    clearRooms() { this.setState({ zone: null }); for (const r of this.rooms()) if (r.on && r.entity) this.call('input_boolean', 'turn_off', { entity_id: r.entity }); }
+    selOpt(e, arg) { const i = String(arg).lastIndexOf('|'); if (i > 0) this.call('select', 'select_option', { entity_id: arg.slice(0, i), option: arg.slice(i + 1) }); }
+    pickMap(e, id) { this.setState({ map: id }); }
+    openMap(e, id) { this.more(id); }
     openMore() { this.more(this.config.entity); }
 
     status() {
@@ -172,12 +202,11 @@
     }
 
     body() {
-      const s = this.state, cf = this.config, E = this.ents(), st = this.status();
+      const s = this.state, cf = this.config, E = this.ents(), st = this.status(), e = KD.e, S = KD.S;
       const vac = cf.entity;
       let bRaw = this.n(cf.batteri); if (bRaw == null) bRaw = parseFloat(this.at(vac, 'battery_level'));
       const hasB = bRaw != null && !isNaN(bRaw);
       const b = hasB ? Math.round(bRaw) : 0;
-      const n = 24, filled = Math.round(b / 100 * n);
       const col = st === 'cleaning' ? C.green : st === 'paused' ? C.amber : st === 'returning' ? C.blue : st === 'error' || st === 'unavailable' ? C.red : C.green;
       const rooms = this.rooms(), zones = this.zones();
       const sel = rooms.filter(r => r.on && r.entity);
@@ -187,206 +216,199 @@
       const charging = this.st(cf.lader) ? this.isOn(cf.lader) : (hasB && b < 100);
       const labels = { docked: charging ? 'Lader i dokken' : 'I dokken', cleaning: 'Støvsuger', paused: 'Pause', returning: 'På vei hjem', idle: 'Klar', error: 'Feil', unavailable: 'Utilgjengelig' };
       const errTxt = E.feil && this.ok(E.feil) && !/^(none|no.?error|ingen|0)$/i.test(this.v(E.feil)) ? this.v(E.feil) : this.at(vac, 'error', '');
-      const headline = st === 'cleaning' ? `Støvsuger ${target.join(', ').toLowerCase()}` : st === 'paused' ? 'Satt på pause' : st === 'returning' ? 'Ferdig, kjører hjem'
+      const curRoom = E.rom_na && this.ok(E.rom_na) ? String(this.v(E.rom_na)) : null;
+      const headline = st === 'cleaning' ? (curRoom ? `Støvsuger ${curRoom.toLowerCase()}` : `Støvsuger ${target.join(', ').toLowerCase()}`) : st === 'paused' ? 'Satt på pause' : st === 'returning' ? 'Ferdig, kjører hjem'
         : st === 'error' ? 'Trenger hjelp' : st === 'unavailable' ? 'Ikke tilgjengelig' : 'Klar til å støvsuge';
       const prog = E.fremdrift ? this.n(E.fremdrift) : null;
-      // underlinje
-      let subline = '';
-      if (st === 'cleaning') {
-        const mins = this.n(E.tid); const tidU = E.tid ? this.unit(E.tid) : '';
-        const el = mins == null ? null : tidU === 's' ? mins / 60 : tidU === 'h' ? mins * 60 : mins;
-        if (prog != null) {
-          const rest = el != null && prog > 0 ? Math.max(1, Math.round(el * (100 - prog) / prog)) : null;
-          subline = `${Math.round(prog)} % ferdig` + (rest != null ? ` · ca. ${rest} min igjen` : '');
-        } else {
-          subline = [el != null ? `${Math.round(el)} min` : '', this.ok(E.areal) ? `${Math.round(this.n(E.areal))} m²` : ''].filter(Boolean).join(' · ') || labels.cleaning;
-        }
-      } else if (st === 'error' && errTxt) subline = String(errTxt);
+      const minsOf = id => { const x = this.n(id); if (x == null) return null; const u = this.unit(id); return u === 's' ? x / 60 : u === 'h' ? x * 60 : x; };
+      const elMin = minsOf(E.tid), area = this.ok(E.areal) ? Math.round(this.n(E.areal)) : null;
+      const rest = st === 'cleaning' && prog != null && elMin != null && prog > 0 ? Math.max(1, Math.round(elMin * (100 - prog) / prog)) : null;
+      const endS = E.slutt ? this.v(E.slutt) : '';
+      const end = endS && !KD.BAD.has(endS) ? new Date(endS) : null;
+      const endOk = end && !isNaN(end);
+      let subline;
+      if (st === 'cleaning') subline = [curRoom && sel.length > 1 ? `${sel.length} rom valgt` : '', prog != null ? `${Math.round(prog)} % ferdig` : '', rest != null ? `ca. ${rest} min igjen` : ''].filter(Boolean).join(' · ') || 'I gang';
+      else if (st === 'error') subline = errTxt ? String(errTxt) : 'Sjekk roboten';
       else if (this.isOn(cf.vannmangel)) subline = 'Vanntanken er tom';
-      else {
-        const endS = E.slutt ? this.v(E.slutt) : '';
-        const end = endS && !KD.BAD.has(endS) ? new Date(endS) : null;
-        const parts = [];
-        if (end && !isNaN(end)) parts.push(`Sist støvsuget ${this.dayWord(end)} ${KD.hm(end)}`);
-        if (this.ok(E.areal)) parts.push(`${Math.round(this.n(E.areal))} m²`);
-        subline = parts.join(' · ') || '–';
-      }
-      const tab = (k, l) => ({ k, label: l, style: { height: 38, borderRadius: 16, fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', background: s.tab === k ? PINK : 'transparent', color: s.tab === k ? '#2a1720' : '#a9a7a2' } });
-      const sw = (on) => ({ track: { position: 'relative', width: 46, height: 28, borderRadius: 14, flex: 'none', background: on ? 'oklch(0.72 0.14 150)' : '#3a3a3d', transition: 'background .2s' }, knob: { position: 'absolute', top: 3, left: on ? 21 : 3, width: 22, height: 22, borderRadius: 11, background: '#f4f3ef', transition: 'left .2s' } });
-      const rpRoom = sel.find(r => r.kart) || rooms.find(r => r.kart);
-      const rp = rpRoom ? rpRoom.kart : [4, 4, 44, 34];
-      const t = (prog || 0) / 100;
-      const moving = st === 'cleaning' || st === 'paused';
+      else subline = endOk ? `Sist støvsuget ${this.dayWord(end)} ${KD.hm(end)}` : labels[st];
 
-      const ring = Array.from({ length: n }, (_, i) => ({ position: 'absolute', left: 'calc(50% - 4px)', top: 'calc(50% - 14px)', width: 8, height: 28, borderRadius: 4, transform: `rotate(${i * 15}deg) translateY(-102px)`, background: i < filled ? col : '#2a2a2d', boxShadow: i < filled && st === 'cleaning' ? `0 0 12px ${a(col, 0.6)}` : 'none', transition: 'background .4s' }));
-      const coreIcon = { fontSize: 28, color: col, fontVariationSettings: "'FILL' 1" };
-      const coreIconName = st === 'docked' ? 'battery_charging_full' : st === 'error' ? 'error' : 'robot_2';
-      const tabs = [tab('clean', 'Renhold'), tab('control', 'Kontroll'), tab('info', 'Info'), tab('map', 'Kart')];
-      const selMeta = sel.length ? `${sel.length} valgt` : 'Ingen valgt · hele huset';
-      const roomCards = rooms.filter(r => r.entity).map(r => {
-        const on = r.on;
-        return { ...r, sub: r.areal != null ? `${r.areal} m²` : on ? 'Valgt' : 'Ikke valgt',
-          style: { position: 'relative', height: 104, borderRadius: 22, padding: 16, boxSizing: 'border-box', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', alignItems: 'flex-start', background: on ? a(C.green, 0.14) : '#1c1c1f', boxShadow: on ? `inset 0 0 0 1px ${a(C.green, 0.45)}` : 'inset 0 0 0 1px rgba(255,255,255,0.04)', transition: 'background .2s' },
-          iconStyle: { fontSize: 24, color: on ? C.green : '#a9a7a2', fontVariationSettings: `'FILL' ${on ? 1 : 0}` },
-          check: { position: 'absolute', right: 14, top: 14, fontSize: 20, color: C.green, opacity: on ? 1 : 0, fontVariationSettings: "'FILL' 1", transition: 'opacity .2s' } };
-      });
-      const zoneBtns = zones.map(z => {
-        const on = s.zone === z.entity;
-        return { ...z, style: { flex: 'none', height: 40, padding: '0 14px 0 10px', borderRadius: 20, display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', background: on ? a(C.green, 0.14) : '#1c1c1f', color: on ? '#f2f1ee' : '#c9c7c2', boxShadow: on ? `inset 0 0 0 1px ${a(C.green, 0.45)}` : 'inset 0 0 0 1px rgba(255,255,255,0.04)' } };
-      });
-      const controls = [
-        { icon: st === 'cleaning' ? 'pause' : 'play_arrow', label: st === 'cleaning' ? 'Pause' : 'Start', k: st === 'cleaning' ? 'pause' : 'start' },
-        { icon: 'home', label: 'Dokk', k: 'dock' },
-        { icon: 'location_searching', label: 'Finn', k: 'locate' },
-        { icon: 'delete', label: 'Tøm', k: 'empty' },
-      ];
+      // sugestyrke
       const fanNow = String(this.at(vac, 'fan_speed', '') || '').toLowerCase();
       const fanList = (this.at(vac, 'fan_speed_list', []) || []).map(String);
-      const suction = SUG.map(([k, l, vals]) => {
-        const val = fanList.find(f => vals.includes(f.toLowerCase())) || vals[0];
-        const on = vals.includes(fanNow);
-        return { label: l, val, style: { height: 38, borderRadius: 14, fontSize: 13, fontWeight: 500, background: on ? '#f4f3ef' : 'transparent', color: on ? '#1a1a1c' : '#a9a7a2' } };
-      });
-      const mopOn = E.mopp ? !['off', 'unknown', 'unavailable', ''].includes(this.v(E.mopp)) : false;
-      const mopSub = this.isOn(cf.vannmangel) ? 'Vanntanken er tom' : (this.st(cf.vanntank) && this.v(cf.vanntank) === 'off') ? 'Vanntanken er ikke satt i' : 'Mopper etter støvsuging';
-      const tm = id => { const v = this.v(id); return /^\d{1,2}:\d{2}/.test(v) ? v.slice(0, 5) : null; };
-      const qFrom = tm(E.stille_fra), qTo = tm(E.stille_til);
-      const toggleDefs = [];
-      if (E.mopp) toggleDefs.push(['water_drop', 'Mopp', mopSub, 'mop', mopOn]);
-      if (E.stille) toggleDefs.push(['do_not_disturb_on', 'Stille timer', qFrom && qTo ? `${qFrom}–${qTo}` : this.isOn(E.stille) ? 'På' : 'Av', 'quiet', this.isOn(E.stille)]);
-      const toggles = toggleDefs.map(([icon, title, sub, k, on], i) => ({ icon, title, sub, k, ...sw(on),
-        row: { display: 'flex', alignItems: 'center', gap: 12, padding: '12px 4px', width: '100%', borderTop: i ? '1px solid rgba(255,255,255,0.05)' : 'none' } }));
-      const hrs = this.hours(cf.tid_totalt);
-      const stats = [['Totalt', hrs == null ? '–' : `${Math.round(hrs).toLocaleString('nb-NO')} t`],
-        ['Areal', this.ok(cf.areal_totalt) ? `${Math.round(this.n(cf.areal_totalt)).toLocaleString('nb-NO')} m²` : '–'],
-        ['Turer', this.ok(E.turer) ? Math.round(this.n(E.turer)).toLocaleString('nb-NO') : '–']].map(([label, v]) => ({ label, v }));
-      const parts = this.parts().map((p, i) => {
-        const low = p.pct < 20;
-        return { ...p, low, val: `${p.pct} % · ${Math.round(p.left)} t`,
-          row: { display: 'flex', flexDirection: 'column', gap: 8, padding: '12px 4px', borderTop: i ? '1px solid rgba(255,255,255,0.05)' : 'none' },
-          valStyle: { fontSize: 12, color: low ? C.amber : '#8e8d89', fontVariantNumeric: 'tabular-nums' },
-          bar: { width: `${p.pct}%`, height: '100%', borderRadius: 3, background: low ? C.amber : C.green } };
-      });
-      const mapRooms = rooms.filter(r => Array.isArray(r.kart)).map(r => {
-        const [x, y, w, h] = r.kart, on = r.on;
-        return { ...r, style: { position: 'absolute', left: `${x}%`, top: `${y}%`, width: `${w}%`, height: `${h}%`, borderRadius: 10, display: 'grid', placeItems: 'center', background: on ? a(C.green, 0.3) : '#2a2a2d', boxShadow: on ? `inset 0 0 0 1.5px ${C.green}` : 'none', color: on ? '#f2f1ee' : '#a9a7a2', transition: 'background .2s' } };
-      });
-      const robot = { position: 'absolute', left: `calc(${moving ? rp[0] + rp[2] * (0.15 + 0.7 * ((t * 5) % 1)) : 9}% - 9px)`, top: `calc(${moving ? rp[1] + rp[3] * (0.2 + 0.6 * t) : 82}% - 9px)`, width: 18, height: 18, borderRadius: 9, background: '#f2f1ee', boxShadow: `0 0 0 4px ${a(col, 0.35)}`, transition: 'left .8s linear, top .8s linear' };
-      const main = st === 'cleaning'
-        ? { icon: 'pause', label: 'Pause', style: { height: 64, borderRadius: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontSize: 16, fontWeight: 600, background: a(C.amber, 0.16), color: '#f2f1ee', boxShadow: `inset 0 0 0 1px ${a(C.amber, 0.45)}` } }
-        : { icon: 'play_arrow', label: st === 'paused' ? 'Fortsett' : zone ? `Støvsug ${zone.navn.toLowerCase()}` : sel.length ? `Støvsug ${sel.length} rom` : 'Støvsug alt', style: { height: 64, borderRadius: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontSize: 16, fontWeight: 600, background: C.green, color: '#10231a' } };
-      const e = KD.e, S = KD.S;
+      const FICON = { quiet: 'volume_down', std: 'air', turbo: 'bolt', max: 'rocket_launch' };
+      const suction = SUG.map(([k, l, vals]) => ({ k, l, val: fanList.find(f => vals.includes(f.toLowerCase())) || vals[0], on: vals.includes(fanNow) }));
+      const fanCur = (suction.find(x => x.on) || {}).val || '';
+      const fanLabel = (suction.find(x => x.on) || {}).l || (fanNow ? fanNow.charAt(0).toUpperCase() + fanNow.slice(1) : '–');
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:22px">
+      // helt
+      const ringV = st === 'cleaning' && prog != null ? KD.clamp(prog, 0, 100) : hasB ? b : 0;
+      const ringC = st === 'cleaning' || st === 'paused' || st === 'returning' || st === 'error' || st === 'unavailable' ? col : b < 20 ? C.red : b < 40 ? C.amber : C.green;
+      const RL = 2 * Math.PI * 86;
+      const batIcon = charging ? 'battery_charging_full' : b > 90 ? 'battery_full' : b > 65 ? 'battery_5_bar' : b > 40 ? 'battery_4_bar' : b > 20 ? 'battery_2_bar' : 'battery_alert';
+      const heroStats = st === 'cleaning' || st === 'paused'
+        ? [['Fremdrift', prog != null ? `${Math.round(prog)} %` : '–'], ['Areal', area != null ? `${area} m²` : '–'], ['Tid', elMin != null ? `${Math.round(elMin)} min` : '–']]
+        : [['Sugestyrke', fanLabel], ['Siste areal', area != null ? `${area} m²` : '–'], ['Siste tid', elMin != null ? `${Math.round(elMin)} min` : '–']];
+      const moving = st === 'cleaning';
+      const robot = `<svg viewBox="0 0 100 100" style="position:absolute;inset:30px;width:calc(100% - 60px);height:calc(100% - 60px);filter:drop-shadow(0 10px 18px rgba(0,0,0,0.5))">
+        <defs><radialGradient id="kdvBody" cx="38%" cy="28%" r="85%"><stop offset="0" stop-color="#46464c"></stop><stop offset="0.55" stop-color="#2a2a2e"></stop><stop offset="1" stop-color="#1b1b1e"></stop></radialGradient></defs>
+        <circle cx="50" cy="50" r="46" fill="url(#kdvBody)" stroke="rgba(255,255,255,0.10)" stroke-width="1"></circle>
+        <path d="M13 40 A38 38 0 0 1 87 40" fill="none" stroke="rgba(255,255,255,0.16)" stroke-width="3" stroke-linecap="round"></path>
+        <circle cx="50" cy="36" r="13" fill="#232327" stroke="rgba(255,255,255,0.14)" stroke-width="1"></circle>
+        <circle cx="50" cy="36" r="5" fill="${ringC}"${moving ? ' style="animation:kdvpulse 1.4s ease-in-out infinite"' : ''}></circle>
+        <rect x="38" y="64" width="24" height="5" rx="2.5" fill="rgba(255,255,255,0.14)"></rect>
+      </svg>`;
+      const hero = `<section style="position:relative;overflow:hidden;border-radius:30px;padding:16px 16px 14px;background:radial-gradient(120% 70% at 50% 0%, ${a(col, 0.16)} 0%, rgba(28,28,31,0) 62%), #1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05);display:flex;flex-direction:column;align-items:center;gap:12px">
+    <div style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px">
+      <span style="display:inline-flex;align-items:center;gap:8px;height:30px;padding:0 12px;border-radius:15px;background:rgba(255,255,255,0.06);font-size:12px;font-weight:600;min-width:0"><span style="width:8px;height:8px;border-radius:4px;flex:none;background:${col};box-shadow:0 0 10px ${a(col, 0.8)}${moving ? ';animation:kdvpulse 1.4s ease-in-out infinite' : ''}"></span><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(labels[st])}</span></span>
+      <span style="display:inline-flex;align-items:center;gap:4px;height:30px;padding:0 10px 0 8px;border-radius:15px;background:rgba(255,255,255,0.06);font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;color:${b < 20 && hasB ? C.red : '#f2f1ee'}"><span class="ms" style="font-size:17px;transform:rotate(90deg);color:${charging ? C.green : 'inherit'};font-variation-settings:'FILL' 1">${batIcon}</span>${hasB ? b : '–'} %</span>
+    </div>
+    <div data-on-click="openMore" style="position:relative;width:196px;height:196px;cursor:pointer">
+      ${moving ? `<span style="position:absolute;inset:22px;border-radius:50%;background:conic-gradient(from 0deg, ${a(col, 0)} 0deg, ${a(col, 0)} 250deg, ${a(col, 0.32)} 360deg);animation:kdvspin 2.6s linear infinite"></span>` : `<span style="position:absolute;inset:22px;border-radius:50%;background:radial-gradient(circle, ${a(ringC, 0.10)} 0%, rgba(0,0,0,0) 70%)"></span>`}
+      <svg viewBox="0 0 196 196" style="position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg)">
+        <circle cx="98" cy="98" r="86" fill="none" stroke="#2a2a2d" stroke-width="9"></circle>
+        <circle cx="98" cy="98" r="86" fill="none" stroke="${ringC}" stroke-width="9" stroke-linecap="round" stroke-dasharray="${(RL * ringV / 100).toFixed(1)} ${RL.toFixed(1)}" style="transition:stroke-dasharray 1s cubic-bezier(.2,.9,.3,1), stroke .4s;filter:drop-shadow(0 0 6px ${a(ringC, 0.55)})"></circle>
+      </svg>
+      ${robot}
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:5px;text-align:center;max-width:100%;min-width:0">
+      <div style="font-size:23px;font-weight:500;letter-spacing:-0.015em;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e(headline)}</div>
+      <div style="font-size:13px;color:${st === 'error' ? C.red : '#8e8d89'};max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e(subline)}</div>
+    </div>
+    ${st === 'cleaning' && prog != null ? `<div style="width:100%;height:6px;border-radius:3px;background:#2a2a2d;overflow:hidden"><div style="width:${KD.clamp(prog, 0, 100)}%;height:100%;border-radius:3px;background:${col};transition:width 1s"></div></div>` : ''}
+    <div style="width:100%;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-radius:20px;background:rgba(255,255,255,0.035);padding:10px 0">
+      ${heroStats.map(([l, v], i) => `<div style="min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;padding:0 6px;${i ? 'border-left:1px solid rgba(255,255,255,0.06)' : ''}"><span style="font-size:11px;color:#8e8d89;white-space:nowrap">${e(l)}</span><span style="font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">${e(v)}</span></div>`).join('')}
+    </div>
+  </section>`;
+
+      // handlinger
+      const main = st === 'cleaning'
+        ? { icon: 'pause', label: 'Pause', bg: a(C.amber, 0.16), fg: '#f2f1ee', sh: `inset 0 0 0 1px ${a(C.amber, 0.45)}` }
+        : { icon: 'play_arrow', label: st === 'paused' ? 'Fortsett' : zone ? `Støvsug ${zone.navn.toLowerCase()}` : sel.length ? `Støvsug ${sel.length} rom` : 'Støvsug alt', bg: `linear-gradient(135deg, ${C.green}, oklch(0.88 0.09 160))`, fg: '#10231a', sh: `0 10px 26px ${a(C.green, 0.25)}, inset 0 1px 0 rgba(255,255,255,0.35)` };
+      const tile = (k, icon, label, on, c) => `<button class="kd-vac-ctl" data-on-click="ctl" data-arg="${k}" style="min-width:0;height:60px;border-radius:22px;display:flex;align-items:center;justify-content:center;gap:8px;padding:0 8px;background:${on ? a(c, 0.16) : '#1c1c1f'};box-shadow:${on ? `inset 0 0 0 1px ${a(c, 0.45)}` : 'inset 0 0 0 1px rgba(255,255,255,0.04)'};transition:transform .15s, background .2s">
+          <span style="width:34px;height:34px;border-radius:17px;flex:none;display:grid;place-items:center;background:${on ? a(c, 0.25) : '#2a2a2e'};color:${on ? c : '#e4e2dd'}"><span class="ms" style="font-size:19px;font-variation-settings:'FILL' 1">${icon}</span></span>
+          <span style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">${e(label)}</span></button>`;
+      const actions = `<section style="display:flex;flex-direction:column;gap:10px">
+    <button class="kd-vac-ctl" data-on-click="main" data-haptic="medium" style="height:62px;border-radius:31px;display:flex;align-items:center;justify-content:center;gap:10px;padding:0 20px;font-size:16px;font-weight:600;background:${main.bg};color:${main.fg};box-shadow:${main.sh};transition:transform .15s"><span class="ms" style="font-size:26px;font-variation-settings:'FILL' 1">${main.icon}</span><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(main.label)}</span></button>
+    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
+      ${tile('dock', 'home', st === 'returning' ? 'Kjører hjem' : 'Hjem', st === 'returning', C.blue)}${tile('locate', 'location_searching', 'Finn', false, C.blue)}${tile('empty', 'delete_sweep', 'Tøm', false, C.amber)}
+    </div>
+  </section>`;
+
+      const tabs = KD.segHTML('vac-tab', [['clean', 'Rom', 'grid_view'], ['control', 'Modus', 'tune'], ['info', 'Status', 'monitoring'], ['map', 'Kart', 'map']], s.tab, 'tab', { pink: true });
+      const lbl = (t, right = '') => `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 4px;min-height:22px"><div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;white-space:nowrap">${e(t)}</div>${right}</div>`;
+      let tabHTML = '';
+
+      if (s.tab === 'clean') {
+        const selMeta = zone ? `Sone: ${zone.navn}` : sel.length ? `${sel.length} valgt` : 'Ingen valgt · hele huset';
+        const tiles = rooms.filter(r => r.entity).map(r => {
+          const on = r.on;
+          return `<button data-on-click="toggleRoom" data-arg="${e(r.entity)}" style="position:relative;min-width:0;height:104px;border-radius:22px;padding:12px;box-sizing:border-box;display:flex;flex-direction:column;justify-content:space-between;align-items:flex-start;text-align:left;background:${on ? `linear-gradient(160deg, ${a(C.green, 0.24)}, ${a(C.green, 0.08)})` : '#1c1c1f'};box-shadow:${on ? `inset 0 0 0 1.5px ${a(C.green, 0.55)}` : 'inset 0 0 0 1px rgba(255,255,255,0.04)'};transition:background .25s, box-shadow .25s">
+            <span style="width:36px;height:36px;border-radius:18px;display:grid;place-items:center;background:${on ? a(C.green, 0.25) : '#2a2a2e'};color:${on ? C.green : '#c9c7c2'};transition:background .25s"><span class="ms" style="font-size:20px;font-variation-settings:'FILL' ${on ? 1 : 0}">${e(r.ikon)}</span></span>
+            <span style="position:absolute;right:10px;top:10px;width:22px;height:22px;border-radius:11px;display:grid;place-items:center;box-sizing:border-box;background:${on ? C.green : 'transparent'};box-shadow:${on ? 'none' : 'inset 0 0 0 1.5px rgba(255,255,255,0.18)'};color:#10231a;transition:background .2s"><span class="ms" style="font-size:16px;opacity:${on ? 1 : 0};transform:scale(${on ? 1 : 0.4});transition:all .25s cubic-bezier(.34,1.5,.64,1)">check</span></span>
+            <span style="display:flex;flex-direction:column;gap:1px;width:100%;min-width:0">
+              <span style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(r.navn)}</span>
+              <span style="font-size:11px;color:${on ? a(C.green, 0.9) : '#8e8d89'};white-space:nowrap">${e(r.areal != null ? `${r.areal} m²` : on ? 'Valgt' : 'Trykk for å velge')}</span>
+            </span></button>`;
+        }).join('');
+        const any = sel.length || zone;
+        tabHTML = `<section style="display:flex;flex-direction:column;gap:10px">
+    ${lbl('Rom', `<div style="display:flex;align-items:center;gap:8px;min-width:0"><span style="font-size:12px;color:#6d6c69;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(selMeta)}</span>${any ? `<button data-on-click="clearRooms" style="height:26px;padding:0 10px;border-radius:13px;background:rgba(255,255,255,0.07);font-size:11px;font-weight:600;color:#c9c7c2;white-space:nowrap">Nullstill</button>` : ''}</div>`)}
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px">${tiles}</div>
+    ${zones.length ? `<div style="display:flex;flex-direction:column;gap:8px;margin-top:6px">${lbl('Soner')}
+      <div data-hscroll="1" style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:0 var(--kd-kant,10px)">
+        ${zones.map(z => { const on = s.zone === z.entity; return `<button data-on-click="pickZone" data-arg="${e(z.entity)}" style="flex:none;height:40px;padding:0 14px 0 10px;border-radius:20px;display:flex;align-items:center;gap:7px;font-size:13px;font-weight:500;white-space:nowrap;background:${on ? a(C.green, 0.16) : '#1c1c1f'};color:${on ? '#f2f1ee' : '#c9c7c2'};box-shadow:${on ? `inset 0 0 0 1.5px ${a(C.green, 0.55)}` : 'inset 0 0 0 1px rgba(255,255,255,0.04)'}"><span class="ms" style="font-size:17px;color:${on ? C.green : 'inherit'};font-variation-settings:'FILL' ${on ? 1 : 0}">${e(z.ikon || 'table_restaurant')}</span><span>${e(z.navn)}</span></button>`; }).join('')}
+      </div></div>` : ''}
+    ${any ? `<button class="kd-vac-ctl" data-on-click="ctl" data-arg="start" data-haptic="medium" style="margin-top:4px;height:54px;border-radius:27px;display:flex;align-items:center;justify-content:center;gap:8px;font-size:15px;font-weight:600;background:${PINK};color:#2a1720;box-shadow:0 8px 22px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.35);transition:transform .15s"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">cleaning_services</span><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(zone ? `Rengjør ${zone.navn.toLowerCase()}` : `Rengjør valgte · ${sel.length} rom`)}</span></button>`
+      : `<div style="font-size:12px;color:#6d6c69;text-align:center;padding:2px 0">Velg ett eller flere rom, så kan du rengjøre bare dem</div>`}
+  </section>`;
+      }
+
+      if (s.tab === 'control') {
+        const mopOn = E.mopp ? !['off', 'unknown', 'unavailable', ''].includes(this.v(E.mopp)) : false;
+        const warn = this.isOn(cf.vannmangel) ? 'Vanntanken er tom' : (this.st(cf.vanntank) && this.v(cf.vanntank) === 'off') ? 'Vanntanken er ikke satt i' : '';
+        const selects = this.selects().map(x => `<section style="display:flex;flex-direction:column;gap:8px">
+      ${lbl(x.navn, x.id === E.mopp && warn ? `<span style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:${C.amber};white-space:nowrap"><span class="ms" style="font-size:15px;font-variation-settings:'FILL' 1">water_drop</span>${e(warn)}</span>` : x.id === E.mopp && mopOn ? `<span style="font-size:12px;color:#6d6c69">Mopper etter støvsuging</span>` : '')}
+      ${KD.segHTML('sel-' + x.id, x.opts.map(o => [x.id + '|' + o, OPT[String(o).toLowerCase()] || String(o).replace(/_/g, ' ').replace(/^./, c => c.toUpperCase())]), x.id + '|' + this.v(x.id), 'selOpt', { small: x.opts.length > 4 })}
+    </section>`).join('');
+        const tm = id => { const v = this.v(id); return /^\d{1,2}:\d{2}/.test(v) ? v.slice(0, 5) : null; };
+        const qFrom = tm(E.stille_fra), qTo = tm(E.stille_til), qOn = this.isOn(E.stille);
+        tabHTML = `<section style="display:flex;flex-direction:column;gap:8px">
+      ${lbl('Sugestyrke', `<span style="font-size:12px;color:#6d6c69">${e(fanLabel)}</span>`)}
+      ${KD.segHTML('vac-fan', suction.map(x => [x.val, x.l, FICON[x.k]]), fanCur, 'fan', {})}
+    </section>
+    ${selects}
+    ${E.stille ? `<section><button data-on-click="toggleOpt" data-arg="quiet" style="width:100%;display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:22px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);text-align:left">
+      <span style="width:38px;height:38px;border-radius:19px;flex:none;display:grid;place-items:center;background:${qOn ? a(C.blue, 0.2) : '#2a2a2e'};color:${qOn ? C.blue : '#c9c7c2'}"><span class="ms" style="font-size:20px;font-variation-settings:'FILL' 1">bedtime</span></span>
+      <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-size:14px;font-weight:600">Stille timer</span><span style="font-size:12px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(qFrom && qTo ? `Ikke forstyrr ${qFrom}–${qTo}` : qOn ? 'På' : 'Av')}</span></span>
+      ${this.sw(qOn)}</button></section>` : ''}`;
+      }
+
+      if (s.tab === 'info') {
+        const hrs = this.hours(cf.tid_totalt);
+        const last = [['event', 'Når', endOk ? `${this.dayWord(end).replace(/^./, c => c.toUpperCase())} ${KD.hm(end)}` : '–'], ['square_foot', 'Areal', area != null ? `${area} m²` : '–'], ['timer', 'Varighet', elMin != null ? `${Math.round(elMin)} min` : '–']];
+        const tot = [['Totalt', hrs == null ? '–' : `${Math.round(hrs).toLocaleString('nb-NO')} t`], ['Areal', this.ok(cf.areal_totalt) ? `${Math.round(this.n(cf.areal_totalt)).toLocaleString('nb-NO')} m²` : '–'], ['Turer', this.ok(E.turer) ? Math.round(this.n(E.turer)).toLocaleString('nb-NO') : '–']];
+        const PICON = { main_brush: 'cleaning_services', side_brush: 'mode_fan', filter: 'filter_alt', sensor: 'sensors' };
+        const parts = this.parts();
+        tabHTML = `<section style="display:flex;flex-direction:column;gap:8px">
+      ${lbl('Siste rengjøring')}
+      <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
+        ${last.map(([ic, l, v]) => `<div style="min-width:0;display:flex;flex-direction:column;gap:8px;padding:14px;border-radius:22px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)"><span class="ms" style="font-size:20px;color:#8e8d89">${ic}</span><span style="display:flex;flex-direction:column;gap:2px;min-width:0"><span style="font-size:11px;color:#8e8d89">${e(l)}</span><span style="font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(v)}</span></span></div>`).join('')}
+      </div>
+    </section>
+    <section style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-radius:22px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);padding:14px 0">
+      ${tot.map(([l, v], i) => `<div style="min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;padding:0 6px;${i ? 'border-left:1px solid rgba(255,255,255,0.06)' : ''}"><span style="font-size:11px;color:#8e8d89">${e(l)} totalt</span><span style="font-size:17px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap">${e(v)}</span></div>`).join('')}
+    </section>
+    ${parts.length ? `<section style="display:flex;flex-direction:column;gap:8px">
+      ${lbl('Slitedeler', parts.some(p => p.pct < 20) ? `<span style="font-size:12px;color:${C.amber}">${parts.filter(p => p.pct < 20).length} bør byttes</span>` : `<span style="font-size:12px;color:#6d6c69">Alt i orden</span>`)}
+      <div style="display:flex;flex-direction:column;border-radius:24px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);padding:4px 14px">
+      ${parts.map((p, i) => { const low = p.pct < 20, c = low ? C.amber : p.pct < 40 ? 'oklch(0.86 0.12 95)' : C.green; const k = ((cf.deler || [])[i] || {}).nokkel; return `<div style="display:flex;align-items:center;gap:12px;padding:12px 0;${i ? 'border-top:1px solid rgba(255,255,255,0.05)' : ''}">
+        <span style="width:38px;height:38px;border-radius:19px;flex:none;display:grid;place-items:center;background:${a(c, 0.14)};color:${c}"><span class="ms" style="font-size:20px">${PICON[k] || 'build'}</span></span>
+        <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:7px">
+          <span style="display:flex;justify-content:space-between;gap:8px;font-size:14px"><span style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(p.navn)}</span><span style="font-size:12px;color:${low ? C.amber : '#8e8d89'};font-variant-numeric:tabular-nums;white-space:nowrap">${Math.round(p.left)} t igjen · ${p.pct} %</span></span>
+          <span style="height:6px;border-radius:3px;background:#2a2a2d;overflow:hidden"><span style="display:block;width:${p.pct}%;height:100%;border-radius:3px;background:${c};transition:width 1s"></span></span>
+        </span>
+        ${low && p.reset ? `<button data-on-click="resetPart" data-arg="${e(p.reset)}" title="Merk som byttet" style="height:32px;padding:0 12px;border-radius:16px;flex:none;background:${C.amber};color:#161618;font-size:12px;font-weight:600;white-space:nowrap">Byttet</button>` : ''}
+      </div>`; }).join('')}
+      </div>
+    </section>` : ''}`;
+      }
+
+      if (s.tab === 'map') {
+        const maps = this.maps();
+        const cur = maps.find(m => m.id === s.map) || maps[0];
+        const rp = (sel.find(r => r.kart) || rooms.find(r => r.kart) || { kart: [4, 4, 44, 34] }).kart;
+        const t = (prog || 0) / 100, mv = st === 'cleaning' || st === 'paused';
+        const dot = `left:calc(${mv ? rp[0] + rp[2] * (0.15 + 0.7 * ((t * 5) % 1)) : 9}% - 9px);top:calc(${mv ? rp[1] + rp[3] * (0.2 + 0.6 * t) : 82}% - 9px)`;
+        tabHTML = `${cur ? `<section style="display:flex;flex-direction:column;gap:10px">
+      ${maps.length > 1 ? KD.segHTML('vac-map', maps.map(m => [m.id, m.navn, 'layers']), cur.id, 'pickMap', { small: true }) : ''}
+      <div data-on-click="openMap" data-arg="${e(cur.id)}" style="position:relative;border-radius:26px;overflow:hidden;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05);aspect-ratio:4 / 3;cursor:pointer">
+        <img src="${e(cur.src)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain">
+        <span style="position:absolute;left:12px;bottom:12px;height:28px;padding:0 10px;border-radius:14px;display:inline-flex;align-items:center;gap:6px;background:rgba(20,20,22,0.7);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);font-size:12px;font-weight:500"><span class="ms" style="font-size:15px">map</span>${e(cur.navn)}</span>
+      </div>
+    </section>` : ''}
+    ${rooms.some(r => Array.isArray(r.kart)) ? `<section style="display:flex;flex-direction:column;gap:8px">
+      ${lbl('Romvelger', `<span style="font-size:12px;color:#6d6c69">Trykk på et rom</span>`)}
+      <div style="position:relative;height:300px;border-radius:26px;background:#1c1c1f;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05)">
+        ${rooms.filter(r => Array.isArray(r.kart)).map(r => { const [x, y, w, h] = r.kart, on = r.on; return `<button data-on-click="toggleRoom" data-arg="${e(r.entity || '')}" style="position:absolute;left:${x}%;top:${y}%;width:${w}%;height:${h}%;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:${on ? a(C.green, 0.28) : '#262629'};box-shadow:${on ? `inset 0 0 0 1.5px ${C.green}` : 'inset 0 0 0 1px rgba(255,255,255,0.04)'};color:${on ? '#f2f1ee' : '#a9a7a2'};transition:background .2s"><span class="ms" style="font-size:16px;color:${on ? C.green : '#6d6c69'}">${e(r.ikon)}</span><span style="font-size:11px;font-weight:500">${e(r.navn)}</span></button>`; }).join('')}
+        <span style="position:absolute;left:8%;top:84%;width:18px;height:12px;border-radius:4px;background:#48474a"></span>
+        <span style="position:absolute;${dot};width:18px;height:18px;border-radius:9px;background:#f2f1ee;box-shadow:0 0 0 4px ${a(col, 0.35)}, 0 0 16px ${a(col, 0.6)};transition:left .8s linear, top .8s linear"></span>
+      </div>
+    </section>` : ''}`;
+      }
+
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:18px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89"><span>${e(cf.navn || 'Sir Sweeps')}</span></div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
   </header>
-
-  <section style="display:flex;flex-direction:column;align-items:center;gap:18px">
-    <div data-on-click="openMore" style="position:relative;width:240px;height:240px;cursor:pointer">
-      ${ring.map(r => `<div style="${S(r)}"></div>`).join('')}
-      <div style="position:absolute;inset:40px;border-radius:50%;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px">
-        <span class="ms" style="${S(coreIcon)}"><span>${e(coreIconName)}</span></span>
-        <div style="font-size:34px;font-weight:500;letter-spacing:-0.03em;line-height:1;font-variant-numeric:tabular-nums"><span>${hasB ? b : '–'}</span><span style="font-size:14px;color:#8e8d89;font-weight:400"> %</span></div>
-        <div style="font-size:12px;color:#8e8d89"><span>${e(labels[st])}</span></div>
-      </div>
-    </div>
-    <div style="display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center">
-      <div style="font-size:24px;font-weight:500;letter-spacing:-0.015em"><span>${e(headline)}</span></div>
-      <div style="font-size:14px;color:#8e8d89"><span>${e(subline)}</span></div>
-    </div>
-  </section>
-
-  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:2px;padding:4px;border-radius:20px;background:#1c1c1f">
-    ${tabs.map(t => `<button data-on-click="tab" data-arg="${t.k}" style="${S(t.style)}"><span>${e(t.label)}</span></button>`).join('')}
-  </div>
-
-  ${s.tab === 'clean' ? `
-    <section style="display:flex;flex-direction:column;gap:8px">
-      <div style="display:flex;justify-content:space-between;padding:0 4px">
-        <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Rom</div>
-        <div style="font-size:12px;color:#6d6c69"><span>${e(selMeta)}</span></div>
-      </div>
-      <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
-        ${roomCards.map(r => `
-          <button data-on-click="toggleRoom" data-arg="${e(r.entity)}" style="${S(r.style)}">
-            <span class="ms" style="${S(r.iconStyle)}"><span>${e(r.ikon)}</span></span>
-            <div style="display:flex;flex-direction:column;gap:2px;align-items:flex-start">
-              <span style="font-size:15px;font-weight:500"><span>${e(r.navn)}</span></span>
-              <span style="font-size:12px;color:#8e8d89"><span>${e(r.sub)}</span></span>
-            </div>
-            <span class="ms" style="${S(r.check)}">check_circle</span>
-          </button>`).join('')}
-      </div>
-    </section>
-    ${zoneBtns.length ? `<section style="display:flex;flex-direction:column;gap:8px">
-      <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:0 4px">Soner</div>
-      <div data-hscroll="1" style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:0 var(--kd-kant,10px)">
-        ${zoneBtns.map(z => `
-          <button data-on-click="pickZone" data-arg="${e(z.entity)}" style="${S(z.style)}"><span class="ms" style="font-size:17px"><span>${e(z.ikon || 'table_restaurant')}</span></span><span>${e(z.navn)}</span></button>`).join('')}
-      </div>
-    </section>` : ''}` : ''}
-
-  ${s.tab === 'control' ? `
-    <section style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
-      ${controls.map(c => `
-        <button class="kd-vac-ctl" data-on-click="ctl" data-arg="${c.k}" style="height:76px;border-radius:20px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px">
-          <span class="ms" style="font-size:24px;font-variation-settings:'FILL' 1"><span>${e(c.icon)}</span></span>
-          <span style="font-size:12px;font-weight:500;white-space:nowrap"><span>${e(c.label)}</span></span>
-        </button>`).join('')}
-    </section>
-    <section style="display:flex;flex-direction:column;gap:8px">
-      <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:0 4px">Sugestyrke</div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:2px;padding:4px;border-radius:18px;background:#1c1c1f">
-        ${suction.map(p => `<button data-on-click="fan" data-arg="${e(p.val)}" style="${S(p.style)}"><span>${e(p.label)}</span></button>`).join('')}
-      </div>
-    </section>
-    ${toggles.length ? `<section style="display:flex;flex-direction:column">
-      ${toggles.map(t => `
-        <button data-on-click="toggleOpt" data-arg="${t.k}" style="${S(t.row)}">
-          <span class="ms" style="font-size:22px;color:#a9a7a2;width:28px"><span>${e(t.icon)}</span></span>
-          <div style="flex:1;display:flex;flex-direction:column;gap:2px;text-align:left">
-            <span style="font-size:14px;font-weight:500"><span>${e(t.title)}</span></span>
-            <span style="font-size:12px;color:#8e8d89"><span>${e(t.sub)}</span></span>
-          </div>
-          <span style="${S(t.track)}"><span style="${S(t.knob)}"></span></span>
-        </button>`).join('')}
-    </section>` : ''}` : ''}
-
-  ${s.tab === 'info' ? `
-    <section style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
-      ${stats.map(t => `
-        <div style="display:flex;flex-direction:column;gap:4px;padding:12px 14px;border-radius:18px;background:#1c1c1f">
-          <div style="font-size:11px;color:#8e8d89;white-space:nowrap"><span>${e(t.label)}</span></div>
-          <div style="font-size:17px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap"><span>${e(t.v)}</span></div>
-        </div>`).join('')}
-    </section>
-    ${parts.length ? `<section style="display:flex;flex-direction:column;gap:2px">
-      <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:0 4px 8px">Slitedeler</div>
-      ${parts.map(p => `
-        <div style="${S(p.row)}">
-          <div style="display:flex;justify-content:space-between;gap:10px;font-size:14px">
-            <span style="font-weight:500"><span>${e(p.navn)}</span></span>
-            <span style="${S(p.valStyle)}"><span>${e(p.val)}</span></span>
-          </div>
-          <div style="height:5px;border-radius:3px;background:#1f1f22;overflow:hidden"><div style="${S(p.bar)}"></div></div>
-          ${p.low && p.reset ? `<button data-on-click="resetPart" data-arg="${e(p.reset)}" style="align-self:flex-start;height:30px;padding:0 12px;border-radius:15px;background:oklch(0.82 0.12 75);color:#161618;font-size:12px;font-weight:600">Merk som byttet</button>` : ''}
-        </div>`).join('')}
-    </section>` : ''}` : ''}
-
-  ${s.tab === 'map' ? `
-    <section style="position:relative;height:300px;border-radius:24px;background:#1c1c1f;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
-      ${mapRooms.map(m => `
-        <button data-on-click="toggleRoom" data-arg="${e(m.entity || '')}" style="${S(m.style)}"><span style="font-size:11px;font-weight:500"><span>${e(m.navn)}</span></span></button>`).join('')}
-      <span style="position:absolute;left:8%;top:84%;width:18px;height:12px;border-radius:4px;background:#48474a"></span>
-      <span style="${S(robot)}"></span>
-    </section>
-    <div style="font-size:12px;color:#6d6c69;text-align:center">Trykk på et rom for å velge det</div>` : ''}
-
-  <button data-on-click="main" style="${S(main.style)}"><span class="ms" style="font-size:24px;font-variation-settings:'FILL' 1"><span>${e(main.icon)}</span></span><span>${e(main.label)}</span></button>
+  ${hero}
+  ${actions}
+  ${tabs}
+  ${tabHTML}
 </div>`;
     }
+    /** Bryter (spor + knott) */
+    sw(on) { return `<span style="position:relative;width:46px;height:28px;border-radius:14px;flex:none;background:${on ? 'oklch(0.72 0.14 150)' : '#3a3a3d'};transition:background .2s"><span style="position:absolute;top:3px;left:${on ? 21 : 3}px;width:22px;height:22px;border-radius:11px;background:#f4f3ef;box-shadow:0 2px 6px rgba(0,0,0,0.3);transition:left .25s cubic-bezier(.34,1.4,.64,1)"></span></span>`; }
     /** «i dag» / «i går» / «mandag» / «12.9.» */
     dayWord(d) {
       const t0 = new Date(); t0.setHours(0, 0, 0, 0);

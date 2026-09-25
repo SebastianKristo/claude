@@ -314,23 +314,6 @@
    * ==================================================================== */
   const Y = H.Y, G = 'oklch(0.72 0.14 150)', PINK = KD.PINK, a = KD.a;
   const STARS = [[8, 14], [18, 30], [30, 10], [40, 24], [52, 8], [60, 34], [70, 16], [84, 28], [92, 12], [24, 46], [46, 44], [78, 42]];
-  /** Designets natt-scene (Scene({ on })) som HTML */
-  const scene = (on) => `<div style="position:absolute;inset:0;pointer-events:none">`
-    + STARS.map(([x, y], i) => `<span style="${S({ position: 'absolute', left: x + '%', top: y + '%', width: i % 3 ? 2 : 3, height: i % 3 ? 2 : 3, borderRadius: 2, background: '#fff', animation: 'tw ' + (2 + i % 3) + 's ease-in-out ' + (i * 0.3) + 's infinite' })}"></span>`).join('')
-    + `<span style="${S({ position: 'absolute', left: '24%', right: '-10%', top: '46%', height: 180, borderRadius: '50%', border: '1.5px dashed rgba(255,255,255,0.18)' })}"></span>`
-    + `<span style="${S({ position: 'absolute', right: '26%', top: '28%', width: 18, height: 18, borderRadius: '50%', boxShadow: 'inset -5px -2px 0 0 #f1ecd9', transform: 'rotate(-20deg)', filter: 'drop-shadow(0 0 8px rgba(241,236,217,0.6))' })}"></span>`
-    + `<span style="${S({ position: 'absolute', left: 0, right: 0, bottom: 0, height: 44, background: '#0f1612' })}"></span>`
-    + `<span style="${S({ position: 'absolute', right: 18, bottom: 44, width: 0, height: 0, borderLeft: '9px solid transparent', borderRight: '9px solid transparent', borderBottom: '24px solid #0b120f' })}"></span>`
-    + `<span style="${S({ position: 'absolute', right: 80, bottom: 44, width: 0, height: 0, borderLeft: '8px solid transparent', borderRight: '8px solid transparent', borderBottom: '20px solid #0b120f' })}"></span>`
-    + `<span style="${S({ position: 'absolute', right: 30, bottom: 44, width: 58, height: 30, background: '#1e2433' })}"></span>`
-    + `<span style="${S({ position: 'absolute', right: 24, bottom: 74, width: 0, height: 0, borderLeft: '35px solid transparent', borderRight: '35px solid transparent', borderBottom: '20px solid #262d3d' })}"></span>`
-    + [40, 64].map(r => `<span style="${S({ position: 'absolute', right: r, bottom: 58, width: 9, height: 7, borderRadius: 1, background: on ? '#f3c96b' : '#2d3446', boxShadow: on ? '0 0 8px #f3c96b' : 'none', transition: 'background .6s, box-shadow .6s' })}"></span>`).join('')
-    + [96, 22].map(r => `<span style="${S({ position: 'absolute', right: r, bottom: 44 })}">`
-      + `<span style="${S({ position: 'absolute', left: -1, bottom: 0, width: 2, height: 14, background: '#3a4150' })}"></span>`
-      + `<span style="${S({ position: 'absolute', left: -3, bottom: 14, width: 6, height: 6, borderRadius: 3, background: on ? '#ffe3a0' : '#3a4150', boxShadow: on ? '0 0 10px 3px rgba(255,210,120,0.8)' : 'none', transition: 'all .6s', animation: on ? 'glow 3s ease-in-out infinite' : 'none' })}"></span>`
-      + `<span style="${S({ position: 'absolute', left: -18, bottom: -4, width: 36, height: 10, borderRadius: '50%', background: 'radial-gradient(closest-side, rgba(255,210,120,0.55), transparent)', opacity: on ? 1 : 0, transition: 'opacity .6s' })}"></span></span>`).join('')
-    + `</div>`;
-
   /* Designets scener → ki_rom-scener (button.<rom>_lys_<id>) og nivå for reserve-dimming */
   const SC = [['max', 'Maks', 'light_mode', 100, 'maks'], ['kveld', 'Kveld', 'weekend', 45, 'komfort'], ['dim', 'Dempet', 'brightness_4', 20, 'mindre'], ['natt', 'Natt', 'bedtime', 5, 'natt'], ['av', 'Alt av', 'dark_mode', 0, 'av']];
   /* Kjente KI Utelys-innstillinger med designets tekster */
@@ -468,8 +451,6 @@ a:hover{color:oklch(0.86 0.12 95)}`;
     body() {
       const s = this.state, c = this.config, h = this.hass;
       const tab = s.tab || c.fane || 'out';
-      const tabDef = (k, l) => ({ k, label: l, style: { height: 38, padding: '0 14px', borderRadius: 19, fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', background: tab === k ? PINK : 'transparent', color: tab === k ? '#2a1720' : '#c9c7c2', transition: 'background .2s' } });
-      const tabs = [tabDef('out', 'Utelys'), tabDef('f1', 'Første etg'), tabDef('f2', 'Andre etg'), tabDef('on', 'Lys på')];
       const fl = this._fl = this._floors();
 
       let inner = '';
@@ -484,11 +465,7 @@ a:hover{color:oklch(0.86 0.12 95)}`;
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
   </header>
 
-  <div style="display:flex;justify-content:center">
-    <div style="display:flex;gap:2px;padding:4px;border-radius:22px;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.12)">
-      ${tabs.map(t => `<button data-on-click="tab" data-arg="${t.k}" style="${S(t.style)}">${E(t.label)}</button>`).join('')}
-    </div>
-  </div>
+  ${KD.segHTML('lysfane', [['out', 'Utelys', 'deck'], ['f1', '1. etg'], ['f2', '2. etg'], ['on', 'Lys på']], tab, 'tab', { pink: true })}
 ${inner}
 </div>`;
     }
@@ -500,34 +477,47 @@ ${inner}
       const nPaa = this._pick('neste_paa', /^sensor\.(ki_)?utelys.*neste_(paa|på|on)$/), nAv = this._pick('neste_av', /^sensor\.(ki_)?utelys.*neste_(av|off)$/);
       const wPaa = H.when(nPaa && this.v(nPaa)), wAv = H.when(nAv && this.v(nAv));
       const sol = this._has(c.sol) ? c.sol : 'sun.sun';
-      const rise = H.when(this.at(sol, 'next_rising')), set = H.when(this.at(sol, 'next_setting')), dusk = H.when(this.at(sol, 'next_dusk'));
-      const outPill = { height: 28, padding: '0 10px', borderRadius: 14, display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, background: out ? 'rgba(243,201,107,0.22)' : 'rgba(255,255,255,0.1)', color: out ? '#f3d58f' : '#c3c8d6' };
-      const nw = out ? wAv : wPaa;
-      const nextLabel = (out ? 'slukkes' : 'tennes') + (nw && nw.dag ? ' ' + nw.dag : '');
-      const nextTime = nw ? nw.kl : '–';
+      const rise = H.when(this.at(sol, 'next_rising')), set = H.when(this.at(sol, 'next_setting')), dusk = H.when(this.at(sol, 'next_dusk')), dawn = H.when(this.at(sol, 'next_dawn'));
       const kl = w => w ? w.kl : '–';
-      const times = [['emoji_objects', 'Tennes' + (wPaa && wPaa.dag ? ' ' + wPaa.dag : ''), kl(wPaa)], ['light_off', 'Slukkes' + (wAv && wAv.dag ? ' ' + wAv.dag : ''), kl(wAv)]];
+      const dag = w => w && w.dag ? ' ' + w.dag : '';
+      const mod = w => w && w.d ? w.d.getHours() * 60 + w.d.getMinutes() : null;
+      const now = new Date(), nowM = now.getHours() * 60 + now.getMinutes();
+      const rM = mod(rise), sM = mod(set);
+      const day = this._has(sol) ? this.v(sol) === 'above_horizon' : (rM != null && sM != null ? nowM >= rM && nowM < sM : false);
+      // sola/månen langs buen: andel av dagen (sol opp → ned) eller natta (ned → opp)
+      let f = 0.5;
+      if (rM != null && sM != null) {
+        const dl = ((sM - rM) + 1440) % 1440 || 720, nl = 1440 - dl;
+        f = day ? (((nowM - rM) + 1440) % 1440) / dl : (((nowM - sM) + 1440) % 1440) / nl;
+        f = KD.clamp(f, 0.02, 0.98);
+      }
+      const nw = out ? wAv : wPaa;
+      const nextLabel = (out ? 'Slukkes' : 'Tennes') + dag(nw);
       const sw = on => ({ track: { position: 'relative', width: 46, height: 28, borderRadius: 14, flex: 'none', background: on ? G : '#3a3a3d', transition: 'background .2s' }, knob: { position: 'absolute', top: 3, left: on ? 21 : 3, width: 22, height: 22, borderRadius: 11, background: '#1c1c1f', transition: 'left .2s' } });
-      const autoPill = { display: 'flex', alignItems: 'center', gap: 14, height: 64, padding: '0 16px 0 5px', borderRadius: 32, background: '#1c1c1f', width: '100%', boxSizing: 'border-box' };
-      const autoIcon = { width: 54, height: 54, borderRadius: 27, flex: 'none', display: 'grid', placeItems: 'center', background: '#262629' };
+      const autoId = this._pick('auto', /^switch\.(ki_)?utelys.*_(auto|automatikk)$/);
+      const autoOn = autoId ? this.isOn(autoId) : true;
       const autos = [
-        [this._pick('auto', /^switch\.(ki_)?utelys.*_(auto|automatikk)$/), 'smart_toy', 'Automatikk', out ? 'Utelyset er på' : 'Utelyset er av'],
-        [this._pick('kveld', /^switch\.(ki_)?utelys.*_kveld$/), 'wb_twilight', 'Kveld', 'Tenn i skumringen'],
-        [this._pick('morgen', /^switch\.(ki_)?utelys.*_morgen$/), 'sunny', 'Morgen', 'Tenn før det lysner'],
+        [autoId, 'smart_toy', 'Automatikk', autoOn ? 'Styrer utelyset etter sola og lysnivå' : 'Av – utelyset styres manuelt', true],
+        [this._pick('kveld', /^switch\.(ki_)?utelys.*_kveld$/), 'wb_twilight', 'Kveld', 'Tenn i skumringen', false],
+        [this._pick('morgen', /^switch\.(ki_)?utelys.*_morgen$/), 'wb_sunny', 'Morgen', 'Tenn før det lysner', false],
       ].filter(x => x[0]);
       const lamps = [].concat(c.utelamper || []).filter(id => this._has(id));
       const lampList = lamps.length ? lamps : ids.filter(id => id !== c.utelys);
+      const lampsOn = lampList.filter(id => H.shown(this, id).v > 0).length;
       // dagslengde
       let dagl = '–';
       if (rise && set && rise.d && set.d) {
         let ms = set.d - rise.d; if (ms < 0) ms += 86400e3; if (ms > 86400e3) ms -= 86400e3;
         const m = Math.round(ms / 60000); dagl = `${Math.floor(m / 60)} t ${m % 60} min`;
       }
+      // hvor lenge utelyset står på (tennes → slukkes)
+      let onDur = null;
+      if (wPaa && wAv && wPaa.d && wAv.d) { let m = Math.round((wAv.d - wPaa.d) / 60000); if (m < 0) m += 1440; if (m > 1440) m -= 1440; onDur = `${Math.floor(m / 60)} t ${m % 60} min`; }
       const st = this.state.fold || {};
       const foldDef = (k, icon, title, meta, rows) => {
         const open = !!st[k];
         return { k, icon, title, meta, open, chev: { fontSize: 22, color: '#a9a7a2', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .25s' },
-          rows: rows.map(([k2, v, id], i) => ({ k: k2, v, id, row: { display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderTop: i ? '1px solid rgba(255,255,255,0.05)' : 'none' } })) };
+          rows: rows.map(([k2, v, id, ic], i) => ({ k: k2, v, id, ic, row: { display: 'flex', alignItems: 'center', gap: 12, minHeight: 44, borderTop: i ? '1px solid rgba(255,255,255,0.05)' : 'none', cursor: id ? 'pointer' : 'default' } })) };
       };
       // innstillinger: config eller alle KI Utelys-tall/tider
       let instIds = [].concat(c.innstillinger || []).filter(id => this._has(id));
@@ -542,47 +532,113 @@ ${inner}
         if (stt && !isNaN(parseFloat(v)) && /^(number|input_number)\./.test(id)) { const n = parseFloat(v); v = (n < 0 ? '−' : '') + KD.nf(Math.abs(n), Number.isInteger(n) ? 0 : 1) + (this.unit(id) ? ' ' + this.unit(id) : ''); }
         else if (stt && /^time\./.test(id)) v = String(v).slice(0, 5);
         else if (!stt || KD.BAD.has(v)) v = '–';
-        return [label, v, id];
+        const ic = /terskel_(paa|på|on)$/.test(id) ? 'brightness_low' : /terskel_(av|off)$/.test(id) ? 'brightness_high' : /morke|mørke/.test(id) ? 'dark_mode' : /^time|input_datetime/.test(id) ? 'schedule' : 'tune';
+        return [label, v, id, ic];
       });
-      const folds = [foldDef('sol', 'light_mode', 'Sola', `↑ ${kl(rise)} ↓ ${kl(set)}`, [['Soloppgang', kl(rise)], ['Solnedgang', kl(set)], ['Borgerlig skumring', kl(dusk)], ['Dagslengde', dagl]])];
+      const elev = parseFloat(this.at(sol, 'elevation'));
+      const folds = [foldDef('sol', 'light_mode', 'Sola', `↑ ${kl(rise)}  ↓ ${kl(set)}`, [['Daggry', kl(dawn), null, 'wb_twilight'], ['Soloppgang', kl(rise), null, 'wb_sunny'], ['Solnedgang', kl(set), null, 'wb_twilight'], ['Borgerlig skumring', kl(dusk), null, 'nights_stay'], ['Dagslengde', dagl, null, 'hourglass_empty'], ...(isNaN(elev) ? [] : [['Solhøyde nå', `${KD.nf(elev, 1)}°`, null, 'explore']])])];
       if (instRows.length) folds.push(foldDef('inst', 'tune', 'Innstillinger', 'terskler og mørketid', instRows));
 
+      /* ---- tidslinje kl. 12 → 12 (natta i midten) ---- */
+      const P = m => ((((m - 720) % 1440) + 1440) % 1440) / 1440 * 100;
+      const seg = (a1, b1, css) => { if (a1 == null || b1 == null) return ''; const x = P(a1), y = P(b1); const parts = y >= x ? [[x, y]] : [[x, 100], [0, y]]; return parts.map(([l, r]) => `<span style="position:absolute;top:0;bottom:0;left:${l.toFixed(2)}%;width:${Math.max(0, r - l).toFixed(2)}%;${css}"></span>`).join(''); };
+      const dM = mod(dawn), kM = mod(dusk), onM = mod(wPaa), offM = mod(wAv);
+      const tl = `<div style="position:relative;height:10px;border-radius:5px;overflow:hidden;background:linear-gradient(90deg,oklch(0.82 0.12 75 / 0.55),oklch(0.86 0.12 95 / 0.35))">
+          ${seg(sM, rM, 'background:#262d58')}
+          ${seg(sM, kM, `background:linear-gradient(90deg,${a('oklch(0.82 0.12 75)', 0.45)},#262d58)`)}
+          ${seg(dM, rM, `background:linear-gradient(90deg,#262d58,${a('oklch(0.82 0.12 75)', 0.45)})`)}
+        </div>
+        <div style="position:relative;height:4px;margin-top:4px;border-radius:2px;background:rgba(255,255,255,0.06);overflow:hidden">${seg(onM, offM, `background:${Y};box-shadow:0 0 8px ${Y}`)}</div>
+        <span style="position:absolute;top:-5px;height:30px;left:calc(${P(nowM).toFixed(2)}% - 1px);width:2px;border-radius:1px;background:#fff;box-shadow:0 0 6px rgba(255,255,255,0.7)"></span>
+        <span style="position:absolute;top:-22px;left:${P(nowM).toFixed(2)}%;transform:translateX(-50%);font-size:10px;font-weight:600;color:#fff;letter-spacing:.04em">NÅ</span>`;
+      const ticks = ['12', '18', '00', '06', '12'];
+
+      /* ---- himmelen med sol/måne langs buen ---- */
+      const HOR = 132, ARC = 84;
+      const bx = 50 - 42 * Math.cos(Math.PI * f), by = HOR - ARC * Math.sin(Math.PI * f);
+      const sky = day ? 'linear-gradient(180deg,#1b3a5e 0%,#2c5a80 62%,#3a6a7e 100%)' : 'linear-gradient(180deg,#0b1030 0%,#1a1f3d 70%,#232a45 100%)';
+      const orb = day
+        ? `<span style="position:absolute;left:calc(${bx.toFixed(2)}% - 13px);top:${(by - 13).toFixed(1)}px;width:26px;height:26px;border-radius:13px;background:radial-gradient(circle at 40% 40%,#fff6d6,${Y} 60%);box-shadow:0 0 22px 6px ${a(Y, 0.55)}"></span>`
+        : `<span style="position:absolute;left:calc(${bx.toFixed(2)}% - 10px);top:${(by - 10).toFixed(1)}px;width:20px;height:20px;border-radius:50%;box-shadow:inset -6px -2px 0 0 #f1ecd9;transform:rotate(-20deg);filter:drop-shadow(0 0 8px rgba(241,236,217,0.6))"></span>`;
+      const lampGlow = (x) => `<span style="position:absolute;left:${x}%;bottom:44px">
+          <span style="position:absolute;left:-1px;bottom:0;width:2px;height:16px;background:#3a4150"></span>
+          <span style="position:absolute;left:-3px;bottom:16px;width:6px;height:6px;border-radius:3px;background:${out ? '#ffe3a0' : '#3a4150'};box-shadow:${out ? '0 0 10px 3px rgba(255,210,120,0.8)' : 'none'};transition:all .6s;animation:${out ? 'glow 3s ease-in-out infinite' : 'none'}"></span>
+          <span style="position:absolute;left:-22px;bottom:-5px;width:44px;height:12px;border-radius:50%;background:radial-gradient(closest-side,rgba(255,210,120,0.55),transparent);opacity:${out ? 1 : 0};transition:opacity .6s"></span></span>`;
+      const heroScene = `<div style="position:absolute;inset:0;pointer-events:none">
+          ${day ? '' : STARS.map(([x, y], i) => `<span style="${S({ position: 'absolute', left: x + '%', top: (y * 0.8) + '%', width: i % 3 ? 2 : 3, height: i % 3 ? 2 : 3, borderRadius: 2, background: '#fff', animation: 'tw ' + (2 + i % 3) + 's ease-in-out ' + (i * 0.3) + 's infinite' })}"></span>`).join('')}
+          <svg viewBox="0 0 100 ${HOR + 4}" preserveAspectRatio="none" style="position:absolute;left:0;top:0;width:100%;height:${HOR + 4}px;overflow:visible"><path d="M 8 ${HOR} A 42 ${ARC} 0 0 1 92 ${HOR}" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="1.5" stroke-dasharray="3 5" vector-effect="non-scaling-stroke"/></svg>
+          ${orb}
+          <span style="position:absolute;left:0;right:0;top:${HOR}px;bottom:0;background:${day ? '#18261e' : '#0f1612'}"></span>
+          <span style="position:absolute;right:26px;bottom:44px;width:58px;height:30px;background:${day ? '#2a3348' : '#1e2433'}"></span>
+          <span style="position:absolute;right:20px;bottom:74px;width:0;height:0;border-left:35px solid transparent;border-right:35px solid transparent;border-bottom:20px solid ${day ? '#333d55' : '#262d3d'}"></span>
+          ${[36, 60].map(r => `<span style="position:absolute;right:${r}px;bottom:58px;width:9px;height:7px;border-radius:1px;background:${out ? '#f3c96b' : '#2d3446'};box-shadow:${out ? '0 0 8px #f3c96b' : 'none'};transition:background .6s,box-shadow .6s"></span>`).join('')}
+          ${lampGlow(72)}${lampGlow(95)}
+        </div>`;
+      const heroH = HOR + 44;
+      const pwr = { width: 52, height: 52, borderRadius: 26, flex: 'none', display: 'grid', placeItems: 'center', background: out ? Y : 'rgba(255,255,255,0.12)', color: out ? '#141416' : '#e6e4df', boxShadow: out ? `0 0 0 6px ${a(Y, 0.18)}, 0 8px 24px ${a(Y, 0.35)}` : 'inset 0 1px 0 rgba(255,255,255,0.12)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', transition: 'background .3s, box-shadow .3s' };
+      const statusTxt = out ? (lampsOn ? `På · ${lampsOn} av ${lampList.length || ids.length} lamper` : 'På') : 'Av';
+      const cardS = 'border-radius:28px;background:#1c1c1f';
+      const lbl = 'font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89';
+
       return `
-    <section style="position:relative;overflow:hidden;height:176px;border-radius:28px;background:linear-gradient(180deg,#0e1330 0%,#1a1f3d 70%,#131a1a 100%)">
-      ${scene(out)}
-      <div style="position:absolute;left:18px;top:18px;display:flex;flex-direction:column;gap:8px;align-items:flex-start">
-        <span style="font-size:13px;font-weight:500;color:#dfe3ee">Utelys</span>
-        <button data-on-click="toggleOut" style="${S(outPill)}"><span class="ms" style="font-size:15px;font-variation-settings:'FILL' 1">${out ? 'wb_twilight' : 'dark_mode'}</span><span>${out ? 'På' : 'Av'}</span></button>
+    <section data-lay="utelys-hero" data-lay-navn="Utelys og sola" style="position:relative;overflow:hidden;border-radius:28px;background:${sky};transition:background .6s">
+      <div style="position:relative;height:${heroH}px">
+        ${heroScene}
+        <div style="position:absolute;left:18px;right:14px;top:16px;display:flex;align-items:flex-start;gap:12px">
+          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+            <span style="font-size:13px;font-weight:500;color:#dfe3ee">Utelys</span>
+            <span style="font-size:12px;color:${out ? '#f3d58f' : '#c3c8d6'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(statusTxt)}${autoId ? ` · ${autoOn ? 'auto' : 'manuell'}` : ''}</span>
+          </div>
+          <button class="kdl-a96" data-on-click="toggleOut" title="${out ? 'Slå av utelys' : 'Slå på utelys'}" style="${S(pwr)}"><span class="ms" style="font-size:26px;font-variation-settings:'FILL' 1">${out ? 'light' : 'power_settings_new'}</span></button>
+        </div>
+        <div style="position:absolute;left:18px;bottom:12px;display:flex;flex-direction:column;gap:0;text-shadow:0 1px 8px rgba(0,0,0,0.4)">
+          <span style="font-size:12px;color:#c3c8d6">${E(nextLabel)}</span>
+          <span style="font-size:34px;font-weight:300;letter-spacing:-0.03em;line-height:1.05;font-variant-numeric:tabular-nums">${E(nw ? nw.kl : '–')}</span>
+        </div>
       </div>
-      <div style="position:absolute;left:18px;bottom:16px;display:flex;flex-direction:column;gap:6px">
-        <span style="display:flex;align-items:baseline;gap:8px"><span style="font-size:13px;color:#c3c8d6">${E(nextLabel)}</span><span style="font-size:28px;font-weight:300;letter-spacing:-0.02em;font-variant-numeric:tabular-nums">${E(nextTime)}</span></span>
-        <span style="font-size:12px;color:#c3c8d6">Sol opp ${E(kl(rise))} · ned ${E(kl(set))}</span>
+      <div style="position:relative;padding:26px 18px 14px;background:rgba(10,12,20,0.55);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
+        <div style="position:relative">${tl}</div>
+        <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:10px;color:#8e8d89;font-variant-numeric:tabular-nums">${ticks.map(t => `<span style="width:0;display:flex;justify-content:center">${t}</span>`).join('')}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:12px;font-size:11px;color:#a9a7a2">
+          <span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:3px;background:${a('oklch(0.82 0.12 75)', 0.6)}"></span>Dagslys ${E(kl(rise))}–${E(kl(set))}</span>
+          <span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:4px;border-radius:2px;background:${Y};box-shadow:0 0 6px ${Y}"></span>Utelys ${E(kl(wPaa))}–${E(kl(wAv))}</span>
+        </div>
       </div>
     </section>
 
-    <section style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
-      ${times.map(([icon, k, v], i) => `<div data-on-click="rowMore" data-arg="${E((i ? nAv : nPaa) || '')}" style="display:flex;flex-direction:column;gap:6px;padding:12px 16px 16px 12px;border-radius:28px;background:#1c1c1f">
-          <span style="width:50px;height:50px;border-radius:25px;background:#262629;display:grid;place-items:center;margin-bottom:22px"><span class="ms" style="font-size:24px">${icon}</span></span>
-          <span style="font-size:13px;color:#c9c7c2;padding-left:4px">${E(k)}</span>
-          <span style="font-size:32px;font-weight:300;letter-spacing:-0.03em;line-height:1;padding-left:4px;font-variant-numeric:tabular-nums">${E(v)}</span>
-        </div>`).join('')}
+    <section data-lay="utelys-plan" data-lay-navn="Tidsplan" style="${cardS};padding:16px 18px;display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;align-items:center;gap:8px"><span style="flex:1;${lbl}">Tidsplan</span>${onDur ? `<span style="font-size:12px;color:#a9a7a2">på i ${E(onDur)}</span>` : ''}</div>
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:10px">
+        ${[[nPaa, 'emoji_objects', 'Tennes' + dag(wPaa), kl(wPaa), !out], null, [nAv, 'light_off', 'Slukkes' + dag(wAv), kl(wAv), out]].map(x => !x ? `<span class="ms" style="font-size:20px;color:#6d6c69">arrow_forward</span>`
+          : `<button data-on-click="rowMore" data-arg="${E(x[0] || '')}" style="min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:12px 14px;border-radius:20px;background:${x[4] ? a(Y, 0.12) : '#232326'};box-shadow:${x[4] ? `inset 0 0 0 1px ${a(Y, 0.35)}` : 'none'};text-align:left">
+              <span style="display:flex;align-items:center;gap:6px;min-width:0;max-width:100%;font-size:12px;color:${x[4] ? Y : '#a9a7a2'}"><span class="ms" style="font-size:16px;flex:none">${x[1]}</span><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(x[2])}</span></span>
+              <span style="font-size:28px;font-weight:300;letter-spacing:-0.03em;line-height:1;font-variant-numeric:tabular-nums">${E(x[3])}</span>
+            </button>`).join('')}
+      </div>
     </section>
 
-    ${autos.length ? `<section style="display:flex;flex-direction:column;gap:8px">
-      ${autos.map(([id, icon, k, sub]) => { const w = sw(this.isOn(id)); return `<button data-on-click="autoTog" data-arg="${E(id)}" style="${S(autoPill)}">
-          <span style="${S(autoIcon)}"><span class="ms" style="font-size:24px">${icon}</span></span>
-          <span style="flex:1;min-width:0;display:flex;flex-direction:column;text-align:left"><span style="font-size:15px;font-weight:500">${E(k)}</span><span style="font-size:12px;color:#a9a7a2">${E(sub)}</span></span>
+    ${lampList.length ? `<section data-lay="utelys-lamper" data-lay-navn="Utelamper" style="display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;align-items:center;gap:10px;padding:4px 6px 0">
+        <span class="ms" style="font-size:18px;color:#a9a7a2">deck</span>
+        <span style="flex:1;font-size:15px;font-weight:500">Utelamper</span>
+        <span style="font-size:12px;color:#8e8d89;white-space:nowrap">${lampsOn ? `${lampsOn} på` : 'alle av'}</span>
+        <button data-on-click="toggleOut" style="${S({ height: 30, padding: '0 12px', borderRadius: 15, fontSize: 12, fontWeight: 600, background: lampsOn ? '#262629' : a(Y, 0.18), color: lampsOn ? '#c9c7c2' : Y })}">${lampsOn ? 'Av' : 'På'}</button>
+      </div>
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
+        ${lampList.map(id => H.pill(this, id, H.strip(this.fname(id), ['ute']), false)).join('')}
+      </div>
+    </section>` : ''}
+
+    ${autos.length ? `<section data-lay="utelys-auto" data-lay-navn="Automatikk" style="${cardS};padding:6px 6px 6px;display:flex;flex-direction:column">
+      <div style="padding:10px 12px 6px;${lbl}">Automatikk</div>
+      ${autos.map(([id, icon, k, sub, main], i) => { const on = this.isOn(id), w = sw(on), dim = !main && !autoOn; return `<button data-key="auto-${E(id)}" data-on-click="autoTog" data-arg="${E(id)}" data-hold="rowMore" style="display:flex;align-items:center;gap:12px;min-height:64px;padding:8px 12px 8px 8px;border-radius:22px;text-align:left;opacity:${dim ? 0.5 : 1};${i ? 'border-top:1px solid rgba(255,255,255,0.05);border-radius:0 0 22px 22px;' : ''}${main && autos.length > 1 ? 'margin-bottom:2px;' : ''}">
+          <span style="width:44px;height:44px;border-radius:22px;flex:none;display:grid;place-items:center;background:${on ? a(main ? G : Y, 0.16) : '#262629'};color:${on ? (main ? G : Y) : '#a9a7a2'};transition:background .25s,color .25s"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' ${on ? 1 : 0}">${icon}</span></span>
+          <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px"><span style="font-size:15px;font-weight:500">${E(k)}</span><span style="font-size:12px;color:#a9a7a2">${E(sub)}</span></span>
           <span style="${S(w.track)}"><span style="${S(w.knob)}"></span></span>
         </button>`; }).join('')}
     </section>` : ''}
 
-    ${lampList.length ? `<section style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
-      ${lampList.map(id => { const lit = this.v(id) === 'on'; const name = H.strip(this.fname(id), ['ute']);
-        const st2 = { height: 72, padding: '0 20px', borderRadius: 36, display: 'flex', alignItems: 'center', gap: 14, background: lit ? Y : '#1c1c1f', color: lit ? '#1a1a1c' : '#c9c7c2', boxShadow: lit ? '0 8px 24px oklch(0.86 0.12 95 / 0.25)' : 'none', transition: 'background .3s, box-shadow .3s' };
-        return `<button class="kdl-a97" data-on-click="lampTog" data-arg="${E(id)}" data-hold="rowMore" style="${S(st2)}"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">${/veranda/i.test(name + id) ? 'light' : 'lightbulb'}</span><span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(name)}</span></button>`; }).join('')}
-    </section>` : ''}
-
-    ${folds.map(d => `<section style="display:flex;flex-direction:column;border-radius:28px;background:#1c1c1f;overflow:hidden">
+    ${folds.map(d => `<section data-lay="utelys-${d.k}" style="display:flex;flex-direction:column;${cardS};overflow:hidden">
         <button data-on-click="fold" data-arg="${d.k}" style="display:flex;align-items:center;gap:12px;height:58px;padding:0 18px;text-align:left">
           <span class="ms" style="font-size:22px">${d.icon}</span>
           <span style="flex:1;font-size:15px;font-weight:500">${E(d.title)}</span>
@@ -590,7 +646,7 @@ ${inner}
           <span class="ms" style="${S(d.chev)}">expand_more</span>
         </button>
         ${d.open ? `<div style="display:flex;flex-direction:column;padding:0 18px 10px">
-            ${d.rows.map(r => `<div ${r.id ? `data-on-click="rowMore" data-arg="${E(r.id)}" ` : ''}style="${S(r.row)}"><span style="flex:1;font-size:13px">${E(r.k)}</span><span style="font-size:12px;font-weight:600;padding:6px 11px;border-radius:12px;background:#262629;font-variant-numeric:tabular-nums">${E(r.v)}</span></div>`).join('')}
+            ${d.rows.map(r => `<div ${r.id ? `data-on-click="rowMore" data-arg="${E(r.id)}" ` : ''}style="${S(r.row)}">${r.ic ? `<span class="ms" style="font-size:18px;color:#8e8d89">${r.ic}</span>` : ''}<span style="flex:1;min-width:0;font-size:13px">${E(r.k)}</span><span style="font-size:12px;font-weight:600;padding:6px 11px;border-radius:12px;background:#262629;font-variant-numeric:tabular-nums;white-space:nowrap">${E(r.v)}</span></div>`).join('')}
           </div>` : ''}
       </section>`).join('')}`;
     }

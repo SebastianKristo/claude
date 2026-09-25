@@ -23,6 +23,10 @@
  * frigate: auto                     # true/false, eller instans-ID
  * lagring: null                     # auto: sensor.*_recording_capacity (sek) → «7 d»
  * fane: null                        # navn på fane 2 (auto: «Frigate» med Frigate, ellers «Hendelser»)
+ * oppsett: liste                    # standardvisning: liste | rutenett | masonry | oversikt | fokus | 2x2 | 3kol
+ *
+ * Per bruker (HA-brukerdata 'kd_kamera'): { liste: [camera.*…], oppsett: 'masonry', bilde: { 'camera.x_high…': 'camera.x_low…' } }
+ * «bilde» = egen entitet for stillbildene i oversikten (f.eks. lav oppløsning); strømmen/enkeltvisningen bruker hovedentiteten.
  */
 (() => {
   const KD = window.KD;
@@ -50,6 +54,9 @@
   const UD = 'kd_kamera';
   const PINK_GRAD = 'linear-gradient(135deg, oklch(0.78 0.13 350), oklch(0.9 0.05 20))';
   const RED_E = 'oklch(0.72 0.15 25)', GREEN_E = 'oklch(0.8 0.12 150)';
+  const LAYOUTS = [['liste', 'Liste', 'view_agenda'], ['rutenett', 'Rutenett', 'grid_view'], ['masonry', 'Masonry', 'dashboard'], ['oversikt', 'Oversikt', 'view_quilt'], ['fokus', 'Fokus', 'crop_free'], ['2x2', '2×2', 'grid_on'], ['3kol', '3 kolonner', 'view_week']];
+  const QUAL = id => /_high|_ultra_high/.test(id) ? 'Høy' : /_medium/.test(id) ? 'Middels' : /_low/.test(id) ? 'Lav' : /_insecure/.test(id) ? 'Usikret' : /_package/.test(id) ? 'Pakke' : '';
+  const devOf = obj => obj.replace(/_(ultra_)?(high|medium|low)(_resolution_channel|_resolution|_res)?$/, '').replace(/_insecure$/, '').replace(/_package(_camera)?$/, '');
   const dayStart = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
 
   class KDKameraCard extends KD.KDSheet {
@@ -97,7 +104,7 @@
     }
     /** Beriker kameraoppføringer med navn, ikon og deteksjonssensorer. dedupe: én per enhet (auto-lista). */
     _camInfo(list, dedupe) {
-      const cfg = this.config, seen = new Set();
+      const cfg = this.config, seen = new Set(), bild = (KD.ud(this, UD) || {}).bilde || {};
       return list.map(c => {
         const id = c.entity, obj = id.split('.')[1];
         const pkg = /_package(_camera)?$/.test(obj) || /pakke|package/i.test(c.frigate || '');
@@ -119,7 +126,8 @@
         const motion = c.bevegelse || (pkg ? null : devs.map(d => `binary_sensor.${d}_motion`).find(x => this.st(x)) || null);
         const key = dedupe ? dev + (pkg ? '_pkg' : '') : id;
         if (seen.has(key)) return null; seen.add(key);
-        return { ...c, id, obj, dev, pkg, name, icon, det, motion, frigate: c.frigate || null, key: obj };
+        const snap = bild[id] && bild[id] !== id && this.st(bild[id]) ? bild[id] : null;
+        return { ...c, id, obj, dev, pkg, name, icon, det, motion, snap, frigate: c.frigate || null, key: obj };
       }).filter(Boolean).map((c, i, all) => {
         // pakke-deteksjonen hører til pakkekameraet når enheten har et
         if (!c.pkg && c.det.package && all.some(x => x.pkg && x.dev === c.dev)) { const det = { ...c.det }; delete det.package; return { ...c, det }; }
@@ -140,7 +148,7 @@
       return v == null ? '–' : `${Math.round((this.unit(id) === 'd' ? v * 86400 : this.unit(id) === 'h' ? v * 3600 : v) / 86400)} d`;
     }
     img(c, which) {
-      const st = this.st(c.id);
+      const st = this.st(which === 0 && c.snap ? c.snap : c.id);
       if (!st || KD.BAD.has(st.state)) return null;
       const p = st.attributes.entity_picture;
       if (!p) return null;
@@ -234,6 +242,91 @@
       this.toggle(id);
     }
     open(ev, id) { this.setState({ view: id }); }
+    goTab(ev, v) { this.go(ev, 'tab:' + v); }
+
+    /* ---------- visningsoppsett (per bruker) ---------- */
+    layout() { const u = (KD.ud(this, UD) || {}).oppsett || this.config.oppsett; return LAYOUTS.some(x => x[0] === u) ? u : 'liste'; }
+    setLayout(ev, v) { if (!LAYOUTS.some(x => x[0] === v) || v === this.layout()) return; KD.udSave(this, UD, { ...KD.ud(this, UD), oppsett: v }); this.setState({ pg: 0, fi: 0 }); this.haptic('selection'); }
+    feat(ev, k) { if (this.state.feat === k) return; this.setState({ feat: k }); this.haptic('selection'); }
+    pageGo(ev, d) { this.setState(s => ({ pg: Math.max(0, (s.pg || 0) + Number(d)) })); this.haptic('selection'); }
+    fokScroll(ev, a0, el) {
+      el = el || ev.target; const w = el.clientWidth || 1, i = Math.round(el.scrollLeft / w);
+      if (i !== (this.state.fi || 0) && i >= 0 && i < el.children.length) this.setState({ fi: i });
+    }
+    fokGo(ev, d) {
+      const el = this.$('[data-kd-fokus]'), n = el ? el.children.length : 0; if (!n) return;
+      const i = Math.max(0, Math.min(n - 1, typeof d === 'string' && d[0] === '=' ? Number(d.slice(1)) : (this.state.fi || 0) + Number(d)));
+      el.scrollTo({ left: i * el.clientWidth, behavior: 'smooth' }); this.setState({ fi: i }); this.haptic('selection');
+    }
+    layoutPickHTML() {
+      const cur = this.layout(), L = LAYOUTS.find(x => x[0] === cur);
+      return `<div data-key="kam-lay" data-lay="Visning" data-lay-navn="Visning (oppsett)" style="display:flex;flex-direction:column;gap:6px;min-width:0">
+    <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:0 4px;min-width:0">
+      <span style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Visning</span>
+      <span style="font-size:12px;color:#c9c7c2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(L[1])}</span>
+    </div>
+    ${KD.segHTML('kam-oppsett', LAYOUTS.map(([k, , icon]) => [k, '', icon]), cur, 'setLayout', { small: true })}
+  </div>`;
+    }
+    /** Én kameraflis. sz: lg | md | sm. tap: 'feat' gjør hele flisa til knapp som løfter kameraet fram. */
+    tileHTML(f, o = {}) {
+      const sz = o.sz || 'lg', lg = sz === 'lg', sm = sz === 'sm';
+      const box = o.h ? `height:${o.h}` : `aspect-ratio:${o.ar || '16/9'}`;
+      const badge = sm ? `<span style="display:flex;align-items:center;gap:4px">${f.act ? `<span style="width:18px;height:18px;border-radius:9px;display:grid;place-items:center;background:${a(C.pink, 0.95)};color:#2a1720"><span class="ms" style="font-size:12px;font-variation-settings:'FILL' 1">${e(f.motionIcon)}</span></span>` : `<span style="width:7px;height:7px;border-radius:4px;background:${f.avail ? C.red : '#6d6c69'};box-shadow:0 0 0 2px rgba(0,0,0,0.35)"></span>`}</span>`
+        : `<span style="${S({ ...f.live, ...(lg ? {} : { fontSize: 9, padding: '2px 6px' }) })}">${t(f.liveT)}</span>
+            <span style="${S({ ...f.motion, ...(lg ? {} : { fontSize: 9, padding: '2px 6px' }) })}"><span class="ms" style="font-size:${lg ? 13 : 11}px;font-variation-settings:'FILL' 1">${t(f.motionIcon)}</span>${lg ? t(f.motionT) : ''}</span>`;
+      const tap = o.tap === 'feat' ? ` data-on-click="feat" data-arg="${e(f.key)}"` : '';
+      return `<div data-key="${e((o.kp || '') + f.key)}"${tap} style="position:relative;${box};border-radius:${sm ? 14 : lg ? 20 : 18}px;overflow:hidden;background:#0c0c0d;min-width:0;${tap ? 'cursor:pointer;' : ''}${o.style || ''}">
+          ${this.slotHTML(f.src, sm ? '' : f.ph)}
+          ${o.live ? `<div data-keep data-cam-live="${e(f.id)}" style="position:absolute;inset:0"></div>` : ''}
+          <div style="position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(0,0,0,0.35),transparent 30%,transparent 62%,rgba(0,0,0,0.55))"></div>
+          <div style="position:absolute;left:${sm ? 7 : lg ? 12 : 10}px;top:${sm ? 7 : lg ? 10 : 9}px;display:flex;align-items:center;gap:${lg ? 6 : 4}px;pointer-events:none">${badge}</div>
+          ${sm ? '' : `<button data-on-click="open" data-arg="${e(f.key)}" title="Åpne" style="position:absolute;right:${lg ? 10 : 8}px;top:${lg ? 8 : 6}px;width:${lg ? 34 : 30}px;height:${lg ? 34 : 30}px;border-radius:${lg ? 17 : 15}px;background:rgba(20,20,22,0.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:grid;place-items:center"><span class="ms" style="font-size:${lg ? 18 : 16}px">open_in_full</span></button>`}
+          <span style="position:absolute;left:${sm ? 8 : lg ? 12 : 10}px;right:${lg ? '45%' : sm ? '6px' : '10px'};bottom:${sm ? 6 : lg ? 10 : 8}px;font-size:${sm ? 11 : lg ? 13 : 12}px;font-weight:600;pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t(f.name)}</span>
+          ${lg ? `<span style="position:absolute;right:12px;bottom:10px;max-width:42%;font-size:11px;color:#c9c7c2;pointer-events:none;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t(f.meta)}</span>` : ''}
+          ${o.ring ? `<div style="position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 2px oklch(0.78 0.13 350 / 0.9);pointer-events:none"></div>` : ''}
+        </div>`;
+    }
+    /** Alle-visningen i valgt oppsett */
+    gridHTML(feeds) {
+      const s = this.state, L = this.layout(), n = feeds.length;
+      const empty = `<div style="padding:24px 0;text-align:center;font-size:13px;color:#6d6c69">Ingen kameraer funnet</div>`;
+      if (!n) return `<section data-lay="Kameraer" style="display:grid;grid-template-columns:minmax(0,1fr)">${empty}</section>`;
+      const grid = (cols, html) => `<section data-lay="Kameraer" data-key="kam-grid-${L}" style="display:grid;grid-template-columns:repeat(${cols},minmax(0,1fr));gap:8px;min-width:0">${html}</section>`;
+      const nav = (btn, mid) => `<div style="display:flex;align-items:center;gap:8px;min-width:0">${btn('-1', 'chevron_left')}<div style="flex:1;min-width:0;display:flex;justify-content:center;align-items:center;gap:6px">${mid}</div>${btn('1', 'chevron_right')}</div>`;
+      if (L === 'rutenett') return grid(2, feeds.map(f => this.tileHTML(f, { sz: 'md', ar: '4/3' })).join(''));
+      if (L === '3kol') return grid(3, feeds.map(f => this.tileHTML(f, { sz: 'sm', ar: '16/9' })).join(''));
+      if (L === 'masonry') {
+        const col = c => `<div style="display:flex;flex-direction:column;gap:8px;min-width:0">${feeds.map((f, i) => [f, i]).filter(([, i]) => i % 2 === c).map(([f, i]) => this.tileHTML(f, { sz: 'md', ar: i % 4 === 0 || i % 4 === 3 ? '3/4' : '4/3' })).join('')}</div>`;
+        return `<section data-lay="Kameraer" data-key="kam-grid-${L}" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:start;min-width:0">${col(0)}${col(1)}</section>`;
+      }
+      if (L === '2x2') {
+        const pages = Math.ceil(n / 4), pg = Math.min(s.pg || 0, pages - 1);
+        const btn = (d, icon) => { const dis = d < 0 ? pg === 0 : pg >= pages - 1; return `<button class="kd-cam-ed" data-on-click="pageGo" data-arg="${d}" ${dis ? 'disabled' : ''} style="width:40px;height:40px;border-radius:20px;background:#1c1c1f;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:22px">${icon}</span></button>`; };
+        return `<section data-lay="Kameraer" data-key="kam-grid-${L}" style="display:flex;flex-direction:column;gap:8px;min-width:0">
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;min-width:0">${feeds.slice(pg * 4, pg * 4 + 4).map(f => this.tileHTML(f, { sz: 'md', ar: '16/10' })).join('')}</div>
+      ${pages > 1 ? nav(btn, Array.from({ length: pages }, (_, i) => `<span style="width:${i === pg ? 18 : 7}px;height:7px;border-radius:4px;background:${i === pg ? '#f2f1ee' : '#48474a'};transition:width .3s"></span>`).join('') + `<span style="font-size:12px;color:#8e8d89;margin-left:6px;font-variant-numeric:tabular-nums">${pg * 4 + 1}–${Math.min(n, pg * 4 + 4)} av ${n}</span>`) : ''}
+    </section>`;
+      }
+      if (L === 'oversikt') {
+        const F = feeds.find(f => f.key === s.feat) || feeds[0], rest = feeds.filter(f => f !== F);
+        return `<section data-lay="Kameraer" data-key="kam-grid-${L}" style="display:flex;flex-direction:column;gap:8px;min-width:0">
+      ${this.tileHTML(F, { sz: 'lg', ar: '16/10', live: true, kp: 'feat-' })}
+      ${rest.length ? `<div style="display:grid;grid-template-columns:repeat(${rest.length > 4 ? 4 : 3},minmax(0,1fr));gap:6px;min-width:0">${rest.map(f => this.tileHTML(f, { sz: 'sm', ar: '16/10', tap: 'feat' })).join('')}</div>` : ''}
+    </section>`;
+      }
+      if (L === 'fokus') {
+        const fi = Math.min(s.fi || 0, n - 1), F = feeds[fi];
+        const btn = (d, icon) => { const dis = d < 0 ? fi === 0 : fi >= n - 1; return `<button class="kd-cam-ed" data-on-click="fokGo" data-arg="${d}" ${dis ? 'disabled' : ''} style="width:44px;height:44px;border-radius:22px;background:#1c1c1f;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:24px">${icon}</span></button>`; };
+        return `<section data-lay="Kameraer" data-key="kam-grid-${L}" style="display:flex;flex-direction:column;gap:10px;min-width:0">
+      <div data-hscroll="1" data-kd-fokus="1" data-on-scroll="fokScroll" style="display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;border-radius:24px;min-width:0">
+        ${feeds.map((f, i) => `<div data-key="fok-${e(f.key)}" style="flex:none;width:100%;scroll-snap-align:center;scroll-snap-stop:always">${this.tileHTML(f, { sz: 'lg', ar: '3/4', live: i === fi, kp: 'fk-', style: 'border-radius:24px' })}</div>`).join('')}
+      </div>
+      ${nav(btn, `<span style="display:flex;flex-direction:column;align-items:center;min-width:0;gap:4px"><span style="font-size:14px;font-weight:500;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t(F.name)}</span><span style="display:flex;gap:5px">${feeds.map((f, i) => `<button data-on-click="fokGo" data-arg="=${i}" title="${e(f.name)}" style="width:${i === fi ? 18 : 7}px;height:7px;border-radius:4px;background:${i === fi ? '#f2f1ee' : f.act ? C.pink : '#48474a'};transition:width .3s"></button>`).join('')}</span></span>`)}
+    </section>`;
+      }
+      return grid(1, feeds.map(f => this.tileHTML(f, { sz: 'lg' })).join(''));
+    }
 
     /* ---------- tilpass kameraer (per bruker) ---------- */
     editTog() { this.setState({ edit: !this.state.edit, pickFor: null, tab: 'live', view: 'alle' }); this.haptic('selection'); }
@@ -242,7 +335,18 @@
       const l = this.userList() || this.cams().map(c => c.id);
       return l.filter((x, i) => l.indexOf(x) === i);
     }
-    _saveList(l) { KD.udSave(this, UD, { liste: l }); this.haptic('selection'); }
+    _saveList(l) { KD.udSave(this, UD, { ...KD.ud(this, UD), liste: l }); this.haptic('selection'); }
+    /** Andre camera.* for samme enhet (høy/middels/lav oppløsning, usikret …) – kandidater til stillbilde-entitet */
+    siblings(id) {
+      const h = this._hass, R = (h && h.entities) || {}, dv = R[id] && R[id].device_id, d0 = devOf(id.split('.')[1]);
+      return this.find(/^camera\./).filter(x => x !== id && !/_package(_camera)?$/.test(x) && (dv ? R[x] && R[x].device_id === dv : devOf(x.split('.')[1]) === d0));
+    }
+    camSnap(ev, arg) {
+      const k = arg.indexOf('|'), id = arg.slice(0, k), snap = arg.slice(k + 1), u = KD.ud(this, UD) || {}, b = { ...(u.bilde || {}) };
+      if (!snap || snap === id) delete b[id]; else b[id] = snap;
+      KD.udSave(this, UD, { ...u, bilde: b }); this.haptic('selection');
+    }
+    edSearch(ev) { this.setState({ edQ: ev.target.value }); }
     camMove(ev, arg) {
       const [i0, d] = arg.split('|'), i = Number(i0), j = i + (d === 'up' ? -1 : 1), l = this.editList();
       if (j < 0 || j >= l.length) return;
@@ -251,7 +355,7 @@
     }
     camDel(ev, i) { const l = this.editList(); l.splice(Number(i), 1); this.setState({ pickFor: null }); this._saveList(l); }
     camAdd(ev, id) { const l = this.editList(); if (!l.includes(id)) l.push(id); this._saveList(l); }
-    camPick(ev, i) { this.setState({ pickFor: this.state.pickFor === String(i) ? null : String(i) }); this.haptic('selection'); }
+    camPick(ev, i) { this.setState({ pickFor: this.state.pickFor === String(i) ? null : String(i), edQ: '' }); this.haptic('selection'); }
     camSet(ev, arg) {
       const k = arg.indexOf('|'), i = Number(arg.slice(0, k)), id = arg.slice(k + 1), l = this.editList();
       const j = l.indexOf(id);
@@ -259,7 +363,7 @@
       l[i] = id;
       this.setState({ pickFor: null }); this._saveList(l);
     }
-    editReset() { KD.udSave(this, UD, {}); this.setState({ pickFor: null }); this.haptic('selection'); }
+    editReset() { const u = KD.ud(this, UD) || {}; KD.udSave(this, UD, u.oppsett ? { oppsett: u.oppsett } : {}); this.setState({ pickFor: null }); this.haptic('selection'); }
     editHTML() {
       const s = this.state, cfg = this.config, ids = this.editList();
       const cfgE = (Array.isArray(cfg.kameraer) ? cfg.kameraer : []).map(x => typeof x === 'string' ? { entity: x } : { ...x }).filter(Boolean);
@@ -271,6 +375,16 @@
       });
       const ico = (icon, col) => `<span class="ms" style="font-size:20px;color:${col || '#f2f1ee'}">${icon}</span>`;
       const sq = 'width:36px;height:36px;border-radius:18px;display:grid;place-items:center;flex:none;background:rgba(255,255,255,0.06)';
+      // stillbilde-entitet: bare når enheten har flere camera.* (f.eks. høy/lav oppløsning)
+      const sibs = c => {
+        const sb = c.pkg ? [] : this.siblings(c.id); if (!sb.length) return '';
+        const cur = c.snap || c.id;
+        const chip = (id, label) => { const sel = id === cur; return `<button class="kd-cam-ed" data-on-click="camSnap" data-arg="${e(c.id + '|' + id)}" title="${e(id)}" style="${S({ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0, maxWidth: '100%', height: 30, padding: '0 11px', borderRadius: 15, fontSize: 12, fontWeight: 500, background: sel ? 'oklch(0.78 0.13 350 / 0.2)' : 'rgba(255,255,255,0.06)', boxShadow: sel ? 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.7)' : 'none', color: sel ? '#f2f1ee' : '#c9c7c2' })}"><span style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(label)}</span></button>`; };
+        return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:0 2px 2px;min-width:0">
+          <span style="display:flex;align-items:center;gap:4px;font-size:11px;color:#8e8d89;flex:none"><span class="ms" style="font-size:14px">photo_library</span>Stillbilde</span>
+          ${chip(c.id, 'Samme' + (QUAL(c.id) ? ' · ' + QUAL(c.id) : ''))}${sb.map(id => chip(id, QUAL(id) || this.fname(id))).join('')}
+        </div>`;
+      };
       const rows = info.map((c, i) => {
         const open = s.pickFor === String(i), src = this.img(c, 0), ok = !!this.st(c.id);
         return `<div data-key="ed-${e(c.id)}" style="display:flex;flex-direction:column;gap:10px;padding:8px;border-radius:20px;background:#1c1c1f;box-shadow:${open ? 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.55)' : 'none'};min-width:0">
@@ -279,7 +393,7 @@
           <button class="kd-cam-ed" data-on-click="camPick" data-arg="${i}" title="Velg kamera" style="min-width:0;display:flex;align-items:center;gap:6px;text-align:left;padding:2px 0">
             <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
               <span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(c.name)}</span>
-              <span style="font-size:11px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ok ? e(c.id) : 'Utilgjengelig · ' + e(c.id)}</span>
+              <span style="display:flex;align-items:flex-start;gap:4px;min-width:0;font-size:11px;color:${ok ? '#8e8d89' : RED_E}"><span class="ms" style="font-size:13px;flex:none">videocam</span><span style="min-width:0;overflow:hidden;word-break:break-all;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.35;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">${ok ? '' : 'Utilgjengelig · '}${e(c.id)}</span></span>
             </span>
             <span class="ms" style="font-size:18px;color:#8e8d89;flex:none">${open ? 'expand_less' : 'expand_more'}</span>
           </button>
@@ -289,15 +403,19 @@
             <button class="kd-cam-ed" data-on-click="camDel" data-arg="${i}" title="Fjern" style="${sq}"><span class="ms" style="font-size:20px;color:${RED_E};font-variation-settings:'FILL' 1">remove_circle</span></button>
           </span>
         </div>
-        ${open ? `<div style="display:flex;flex-wrap:wrap;gap:6px;padding:2px 2px 4px;min-width:0">${all.map(id => {
+        ${sibs(c)}
+        ${open ? `<div style="display:flex;flex-direction:column;gap:8px;min-width:0">
+          <div style="display:flex;align-items:center;gap:8px;height:40px;padding:0 14px;border-radius:20px;background:#232326;min-width:0"><span class="ms" style="font-size:18px;color:#8e8d89">search</span><input data-on-input="edSearch" value="${e(s.edQ || '')}" placeholder="Søk etter camera.*" style="flex:1;min-width:0;border:0;outline:none;background:transparent;color:#f2f1ee;font:inherit;font-size:13px"></div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;padding:2px 2px 4px;min-width:0">${all.filter(id => { const q = String(s.edQ || '').trim().toLowerCase(); return !q || id.toLowerCase().includes(q) || String(this.fname(id)).toLowerCase().includes(q); }).map(id => {
           const sel = id === c.id, used = !sel && ids.includes(id);
           return `<button class="kd-cam-ed" data-on-click="camSet" data-arg="${e(i + '|' + id)}" title="${e(id)}" style="${S({ display: 'flex', alignItems: 'center', gap: 6, maxWidth: '100%', minWidth: 0, height: 34, padding: '0 12px', borderRadius: 17, fontSize: 12, fontWeight: 500, background: sel ? 'oklch(0.78 0.13 350 / 0.2)' : 'rgba(255,255,255,0.06)', boxShadow: sel ? 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.7)' : 'none', color: sel ? '#f2f1ee' : used ? '#6d6c69' : '#c9c7c2' })}">${used ? '<span class="ms" style="font-size:14px">swap_vert</span>' : ''}<span style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(this.fname(id))}</span></button>`;
-        }).join('')}</div>` : ''}
+        }).join('')}</div></div>` : ''}
       </div>`;
       }).join('');
       const add = all.filter(id => !ids.includes(id));
       const head = x => `<div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:6px 4px 0">${x}</div>`;
-      return `${head('Kameraer som vises')}
+      return `${this.layoutPickHTML()}
+  ${head('Kameraer som vises')}
   <section style="display:flex;flex-direction:column;gap:8px;min-width:0">
     ${rows || `<div style="padding:24px 0;text-align:center;font-size:13px;color:#6d6c69">Ingen kameraer valgt</div>`}
   </section>
@@ -377,12 +495,11 @@
       const ctrlStyle = (on, col, ok = true) => ({
         style: { height: 72, borderRadius: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, background: on ? a(col, 0.18) : '#1c1c1f', boxShadow: on ? `inset 0 0 0 1px ${a(col, 0.5)}` : 'none', transition: 'background .2s', opacity: ok ? 1 : 0.45 },
         iconStyle: { fontSize: 24, color: on ? col : '#f2f1ee', fontVariationSettings: `'FILL' ${on ? 1 : 0}` } });
-      const tabs = [['live', 'Direkte'], ['frigate', cfg.fane || (fr ? 'Frigate' : 'Hendelser')]].map(([k, label]) => ({ k, label,
-        style: { height: 44, borderRadius: 18, fontSize: 14, fontWeight: 500, background: s.tab === k ? PINK : 'transparent', color: s.tab === k ? '#2a1720' : '#a9a7a2', transition: 'background .25s' } }));
+      const tabs = [['live', 'Direkte'], ['frigate', cfg.fane || (fr ? 'Frigate' : 'Hendelser')]].map(([k, label]) => ({ k, label }));
       const chips = [chip('alle', 'Alle', 'grid_view'), ...CAMS.map(c => chip(c.key, c.name, c.icon, !!this.active(c))), ...(isLive ? [chip('logg', 'Logg', 'list')] : [])];
       const feeds = CAMS.map(c => {
         const act = this.active(c), avail = this.ok(c.id), o = act && act !== 'motion' ? OBJ[act] : null;
-        return { key: c.key, name: c.name, src: this.img(c, 0), ph: avail ? `Stillbilde fra ${c.name}` : `${c.name} er utilgjengelig`, liveT: avail ? (this.v(c.id) === 'recording' ? '● OPPTAK' : 'LIVE') : 'AV', live: live(avail),
+        return { key: c.key, id: c.id, act: !!act, avail, name: c.name, src: this.img(c, 0), ph: avail ? `Stillbilde fra ${c.name}` : `${c.name} er utilgjengelig`, liveT: avail ? (this.v(c.id) === 'recording' ? '● OPPTAK' : 'LIVE') : 'AV', live: live(avail),
           motionT: act ? (o ? o[0] : 'Bevegelse') : '', motionIcon: o ? o[1] : 'directions_run',
           motion: { display: act ? 'flex' : 'none', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 600, padding: '3px 7px', borderRadius: 7, background: a(C.pink, 0.9), color: '#2a1720' },
           meta: act ? 'Bevegelse nå' : this.model(c) };
@@ -425,28 +542,13 @@
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
   </header>
 ${s.edit ? this.editHTML() : `
-  <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:2px;padding:4px;border-radius:22px;background:#1c1c1f">
-    ${tabs.map(x => `<button data-on-click="go" data-arg="tab:${x.k}" style="${S(x.style)}">${t(x.label)}</button>`).join('')}
-  </div>
+  ${KD.segHTML('kam-fane', tabs.map(x => [x.k, x.label, x.k === 'live' ? 'videocam' : 'history']), s.tab, 'goTab', { pink: true, h: 40 })}
 
   <nav data-hscroll style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:0 var(--kd-kant,10px)">
     ${chips.map(c => `<button data-on-click="go" data-arg="view:${e(c.k)}" style="${S(c.style)}"><span class="ms" style="font-size:16px">${t(c.icon)}</span>${t(c.label)}<span style="${S(c.dot)}"></span></button>`).join('')}
   </nav>
 
-  ${isLive && s.view === 'alle' ? `<section style="display:grid;grid-template-columns:minmax(0,1fr);gap:8px">
-      ${feeds.map(f => `<div data-key="${e(f.key)}" style="position:relative;aspect-ratio:16/9;border-radius:20px;overflow:hidden;background:#0c0c0d">
-          ${this.slotHTML(f.src, f.ph)}
-          <div style="position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(0,0,0,0.35),transparent 30%,transparent 70%,rgba(0,0,0,0.45))"></div>
-          <div style="position:absolute;left:12px;top:10px;display:flex;align-items:center;gap:6px;pointer-events:none">
-            <span style="${S(f.live)}">${t(f.liveT)}</span>
-            <span style="${S(f.motion)}"><span class="ms" style="font-size:13px;font-variation-settings:'FILL' 1">${t(f.motionIcon)}</span>${t(f.motionT)}</span>
-          </div>
-          <button data-on-click="open" data-arg="${e(f.key)}" title="Åpne" style="position:absolute;right:10px;top:8px;width:34px;height:34px;border-radius:17px;background:rgba(20,20,22,0.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:grid;place-items:center"><span class="ms" style="font-size:18px">open_in_full</span></button>
-          <span style="position:absolute;left:12px;bottom:10px;font-size:13px;font-weight:600;pointer-events:none">${t(f.name)}</span>
-          <span style="position:absolute;right:12px;bottom:10px;font-size:11px;color:#c9c7c2;pointer-events:none;font-variant-numeric:tabular-nums;white-space:nowrap">${t(f.meta)}</span>
-        </div>`).join('')}
-      ${!n ? `<div style="padding:24px 0;text-align:center;font-size:13px;color:#6d6c69">Ingen kameraer funnet</div>` : ''}
-    </section>` : ''}
+  ${isLive && s.view === 'alle' ? this.layoutPickHTML() + this.gridHTML(feeds) : ''}
 
   ${isLive && single ? `<section data-key="one-${e(one.id)}" style="position:relative;aspect-ratio:4/3;border-radius:24px;overflow:hidden;background:#0c0c0d">
       ${this.slotHTML(one.src, one.ph)}
