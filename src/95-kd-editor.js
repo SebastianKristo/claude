@@ -60,10 +60,10 @@
     'kd-rom-card': {
       rom: sel(ROOM_OPTS(), true), navn: { text: {} }, ikon: { text: {} }, farge: { text: {} },
       temp: { entity: { domain: 'sensor' } }, fukt: { entity: { domain: 'sensor' } }, sett: { entity: { domain: ['input_number', 'number', 'climate'] } },
-      lys: { entity: { domain: 'light' } }, skjul: { text: { multiple: true } }, effekt_par: { object: {} },
+      lys: { entity: { domain: 'light' } }, skjul: { entity: { multiple: true } }, effekt_par: { object: {} },
     },
     'kd-person-card': { person: sel(PERSON_OPTS, true) },
-    'kd-lys-card': { fane: sel([{ value: 'out', label: 'Utelys' }, { value: 'f1', label: '1. etg' }, { value: 'f2', label: '2. etg' }, { value: 'on', label: 'Lys på' }]) },
+    'kd-lys-card': { skjul: { entity: { multiple: true } }, fane: sel([{ value: 'out', label: 'Utelys' }, { value: 'f1', label: '1. etg' }, { value: 'f2', label: '2. etg' }, { value: 'on', label: 'Lys på' }]) },
   };
   const SHEET_KEYS = ['header', 'tittel', 'undertittel'];
 

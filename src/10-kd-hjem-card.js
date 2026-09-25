@@ -6,7 +6,10 @@
  *                                   # bubble: bare naviger til #hash (bruk bubble-card-popups med kd-*-kort)
  * meg: sebastian                    # standard: personen som hører til innlogget bruker
  * personer: [...]                   # se DEFAULT_PERSONS
- * servere: [{ navn, sub, ikon, url }]
+ * servere: [{ navn, server, ikon, sti }]  # som familiekortet: server = navnet i companion-appen
+ * server_sti: dashboard-mysmarthome        # siden som åpnes på den andre serveren (standard: denne)
+ * server_navn: Strömstad                   # overstyr hvilken server du står på (standard: location_name)
+ * haptikk: false                           # slå av vibrasjon
  * hjem: { venstre: [stue, inngang, ute], hoyre: [pult, kjokken] }
  * etasjer: { '1': [...], '2': [...] }
  * rom: { stue: { navn, ikon, farge, temp, fukt, sett, lys } }   # overstyr KD.ROOMS
@@ -21,11 +24,14 @@
     { id: 'cybele', navn: 'Cybele', person: 'person.cybele_kristo', hjemme: 'switch.cybele_posisjon_hjemme_borte', sovn: 'switch.homey_logic_cybele_sovn_vaken', farge: 'oklch(0.5 0.08 350)' },
     { id: 'rune', navn: 'Rune', person: 'person.rune_jemtland', hjemme: 'switch.rune_posisjon_hjemme_borte', sovn: 'switch.homey_logic_rune_sovn_vaken', farge: 'oklch(0.5 0.05 250)' },
   ];
+  // Som familiekortet i ki-cards: navn = det som vises, server = navnet serveren har i companion-appen.
   const DEFAULT_SERVERS = [
-    { navn: 'Strømstad', sub: 'Lokal · tilkoblet', ikon: 'home' },
-    { navn: 'Toten', sub: 'Nabu Casa', ikon: 'cottage' },
-    { navn: 'Oslo', sub: 'Nabu Casa', ikon: 'apartment' },
+    { navn: 'Oslo' },
+    { navn: 'Strömstad', server: 'Strømstad' },
+    { navn: 'Toten' },
   ];
+  const vask = t => String(t || '').toLowerCase().replace(/ö/g, 'ø').replace(/ä/g, 'æ').trim();
+  const SERVER_IKON = [[/oslo/, 'location_city'], [/str[øo]mstad/, 'sailing'], [/toten/, 'agriculture'], [/hytt/, 'cottage']];
   const FLOORS = [['hjem', 'Hjem'], ['1', '1. etg'], ['2', '2. etg'], ['aktuelt', 'Aktuelt']];
   const COND = {
     'clear-night': ['Klart', 'clear_night'], cloudy: ['Skyet', 'cloud'], exceptional: ['Ekstremvær', 'warning'], fog: ['Tåke', 'foggy'],
@@ -207,10 +213,30 @@
 
     /* ---------- handlinger ---------- */
     toggleServer() { this.setState({ serverMenu: !this.state.serverMenu }); }
+    /* Serverlista normalisert (tekst «Oslo, Strömstad=Strømstad» eller liste) */
+    servers() {
+      let l = this.config.servere || DEFAULT_SERVERS;
+      if (typeof l === 'string') l = l.split(',').map(d => d.trim()).filter(Boolean).map(d => { const [navn, server] = d.split('=').map(x => x.trim()); return { navn, server: server || navn }; });
+      return (Array.isArray(l) ? l : []).map(x => typeof x === 'string' ? { navn: x, server: x } : { ...x, navn: x.navn || x.server, server: x.server || x.navn }).filter(x => x.navn);
+    }
+    /* Serveren vi står på: installasjonens navn (location_name) sammenlignet med lista. server_navn overstyrer. */
+    currentServer(list) {
+      const her = this.config.server_navn || (this._hass && this._hass.config && this._hass.config.location_name) || '';
+      const i = list.findIndex(x => vask(x.navn) === vask(her) || vask(x.server) === vask(her));
+      return { i, navn: i >= 0 ? list[i].navn : her };
+    }
     pickServer(ev, i) {
-      const srv = (this.config.servere || DEFAULT_SERVERS)[+i];
-      this.setState({ server: +i, serverMenu: false });
-      if (srv && srv.url) location.href = srv.url;
+      const list = this.servers(), srv = list[+i];
+      this.setState({ serverMenu: false });
+      if (!srv || +i === this.currentServer(list).i) return;
+      this.haptic('selection');
+      if (srv.url) { window.open(srv.url, '_self'); return; }
+      /* Companion-appen bytter server med homeassistant://navigate/<sti>?server=<navn>, og bare via window.open
+         (samme som tap_action: url). Standardsti: dashbordet du står i nå. */
+      const naa = String(location.pathname || '').split('/').filter(Boolean)[0];
+      const sti = String(srv.sti || this.config.server_sti || naa || 'lovelace').replace(/^\/+/, '');
+      const navn = String(srv.server).replace(/[&?#%\s]/g, t => encodeURIComponent(t));
+      window.open(`homeassistant://navigate/${sti}?server=${navn}`);
     }
     openWeather() { this.openSheet('vaer'); }
     openMe() { this.setState({ quickId: this.meId }); }
@@ -230,12 +256,16 @@
     goFloor(ev, k) { this.setState({ floor: k, iL: 0, iR: 0 }); this.$$('[data-snap]').forEach(el => el.scrollLeft = 0); }
     snapScroll(ev, key, el) { const n = Math.round(el.scrollLeft / el.clientWidth); if (n !== (this.state[key] || 0)) this.setState({ [key]: n }); }
     openRoom(ev, id) { this.openSheet('rom', { roomId: id }); }
-    roomToggle(ev, id) { const r = this.roomsAll[id]; if (r && r.lys) this.call('light', 'toggle', { entity_id: r.lys }); else this.openRoom(ev, id); }
+    roomToggle(ev, id) {
+      const r = this.roomsAll[id]; if (!r) return;
+      const L = KD.roomLive(this, r);
+      if (L.lightId) return this.call('light', 'toggle', { entity_id: L.lightId });
+      if (L.lysListe.length) return this.call('light', L.lightsOn ? 'turn_off' : 'turn_on', { entity_id: L.lysListe });
+      this.openRoom(ev, id);
+    }
     roomSet(ev, arg) {
-      const [id, dir] = arg.split(':'), r = this.roomsAll[id]; if (!r || !r.sett) return;
-      const step = this.at(r.sett, 'step', 1) || 1, cur = this.n(r.sett, 0);
-      const lo = this.at(r.sett, 'min', -Infinity), hi = this.at(r.sett, 'max', Infinity);
-      this.setNum(r.sett, KD.clamp(cur + (dir === 'up' ? step : -step), lo, hi));
+      const [id, dir] = arg.split(':'), r = this.roomsAll[id]; if (!r) return;
+      KD.stepSet(this, KD.roomLive(this, r).setId, dir === 'up' ? 1 : -1);
     }
     lockOpen() { this.setState({ lockOpen: true }); }
     lockClose() { this.setState({ lockOpen: false }); }
@@ -484,9 +514,9 @@
       const menuItems = [['thermostat', 'Klima', 'klima', 'oklch(0.72 0.15 25)'], ['delete', 'Søppel', 'trash', '#c9c7c2'], ['sprinkler', 'Vanning', 'vann', 'oklch(0.8 0.12 235)'], ['calendar_month', 'Kalender', 'cal', 'oklch(0.78 0.13 350)'], ['potted_plant', 'Planter', 'plants', 'oklch(0.8 0.12 150)'], ['bedtime', 'Søvn', 'sleep', 'oklch(0.72 0.1 275)'], ['print', '3D-printer', 'printer', 'oklch(0.82 0.12 75)'], ['checklist', 'Gjøremål', 'todo', '#c9c7c2']];
 
       /* ----- servere ----- */
-      const SERV = c.servere || DEFAULT_SERVERS;
-      let curServer = s.server;
-      if (curServer == null) { const i = SERV.findIndex(x => x.url && location.href.startsWith(x.url)); curServer = i >= 0 ? i : 0; }
+      const SERV = this.servers();
+      const CUR = this.currentServer(SERV), curServer = CUR.i;
+      const srvIkon = v => v.ikon || (SERVER_IKON.find(([m]) => m.test(vask(v.navn))) || [0, 'home'])[1];
       const serverChev = { fontSize: 30, color: '#c9c7c2', fontVariationSettings: "'FILL' 1", transform: s.serverMenu ? 'rotate(180deg)' : 'none', transition: 'transform .25s' };
 
       /* ----- ark ----- */
@@ -507,8 +537,8 @@
         <div style="font-size:22px;font-weight:600;letter-spacing:-0.01em">${e(p.navn)}</div>
         <div style="font-size:13px;color:#8e8d89">${qp.home ? 'Hjemme' : 'Borte'} · ${qp.sleep ? 'Sover' : 'Våken'}</div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;border-radius:26px;background:#1a1a1c">${opt(qp.home, 'home', 'Hjemme', GREEN, 'home:1')}${opt(!qp.home, 'logout', 'Borte', BLUE, 'home:0')}</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;border-radius:26px;background:#1a1a1c">${opt(!qp.sleep, 'light_mode', 'Våken', AMBER, 'sleep:0')}${opt(qp.sleep, 'bedtime', 'Sover', 'oklch(0.72 0.1 275)', 'sleep:1')}</div>
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:4px;padding:4px;border-radius:26px;background:#1a1a1c">${opt(qp.home, 'home', 'Hjemme', GREEN, 'home:1')}${opt(!qp.home, 'logout', 'Borte', BLUE, 'home:0')}</div>
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:4px;padding:4px;border-radius:26px;background:#1a1a1c">${opt(!qp.sleep, 'light_mode', 'Våken', AMBER, 'sleep:0')}${opt(qp.sleep, 'bedtime', 'Sover', 'oklch(0.72 0.1 275)', 'sleep:1')}</div>
       <button data-on-click="quickClose" style="height:52px;border-radius:26px;background:linear-gradient(135deg, oklch(0.78 0.13 350), oklch(0.9 0.05 20));color:#2a1720;font-size:15px;font-weight:600">Ferdig</button>
       <button data-on-click="quickDetails" style="height:36px;display:flex;align-items:center;justify-content:center;gap:4px;font-size:13px;color:#a9a7a2">Mobil, soner og søvn<span class="ms" style="font-size:18px">chevron_right</span></button>
     </div>`;
@@ -539,7 +569,7 @@
         <div style="font-size:22px;font-weight:600;letter-spacing:-0.01em">${L ? 'Låst' : 'Ulåst'}</div>
         <div style="font-size:13px;color:#8e8d89">Inngangsdør · ${L ? 'sikret' : 'åpen for inngang'}</div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;border-radius:26px;background:#1a1a1c">${opt(L, 'lock', 'Lås', G, '1')}${opt(!L, 'lock_open', 'Lås opp', A, '0')}</div>
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:4px;padding:4px;border-radius:26px;background:#1a1a1c">${opt(L, 'lock', 'Lås', G, '1')}${opt(!L, 'lock_open', 'Lås opp', A, '0')}</div>
       <div style="display:flex;flex-direction:column;padding:4px 10px;border-radius:22px;background:#1a1a1c">
         ${autoId ? `<button data-on-click="lockAuto" style="display:flex;align-items:center;gap:10px;height:48px;text-align:left"><span class="ms" style="font-size:20px;color:#a9a7a2">lock_clock</span><span style="flex:1;font-size:14px">${autoMin ? `Autolås etter ${e(autoMin)} min` : 'Autolås'}</span><span style="${S(autoTrack)}"><span style="${S(autoKnob)}"></span></span></button>` : ''}
         <div style="display:flex;align-items:center;gap:10px;height:44px;${autoId ? 'border-top:1px solid rgba(255,255,255,0.05)' : ''}"><span class="ms" style="font-size:20px;color:#a9a7a2">${bat == null ? 'battery_unknown' : bat > 80 ? 'battery_full' : bat > 60 ? 'battery_5_bar' : bat > 40 ? 'battery_4_bar' : bat > 20 ? 'battery_3_bar' : 'battery_1_bar'}</span><span style="flex:1;font-size:14px">Batteri</span><span style="font-size:13px;color:#c9c7c2">${bat == null ? '–' : Math.round(bat) + ' %'}</span></div>
@@ -554,7 +584,7 @@
   <header style="display:flex;flex-direction:column;gap:16px">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
       <div style="display:flex;flex-direction:column;gap:6px;min-width:0">
-        <button data-on-click="toggleServer" style="display:flex;align-items:center;gap:4px;font-size:36px;font-weight:600;letter-spacing:-0.03em;line-height:1;white-space:nowrap"><span>${e((SERV[curServer] || SERV[0] || {}).navn || 'Hjem')}</span><span class="ms" style="${S(serverChev)}">arrow_drop_down</span></button>
+        <button data-on-click="toggleServer" style="display:flex;align-items:center;gap:4px;font-size:36px;font-weight:600;letter-spacing:-0.03em;line-height:1;white-space:nowrap"><span>${e(CUR.navn || 'Hjem')}</span><span class="ms" style="${S(serverChev)}">arrow_drop_down</span></button>
         <button data-on-click="openWeather" style="font-size:16px;color:#8e8d89;white-space:nowrap;text-align:left">${W.head != null ? Math.round(W.head) : '–'} °C · ${e(W.cond)}</button>
       </div>
       <button data-on-click="openMe" data-hold="openMeSheet" title="${e(me.navn)}" style="position:relative;width:60px;height:60px;border-radius:30px;flex:none;display:grid;place-items:center;font-size:22px;font-weight:600;background:${e(me.farge)};box-shadow:${meRing}">${e(me.navn[0])}${meB.show ? `<span style="position:absolute;right:-6px;top:-4px;width:24px;height:24px;border-radius:12px;background:#232326;box-shadow:0 0 0 2px #141416;display:grid;place-items:center"><span class="ms" style="${S(meB.style)}">${meB.icon}</span></span>` : ''}</button>
@@ -665,16 +695,14 @@
 
   ${s.serverMenu ? `<div data-key="srv-bd" data-on-click="toggleServer" style="position:fixed;inset:0;z-index:8"></div>
     <div style="position:absolute;left:14px;top:70px;z-index:9;min-width:240px;padding:6px;border-radius:22px;background:rgba(40,40,44,0.55);backdrop-filter:blur(22px) saturate(190%);-webkit-backdrop-filter:blur(22px) saturate(190%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.3),inset 0 0 0 0.5px rgba(255,255,255,0.18),0 18px 40px rgba(0,0,0,0.45);display:flex;flex-direction:column;gap:2px">
-      ${SERV.map((v, i) => { const act = i === curServer, online = v.online !== false; return `<button class="kd-hov8" data-on-click="pickServer" data-arg="${i}" style="min-height:52px;padding:6px 12px 6px 10px;border-radius:16px;display:flex;align-items:center;gap:12px;text-align:left">
-          <span style="${S({ width: 34, height: 34, borderRadius: 17, flex: 'none', display: 'grid', placeItems: 'center', background: act ? 'oklch(0.78 0.13 350 / 0.22)' : 'rgba(255,255,255,0.08)', color: act ? 'oklch(0.82 0.1 350)' : '#c9c7c2' })}"><span class="ms" style="font-size:19px;font-variation-settings:'FILL' 1">${e(v.ikon || 'home')}</span></span>
+      ${SERV.map((v, i) => { const act = i === curServer, online = true; return `<button class="kd-hov8" data-on-click="pickServer" data-arg="${i}" style="min-height:52px;padding:6px 12px 6px 10px;border-radius:16px;display:flex;align-items:center;gap:12px;text-align:left">
+          <span style="${S({ width: 34, height: 34, borderRadius: 17, flex: 'none', display: 'grid', placeItems: 'center', background: act ? 'oklch(0.78 0.13 350 / 0.22)' : 'rgba(255,255,255,0.08)', color: act ? 'oklch(0.82 0.1 350)' : '#c9c7c2' })}"><span class="ms" style="font-size:19px;font-variation-settings:'FILL' 1">${e(srvIkon(v))}</span></span>
           <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
             <span style="font-size:15px;font-weight:500;white-space:nowrap">${e(v.navn)}</span>
-            <span style="${S({ fontSize: 12, color: online ? '#8e8d89' : 'oklch(0.72 0.15 25)', whiteSpace: 'nowrap' })}">${e(v.sub || '')}</span>
+            <span style="${S({ fontSize: 12, color: online ? '#8e8d89' : 'oklch(0.72 0.15 25)', whiteSpace: 'nowrap' })}">${e(v.sub || (act ? 'Du er her' : 'Bytt til ' + v.navn))}</span>
           </div>
           <span class="ms" style="${S({ fontSize: 20, color: '#f2f1ee', opacity: act ? 1 : 0 })}">check</span>
         </button>`; }).join('')}
-      <div style="height:1px;background:rgba(255,255,255,0.08);margin:4px 8px"></div>
-      <button class="kd-hov8" data-on-click="addServer" style="height:44px;padding:0 12px 0 10px;border-radius:16px;display:flex;align-items:center;gap:12px;font-size:14px;color:#c9c7c2"><span class="ms" style="font-size:20px;width:34px;text-align:center">add</span>Legg til server</button>
     </div>` : ''}
 
   ${c.ark === 'bubble' ? '' : `<div data-key="sheet-bd" data-on-click="closeSheet" style="${S(sheetBackdrop)}"></div>

@@ -432,7 +432,7 @@
       </div>`).join('')}
   </section>
 
-  ${V.hasNet ? `<section style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+  ${V.hasNet ? `<section style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
       ${net.map(n => `<div style="display:flex;flex-direction:column;gap:6px;padding:16px;border-radius:22px;background:#1c1c1f">
           <span style="display:flex;align-items:center;gap:6px;font-size:12px;color:#8e8d89"><span class="ms" style="${S(n.iconStyle)}">${e(n.icon)}</span><span>${e(n.label)}</span></span>
           <span style="font-size:28px;font-weight:300;letter-spacing:-0.02em;font-variant-numeric:tabular-nums;white-space:nowrap"><span>${e(n.v)}</span><span style="font-size:13px;color:#8e8d89"> Mbit/s</span></span>

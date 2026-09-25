@@ -213,7 +213,7 @@
   H.pill = (card, id, name, rom) => {
     const lv = H.shown(card, id), v = lv.v, Y = H.Y, a = KD.a;
     const moving = card._d && card._d.moved;
-    const pill = { position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', gap: 8, height: 56, padding: '0 12px 0 6px', borderRadius: 28, background: '#1c1c1f', touchAction: 'none', cursor: 'pointer', userSelect: 'none' };
+    const pill = { position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', gap: 8, height: 56, padding: '0 12px 0 6px', borderRadius: 28, background: '#1c1c1f', touchAction: 'pan-y', cursor: 'pointer', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' };
     const fill = { position: 'absolute', left: 0, top: 0, bottom: 0, width: `${v}%`, background: `linear-gradient(90deg, ${a(Y, 0.18)}, ${a(Y, 0.42)})`, transition: moving ? 'none' : 'width .35s cubic-bezier(.34,1.2,.64,1)' };
     const iconWrap = { position: 'relative', width: 44, height: 44, borderRadius: 22, flex: 'none', display: 'grid', placeItems: 'center', background: v ? Y : '#2a2a2d', color: v ? '#141416' : '#6d6c69', transition: 'background .25s' };
     const valStyle = rom ? { fontSize: 11, color: v ? '#e6e4df' : '#6d6c69', fontVariantNumeric: 'tabular-nums' } : { fontSize: 11, color: v ? '#e6e4df' : '#6d6c69' };
@@ -227,22 +227,45 @@
             </div>`;
   };
 
+  /* ----- Skjul/vis valgt i UI (lagres som HA-brukerdata, følger brukeren på alle enheter) -----
+   * { <rom>: { skjul: [entity_id], vis: [entity_id] } }  – «vis» opphever standard-/config-skjul. */
+  H.UD_KEY = 'kd_rom_skjul';
+  H.userHide = (card) => card.cached('kd-ud-' + H.UD_KEY, 5 * 60e3,
+    () => card.ws({ type: 'frontend/get_user_data', key: H.UD_KEY }).then(r => (r && r.value) || {}).catch(() => ({})), {});
+  H.saveUserHide = (card, map) => {
+    KD._udOverride = map; card.invalidate('kd-ud-');
+    return card.ws({ type: 'frontend/set_user_data', key: H.UD_KEY, value: map }).catch(e => card.toast('Kunne ikke lagre: ' + (e.message || e)));
+  };
+  H.userHideNow = (card) => KD._udOverride || H.userHide(card);
+  /** Kombiner standard/config-skjul med brukerens valg for ett rom (eller alle rom når romId mangler) */
+  H.hideFn = (card, base, romId) => {
+    const ud = H.userHideNow(card), rows = romId ? [ud[romId] || {}] : Object.values(ud);
+    const sk = new Set(rows.flatMap(x => x.skjul || [])), vis = new Set(rows.flatMap(x => x.vis || []));
+    return id => sk.has(id) || (base(id) && !vis.has(id));
+  };
+
   /** Metoder for dimming ved dra / av-på ved trykk. Blandes inn i kortklassene. */
   H.mixin = {
-    lDown(ev, id, el) { try { el.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ } this._d = { id, x: ev.clientX, moved: false, el }; },
+    /* Dra vannrett = dim, loddrett = scroll (avbryter), kort stille trykk = av/på. */
+    lDown(ev, id, el) { if (ev.button > 0) return; this._d = { id, x: ev.clientX, y: ev.clientY, t: Date.now(), moved: false, scroll: false, el, pid: ev.pointerId }; },
     lMove(ev, id) {
-      const d = this._d; if (!d || d.id !== id) return;
-      if (Math.abs(ev.clientX - d.x) > 5) d.moved = true;
-      if (!d.moved) return;
+      const d = this._d; if (!d || d.id !== id || d.scroll || this.state.edit) return;
+      const dx = ev.clientX - d.x, dy = ev.clientY - d.y;
+      if (!d.moved) {
+        if (Math.abs(dy) > 8 && Math.abs(dy) >= Math.abs(dx)) { d.scroll = true; return; }   // brukeren scroller
+        if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy) * 1.2) { d.moved = true; try { d.el.setPointerCapture(d.pid); } catch (e) { /* ok */ } this.haptic('selection'); }
+        else return;
+      }
       const r = d.el.getBoundingClientRect();
       const v = Math.round(KD.clamp((ev.clientX - r.left) / r.width, 0, 1) * 100);
       if (!this.state.drag || this.state.drag.v !== v || this.state.drag.id !== id) this.setState({ drag: { id, v } });
     },
     lUp(ev, id) {
       const d = this._d; this._d = null;
-      if (!d || d.id !== id) return;
-      if (!d.moved) this.lightTap(id);
-      else if (this.state.drag) this.setLight(id, this.state.drag.v);
+      if (!d || d.id !== id || d.scroll) { if (this.state.drag) this.setState({ drag: null }); return; }
+      const still = Math.abs(ev.clientX - d.x) < 8 && Math.abs(ev.clientY - d.y) < 8 && Date.now() - d.t < 600;
+      if (!d.moved) { if (still) { this.haptic('light'); this.lightTap(id); } }
+      else if (this.state.drag) { this.haptic('light'); this.setLight(id, this.state.drag.v); }
       this.setState({ drag: null });
     },
     lCancel() { this._d = null; if (this.state.drag) this.setState({ drag: null }); },
@@ -259,6 +282,7 @@
       return this.call('light', 'turn_on', { entity_id: id, brightness_pct: v });
     },
     lightTap(id) {
+      if (this.state.edit && this.hideTog) return this.hideTog(null, id);
       const on = this.v(id) === 'on', d = id.split('.')[0];
       if (this.onLightChange) this.onLightChange(id);
       if (on) { this._pend = this._pend || {}; this._pend[id] = { v: 0, t: Date.now(), ref: this.hass && this.hass.states[id] }; setTimeout(() => this._queue(), 5100); }
@@ -345,7 +369,7 @@ a:hover{color:oklch(0.86 0.12 95)}`;
         this._skjulSrc = this.config.skjul;
         this._skjulFn = H.matcher(this.config.skjul != null ? this.config.skjul : Object.values(H.SKJUL).flat().filter(x => /^light\./.test(x)));
       }
-      return this._skjulFn;
+      return H.hideFn(this, this._skjulFn);
     }
 
     /** Rom per fane: { f1: [{r, lights}], f2: [...], out: [...] } */
@@ -541,7 +565,7 @@ ${inner}
       </div>
     </section>
 
-    <section style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+    <section style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
       ${times.map(([icon, k, v], i) => `<div data-on-click="rowMore" data-arg="${E((i ? nAv : nPaa) || '')}" style="display:flex;flex-direction:column;gap:6px;padding:12px 16px 16px 12px;border-radius:28px;background:#1c1c1f">
           <span style="width:50px;height:50px;border-radius:25px;background:#262629;display:grid;place-items:center;margin-bottom:22px"><span class="ms" style="font-size:24px">${icon}</span></span>
           <span style="font-size:13px;color:#c9c7c2;padding-left:4px">${E(k)}</span>
@@ -557,7 +581,7 @@ ${inner}
         </button>`; }).join('')}
     </section>` : ''}
 
-    ${lampList.length ? `<section style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+    ${lampList.length ? `<section style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
       ${lampList.map(id => { const lit = this.v(id) === 'on'; const name = H.strip(this.fname(id), ['ute']);
         const st2 = { height: 72, padding: '0 20px', borderRadius: 36, display: 'flex', alignItems: 'center', gap: 14, background: lit ? Y : '#1c1c1f', color: lit ? '#1a1a1c' : '#c9c7c2', boxShadow: lit ? '0 8px 24px oklch(0.86 0.12 95 / 0.25)' : 'none', transition: 'background .3s, box-shadow .3s' };
         return `<button class="kdl-a97" data-on-click="lampTog" data-arg="${E(id)}" data-hold="rowMore" style="${S(st2)}"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">${/veranda/i.test(name + id) ? 'light' : 'lightbulb'}</span><span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(name)}</span></button>`; }).join('')}
@@ -600,7 +624,7 @@ ${inner}
           <span style="font-size:12px;color:#8e8d89;white-space:nowrap">${n ? `${n} på` : 'alle av'}</span>
           <button data-on-click="roomAll" data-arg="${tab}:${gi}" style="${S(allStyle)}">${n ? 'Av' : 'På'}</button>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
           ${lights.map(l => H.pill(this, l.id, l.name, false)).join('')}
         </div>
       </section>`; }).join('')}`;

@@ -122,7 +122,7 @@
     <span style="position:absolute;left:0;right:0;bottom:0;height:4px;background:#2a2a2d"><span style="${S(heroBar)}"></span></span>
   </section>
 
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px;padding:4px;border-radius:22px;background:#1c1c1f">
+  <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:2px;padding:4px;border-radius:22px;background:#1c1c1f">
     ${tabs.map(t => `<button data-on-click="goTab" data-arg="${t.k}" style="${S(t.style)}"><span class="ms" style="font-size:20px">${e(t.icon)}</span><span>${e(t.label)}</span></button>`).join('')}
   </div>
 

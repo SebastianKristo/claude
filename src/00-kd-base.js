@@ -193,6 +193,7 @@ input,select,textarea{font:inherit;color:inherit}
       else { el = el && el.closest ? el.closest('[' + attr + ']') : null; if (!el || !this.shadowRoot.contains(el)) return; }
       const name = el.getAttribute(attr), fn = this[name];
       if (typeof fn !== 'function') { console.warn(this.localName, 'mangler handler', name); return; }
+      if (type === 'click' && !el.hasAttribute('data-no-haptic')) this.haptic(el.getAttribute('data-haptic') || 'light');
       fn.call(this, ev, el.getAttribute('data-arg'), el);
     }
     _holdStart(ev) {
@@ -255,7 +256,15 @@ input,select,textarea{font:inherit;color:inherit}
       window.dispatchEvent(new CustomEvent('location-changed', { detail: { replace: false } }));
     }
     fire(type, detail, opts = {}) { const ev = new Event(type, { bubbles: true, composed: true, cancelable: false, ...opts }); ev.detail = detail; this.dispatchEvent(ev); return ev; }
-    haptic(kind = 'light') { this.fire('haptic', kind); try { if (navigator.vibrate) navigator.vibrate(kind === 'heavy' ? 20 : 8); } catch (e) { } }
+    /** Haptikk: HA-appen fanger «haptic»-hendelsen (iOS/Android). Maks én vibrasjon per trykk. */
+    haptic(kind = 'light') {
+      if (this.config && this.config.haptikk === false) return;
+      const t = performance.now();
+      if (t - (this._lastHaptic || 0) < 120 && kind === 'light') return;
+      this._lastHaptic = t;
+      this.fire('haptic', kind);
+      try { if (navigator.vibrate) navigator.vibrate(kind === 'heavy' ? 20 : kind === 'selection' ? 4 : 8); } catch (e) { }
+    }
     toast(message) { this.fire('hass-notification', { message }); }
     /** websocket-kall */
     ws(msg) { return this._hass ? this._hass.callWS(msg) : Promise.reject(new Error('no hass')); }
@@ -434,13 +443,38 @@ input,select,textarea{font:inherit;color:inherit}
    */
   KD.roomLive = (card, r) => {
     const ov = card.st(`sensor.${r.id}_oversikt`);
-    const pick = (explicit, list) => explicit || (Array.isArray(list) ? list[0] : list);
-    const tId = pick(r.temp, ov && ov.attributes.temperatur), hId = pick(r.fukt, ov && ov.attributes.fuktighet);
+    const A = (ov && ov.attributes) || {};
+    const list = x => Array.isArray(x) ? x : x ? [x] : [];
+    // første kandidat som finnes og har et tall (config/tabell først, så KI Rom-områdets sensorer)
+    const firstNum = (...ids) => { for (const id of ids) { if (id && card.n(id) != null) return id; } return ids.find(Boolean) || null; };
+    const tId = firstNum(r.temp, ...list(A.temperatur)), hId = firstNum(r.fukt, ...list(A.fuktighet));
     const temp = card.n(tId), hum = card.n(hId);
+    // settpunkt: KI Energis romtall → input_number/number i tabellen → første termostat i rommet
+    const kiNum = `number.ki_rom_${r.id}_temp`;
+    const clim = list(A.klima).find(id => String(id).startsWith('climate.') && card.st(id));
+    let setId = null, set = null;
+    if (card.st(kiNum)) { setId = kiNum; set = card.n(kiNum); }
+    else if (r.sett && card.st(r.sett)) { setId = r.sett; set = r.sett.startsWith('climate.') ? parseFloat(card.at(r.sett, 'temperature')) : card.n(r.sett); }
+    else if (clim) { setId = clim; set = parseFloat(card.at(clim, 'temperature')); }
+    if (set != null && isNaN(set)) set = null;
+    // lys: romgruppa hvis den finnes, ellers KI Rom-telleren
     const lysS = card.st(`sensor.${r.id}_lys`);
-    const lightId = r.lys;
+    const lightId = r.lys && card.st(r.lys) ? r.lys : null;
+    const lysListe = lysS ? list(lysS.attributes.entiteter).filter(id => String(id).startsWith('light.')) : [];
     const lightsOn = lightId ? card.v(lightId) === 'on' : lysS ? parseFloat(lysS.state) > 0 : false;
-    return { temp, hum, set: r.sett ? card.n(r.sett) : null, setId: r.sett || null, lightsOn, lightId, lightsCount: lysS ? parseFloat(lysS.state) || 0 : null, tempId: tId, humId: hId };
+    return { temp, hum, set, setId: set != null ? setId : null, lightsOn, lightId, lysListe, lightsCount: lysS ? parseFloat(lysS.state) || 0 : null, tempId: tId, humId: hId };
+  };
+
+  /** Juster et settpunkt (number/input_number/climate) med ett steg */
+  KD.stepSet = (card, id, dir) => {
+    if (!id) return;
+    if (id.startsWith('climate.')) {
+      const cur = parseFloat(card.at(id, 'temperature')), step = card.at(id, 'target_temp_step', 0.5) || 0.5;
+      return card.call('climate', 'set_temperature', { entity_id: id, temperature: (isNaN(cur) ? 20 : cur) + dir * step });
+    }
+    const step = card.at(id, 'step', 1) || 1, cur = card.n(id, 0);
+    const lo = card.at(id, 'min', -Infinity), hi = card.at(id, 'max', Infinity);
+    return card.setNum(id, KD.clamp(Math.round((cur + dir * step) * 100) / 100, lo, hi));
   };
 
   /** Ark-register: kd-hjem-card slår opp ark her (nøkkel → { tag, head }) */

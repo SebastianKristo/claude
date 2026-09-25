@@ -308,7 +308,7 @@
         <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Rom</div>
         <div style="font-size:12px;color:#6d6c69"><span>${e(selMeta)}</span></div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
         ${roomCards.map(r => `
           <button data-on-click="toggleRoom" data-arg="${e(r.entity)}" style="${S(r.style)}">
             <span class="ms" style="${S(r.iconStyle)}"><span>${e(r.ikon)}</span></span>

@@ -55,3 +55,5 @@
   ] : [] }));
 })();
 MOCK.add({ 'switch.dorlas_autolas': { state: 'on', attributes: { friendly_name: 'Dørlås autolås', minutter: 2 } } });
+// HA-brukerdata (frontend/get_user_data / set_user_data)
+(() => { const ud = {}; MOCK.ws('frontend/get_user_data', m => ({ value: ud[m.key] })); MOCK.ws('frontend/set_user_data', m => { ud[m.key] = m.value; return null; }); })();

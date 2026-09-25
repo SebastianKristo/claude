@@ -279,7 +279,7 @@
         const act = cur[0] === k && !trans, holding = s.hold === k;
         return {
           k, label: l, icon: ic,
-          style: { position: 'relative', overflow: 'hidden', height: 64, borderRadius: 17, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 5, background: act ? a(col, 0.18) : 'transparent', boxShadow: act ? `inset 0 0 0 1px ${a(col, 0.45)}` : 'none', color: act ? '#f2f1ee' : '#a9a7a2', touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none', transition: 'background .25s' },
+          style: { position: 'relative', overflow: 'hidden', height: 64, borderRadius: 17, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 5, background: act ? a(col, 0.18) : 'transparent', boxShadow: act ? `inset 0 0 0 1px ${a(col, 0.45)}` : 'none', color: act ? '#f2f1ee' : '#a9a7a2', touchAction: 'pan-y', userSelect: 'none', WebkitUserSelect: 'none', transition: 'background .25s' },
           fill: { position: 'absolute', left: 0, bottom: 0, top: 0, width: `${holding ? s.prog * 100 : 0}%`, background: a(col, 0.28) },
           iconStyle: { position: 'relative', fontSize: 21, color: act || holding ? col : '#a9a7a2', fontVariationSettings: `'FILL' ${act ? 1 : 0}` },
         };
