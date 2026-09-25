@@ -21,6 +21,24 @@ Kopier `dist/ki-hjem-design.js` til `/config/www/` og legg til `/local/ki-hjem-d
 
 Fontene (Space Grotesk og Material Symbols Rounded) lastes automatisk fra Google Fonts.
 
+## Tema
+
+`themes/ki-hjem-design.yaml` er et Home Assistant-tema med designets farger (nesten svart, rosa aksent), Space Grotesk,
+runde kort og dialoger. Det farger også HAs egne deler (topp, sidepanel, mer-info, skjemaer) og setter `--gray*`,
+`--active-big` m.fl., så de eldre ki-*/button-card-kortene dine følger samme palett.
+
+1. Kopier filen til `/config/themes/ki-hjem-design.yaml`.
+2. I `configuration.yaml`: `frontend: { themes: !include_dir_merge_named themes }`.
+3. *Utviklerverktøy → YAML → Last inn temaer på nytt*, og velg **KI Hjem Design** på profilen din. `dashboard.yaml` setter det også på visningen.
+
+## GUI-editor
+
+Alle kd-kortene kan redigeres i dashbord-editoren (ikke bare YAML). Feltene lages ut fra kortets standardkonfig:
+entitetsvelgere med riktig domene, tall, brytere og tekst, og lister/objekter (soner, rom, kameraer …) som YAML under «Avansert».
+Standardverdien står under hvert felt; et tomt felt betyr «bruk standard», så konfigen forblir kort.
+I `kd-hjem-card` finnes en **Popups**-seksjon med et eget skjema for hvert av de 20 arkene, pluss «Rom – per rom»
+(lagres som `ark_config` / `ark_config.rom_per`).
+
 ## Kortene
 
 | Kort | Designfil | Ark-nøkkel / hash |
