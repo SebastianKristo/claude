@@ -21,6 +21,7 @@ views:
     icon: mdi:home
     type: panel
     background: '#0f0f10'
+    theme: KI Hjem Design
     cards:
       - type: custom:kd-hjem-card
         # Alt under er valgfritt – standardverdiene er dine entiteter.

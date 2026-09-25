@@ -1,0 +1,187 @@
+# KI Hjem Design – tema hentet fra Claude Design «Home Assistant sikkerhetspanel».
+# Mørkt, varmt nesten-svart med rosa aksent, Space Grotesk og runde flater (samme verdier som kd-kortene).
+#
+# Installasjon:
+#   1. Kopier filen til /config/themes/ki-hjem-design.yaml
+#   2. configuration.yaml:
+#        frontend:
+#          themes: !include_dir_merge_named themes
+#   3. Utviklerverktøy → YAML → «Last inn temaer på nytt» (eller restart), og velg temaet på profilsiden
+#      eller i dashboardets visning (theme: KI Hjem Design).
+#
+# Fargene i designet er oklch; her er de regnet om til hex/rgb fordi HA trenger det til egne beregninger.
+#   amber #f2b966 · grønn #83d494 · gul #ead070 · rød #f47b74 · blå #80c3ff · rosa #f594c3 · lilla #aa95e8 · oransje #fa8927
+
+KI Hjem Design:
+  # ---------- Grunnflater og tekst ----------
+  primary-background-color: '#0f0f10'
+  secondary-background-color: '#141416'
+  card-background-color: '#1c1c1f'
+  ha-card-background: '#1c1c1f'
+  clear-background-color: '#141416'
+  lovelace-background: '#0f0f10'
+  primary-text-color: '#f2f1ee'
+  secondary-text-color: '#8e8d89'
+  text-primary-color: '#f2f1ee'
+  disabled-text-color: '#6d6c69'
+  text-light-primary-color: '#141416'
+  divider-color: 'rgba(255, 255, 255, 0.07)'
+  outline-color: 'rgba(255, 255, 255, 0.12)'
+  outline-hover-color: 'rgba(255, 255, 255, 0.24)'
+  scrollbar-thumb-color: '#3a3a3d'
+
+  # ---------- Aksent (designets rosa) ----------
+  primary-color: '#f594c3'
+  rgb-primary-color: '245, 148, 195'
+  dark-primary-color: '#e07aad'
+  light-primary-color: '#fed2d0'
+  accent-color: '#f594c3'
+  rgb-accent-color: '245, 148, 195'
+  text-accent-color: '#2a1720'
+  primary-text-on-color: '#2a1720'
+
+  # ---------- Status ----------
+  error-color: '#f47b74'
+  rgb-error-color: '244, 123, 116'
+  warning-color: '#f2b966'
+  rgb-warning-color: '242, 185, 102'
+  success-color: '#83d494'
+  rgb-success-color: '131, 212, 148'
+  info-color: '#80c3ff'
+  rgb-info-color: '128, 195, 255'
+
+  # ---------- Tilstandsfarger ----------
+  state-icon-color: '#c9c7c2'
+  state-icon-active-color: '#f2b966'
+  state-active-color: '#f2b966'
+  state-inactive-color: '#6d6c69'
+  state-unavailable-color: '#5d5c5a'
+  state-light-active-color: '#ead070'
+  state-switch-active-color: '#83d494'
+  state-input_boolean-active-color: '#83d494'
+  state-fan-active-color: '#80c3ff'
+  state-climate-heat-color: '#fa8927'
+  state-climate-cool-color: '#80c3ff'
+  state-climate-auto-color: '#83d494'
+  state-cover-active-color: '#aa95e8'
+  state-media_player-active-color: '#f594c3'
+  state-lock-locked-color: '#83d494'
+  state-lock-unlocked-color: '#f2b966'
+  state-lock-jammed-color: '#f47b74'
+  state-alarm_control_panel-armed_home-color: '#83d494'
+  state-alarm_control_panel-armed_away-color: '#83d494'
+  state-alarm_control_panel-armed_night-color: '#aa95e8'
+  state-alarm_control_panel-disarmed-color: '#8e8d89'
+  state-alarm_control_panel-triggered-color: '#f47b74'
+  state-binary_sensor-active-color: '#f2b966'
+  state-person-home-color: '#83d494'
+  state-person-not_home-color: '#aa95e8'
+  state-sun-above_horizon-color: '#f2b966'
+  state-vacuum-cleaning-color: '#83d494'
+  energy-grid-consumption-color: '#f594c3'
+
+  # ---------- Kort ----------
+  ha-card-border-radius: '22px'
+  ha-card-border-width: '0px'
+  ha-card-border-color: 'transparent'
+  ha-card-box-shadow: 'inset 0 0 0 1px rgba(255, 255, 255, 0.04)'
+  ha-card-header-font-size: '16px'
+  ha-card-header-color: '#f2f1ee'
+
+  # ---------- Topp og sidepanel ----------
+  app-header-background-color: '#141416'
+  app-header-text-color: '#f2f1ee'
+  app-header-selection-bar-color: '#f594c3'
+  app-header-edit-background-color: '#232326'
+  app-header-edit-text-color: '#f2f1ee'
+  sidebar-background-color: '#141416'
+  sidebar-text-color: '#c9c7c2'
+  sidebar-icon-color: '#8e8d89'
+  sidebar-selected-text-color: '#f2f1ee'
+  sidebar-selected-icon-color: '#f594c3'
+  sidebar-menu-button-text-color: '#f2f1ee'
+
+  # ---------- Dialoger (mer-info m.m.) ----------
+  mdc-theme-surface: '#232326'
+  ha-dialog-surface-background: '#232326'
+  dialog-backdrop-filter: 'blur(6px)'
+  ha-dialog-border-radius: '30px'
+  mdc-dialog-scrim-color: 'rgba(0, 0, 0, 0.55)'
+  more-info-header-background: '#232326'
+  markdown-code-background-color: '#141416'
+  code-editor-background-color: '#141416'
+  table-row-background-color: '#1c1c1f'
+  table-row-alternative-background-color: '#1a1a1c'
+
+  # ---------- Skjema og kontroller ----------
+  input-fill-color: '#232326'
+  input-disabled-fill-color: '#1a1a1c'
+  input-ink-color: '#f2f1ee'
+  input-label-ink-color: '#8e8d89'
+  input-idle-line-color: 'rgba(255, 255, 255, 0.14)'
+  input-hover-line-color: 'rgba(255, 255, 255, 0.3)'
+  input-outlined-idle-border-color: 'rgba(255, 255, 255, 0.14)'
+  input-dropdown-icon-color: '#8e8d89'
+  mdc-text-field-fill-color: '#232326'
+  mdc-select-fill-color: '#232326'
+  mdc-theme-primary: '#f594c3'
+  mdc-theme-secondary: '#f594c3'
+  mdc-theme-on-primary: '#2a1720'
+  mdc-theme-text-primary-on-background: '#f2f1ee'
+  mdc-checkbox-unchecked-color: '#5d5c5a'
+  mdc-radio-unchecked-color: '#5d5c5a'
+  switch-checked-color: '#f594c3'
+  switch-checked-button-color: '#f4f3ef'
+  switch-checked-track-color: '#f594c3'
+  switch-unchecked-button-color: '#f4f3ef'
+  switch-unchecked-track-color: '#3a3a3d'
+  paper-slider-knob-color: '#f4f3ef'
+  paper-slider-active-color: '#f594c3'
+  paper-slider-container-color: '#2a2a2d'
+  ha-button-radius: '999px'
+  ha-font-weight-bold: '600'
+
+  # ---------- Typografi ----------
+  primary-font-family: "'Space Grotesk', system-ui, sans-serif"
+  paper-font-common-base_-_font-family: "'Space Grotesk', system-ui, sans-serif"
+  paper-font-common-code_-_font-family: 'ui-monospace, monospace'
+  ha-font-family-body: "'Space Grotesk', system-ui, sans-serif"
+  ha-font-family-heading: "'Space Grotesk', system-ui, sans-serif"
+  mdc-typography-font-family: "'Space Grotesk', system-ui, sans-serif"
+
+  # ---------- Variabler de eldre ki-*/button-card-kortene bruker ----------
+  # (så resten av dashboardene dine følger samme palett)
+  gray000: '#0f0f10'
+  gray100: '#1c1c1f'
+  gray200: '#232326'
+  gray300: '#2a2a2d'
+  gray400: '#3a3a3d'
+  gray600: '#6d6c69'
+  gray800: '#a9a7a2'
+  gray900: '#c9c7c2'
+  gray1000: '#f2f1ee'
+  contrast1: '#232326'
+  contrast2: '#1c1c1f'
+  contrast20: '#f2f1ee'
+  black: '#141416'
+  white: '#f4f3ef'
+  red: '#f47b74'
+  orange: '#fa8927'
+  yellow: '#ead070'
+  green: '#83d494'
+  blue: '#80c3ff'
+  blue-dark: '#5a8fc0'
+  purple: '#aa95e8'
+  pink: '#f594c3'
+  yellow-tint: 'rgba(234, 208, 112, 0.16)'
+  active-big: 'linear-gradient(135deg, #f594c3, #fed2d0)'
+  active-small: '#f594c3'
+  highlight: '255, 255, 255, 0.08'
+  highlight_active: '0, 0, 0, 0.1'
+  color-green: '#83d494'
+  color-yellow: '#ead070'
+  color-orange: '#fa8927'
+  color-red: '#f47b74'
+  color-blue: '#80c3ff'
+  color-purple: '#aa95e8'
+  subtext-color: '#8e8d89'
