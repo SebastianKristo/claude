@@ -431,7 +431,7 @@
 
   <section data-hscroll="1" style="display:flex;gap:12px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:2px var(--kd-kant,10px)">${modesHtml}</section>
 
-  <nav style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;padding:4px;border-radius:24px;background:#1c1c1f">${tabs}</nav>
+  ${KD.segHTML('fane', T, tabK, 'tab', { pink: true, stack: true })}
   ${main}
   ${this.extras(tabK)}
 </div>`;
