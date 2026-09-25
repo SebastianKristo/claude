@@ -1,4 +1,4 @@
-/* KI Hjem Design – pikselkopi av Claude Design «Home Assistant sikkerhetspanel». Bygget 2026-09-25T23:34Z. */
+/* KI Hjem Design – pikselkopi av Claude Design «Home Assistant sikkerhetspanel». Bygget 2026-09-25T23:55Z. */
 
 /* ===== 00-kd-base.js ===== */
 try {
@@ -188,6 +188,7 @@ input,select,textarea{font:inherit;color:inherit}
       this._root.className = 'kd-root' + (this.config.header === false || this.config.embedded ? ' kd-embedded' : '');
       KD.morph(this._root, html);
       if (this.afterRender) this.afterRender();
+      KD.segInit(this);
     }
     /** Finn element i kortet */
     $(sel) { return this.shadowRoot.querySelector(sel); }
@@ -195,6 +196,7 @@ input,select,textarea{font:inherit;color:inherit}
 
     /* ----- hendelser ----- */
     _dispatch(type, ev) {
+      if (type === 'click') { const p0 = ev.composedPath ? ev.composedPath()[0] : ev.target, sg = p0 && p0.closest && p0.closest('[data-seg]'); if (sg && performance.now() - (sg._segDragEnd || 0) < 350) return; } // klikk etter dra i fanevelger
       if (type === 'click' && this._holdFired) { this._holdFired = false; ev.stopPropagation(); ev.preventDefault(); return; }
       const attr = 'data-on-' + type;
       let el = ev.composedPath ? ev.composedPath()[0] : ev.target;
@@ -335,6 +337,69 @@ input,select,textarea{font:inherit;color:inherit}
 .kd-sheet-top{position:sticky;top:0;left:0;right:0;z-index:3;padding:8px 12px 18px;display:flex;flex-direction:column;align-items:center;gap:8px;background:linear-gradient(180deg,#141416 0,#141416 72%,rgba(20,20,22,0) 100%);pointer-events:none;box-sizing:border-box}
 .kd-sheet-top .kd-grip{width:36px;height:4px;border-radius:2px;background:rgba(255,255,255,0.22)}
 `;
+  /* ----- Liquid glass-fanevelger (felles for alle kort) -----
+     KD.segHTML(key, items, cur, method, opts) → HTML. items: [[verdi, tekst, ikon?], …]. Trykk kaller this[method](ev, verdi).
+     Glassboblen glir og strekkes når valget endres, og kan dras med fingeren mellom valgene (slipp velger).
+     opts: { pink: true (rosa boble, mørk tekst), h: høyde (38), r: radius, bg, gap, style: ekstra stil på rammen, small: true } */
+  KD.segHTML = (key, items, cur, method, o = {}) => {
+    const n = Math.max(1, items.length), i = Math.max(0, items.findIndex(x => x[0] === cur)), h = o.h || (o.stack ? 54 : o.small ? 32 : 38), P = 4;
+    const r = o.r != null ? o.r : Math.round((h + 2 * P) / 2);
+    const cell = `((100% - ${2 * P}px) / ${n})`;
+    const thumbBg = o.pink ? KD.PINK : 'linear-gradient(180deg, rgba(255,255,255,0.26), rgba(255,255,255,0.10))';
+    const thumbSh = o.pink ? '0 4px 14px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.35)' : 'inset 0 1px 0 rgba(255,255,255,0.45), inset 0 -1px 1px rgba(255,255,255,0.10), 0 4px 14px rgba(0,0,0,0.28)';
+    const on = o.pink ? '#2a1720' : '#f2f1ee', off = '#a9a7a2';
+    return `<div data-key="seg-${KD.e(key)}" data-seg="${KD.e(key)}" data-seg-on="${KD.e(method)}" data-seg-i="${i}" data-seg-n="${n}" style="position:relative;display:grid;grid-template-columns:repeat(${n},minmax(0,1fr));padding:${P}px;border-radius:${r}px;background:${o.bg || '#1c1c1f'};box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);touch-action:pan-y;user-select:none;-webkit-user-select:none;isolation:isolate;${o.style || ''}">
+  <span data-seg-thumb="1" style="position:absolute;z-index:0;top:${P}px;bottom:${P}px;left:calc(${P}px + ${i} * ${cell});width:calc(${cell});border-radius:${Math.max(4, r - P)}px;background:${thumbBg};box-shadow:${thumbSh};backdrop-filter:blur(8px) saturate(180%);-webkit-backdrop-filter:blur(8px) saturate(180%);transition:left .5s cubic-bezier(.34,1.35,.64,1), transform .35s cubic-bezier(.34,1.8,.64,1);pointer-events:none"></span>
+  ${items.map(([k, label, icon], j) => `<button data-on-click="${KD.e(method)}" data-arg="${KD.e(k)}" data-seg-b="${j}" style="position:relative;z-index:1;height:${h}px;min-width:0;border-radius:${Math.max(4, r - P)}px;display:flex;flex-direction:${o.stack ? 'column' : 'row'};align-items:center;justify-content:center;gap:${o.stack ? 3 : 6}px;padding:0 ${o.stack ? 2 : 6}px;font-size:${o.stack ? 10 : o.small ? 12 : 13}px;font-weight:${j === i ? 600 : 500};white-space:nowrap;color:${j === i ? on : off};transition:color .25s">${icon ? `<span class="ms" style="font-size:${o.stack ? 20 : o.small ? 15 : 17}px;font-variation-settings:'FILL' ${j === i ? 1 : 0}">${KD.e(icon)}</span>` : ''}<span style="min-width:0;overflow:hidden;text-overflow:ellipsis">${KD.e(label)}</span></button>`).join('')}
+</div>`;
+  };
+  /** Kobler dra-støtte og strekk-animasjon til alle [data-seg] i kortet (kalles etter hver rendring) */
+  KD.segInit = (card) => {
+    const root = card.shadowRoot; if (!root) return;
+    for (const el of root.querySelectorAll('[data-seg]')) {
+      const i = +el.getAttribute('data-seg-i'), th = el.querySelector('[data-seg-thumb]');
+      // strekk («flytende glass») når valget endres
+      if (el._segI != null && el._segI !== i && th && th.animate && !el._segDragged) {
+        const d = Math.min(3, Math.abs(i - el._segI));
+        th.animate([{ transform: 'scale(1,1)' }, { transform: `scale(${1 + 0.14 * d},${1 - 0.06 * d})`, offset: 0.35 }, { transform: 'scale(0.98,1.02)', offset: 0.7 }, { transform: 'scale(1,1)' }], { duration: 520, easing: 'ease-out' });
+      }
+      el._segI = i; el._segDragged = false;
+      if (el._segInit) continue; el._segInit = true;
+      let d = null;
+      const btns = () => [...el.querySelectorAll('[data-seg-b]')];
+      const idxAt = x => { let best = 0, bd = 1e9; btns().forEach((b, j) => { const r = b.getBoundingClientRect(), dd = Math.abs(x - (r.left + r.width / 2)); if (dd < bd) { bd = dd; best = j; } }); return best; };
+      el.addEventListener('pointerdown', ev => { if (ev.button > 0) return; d = { x0: ev.clientX, y0: ev.clientY, id: ev.pointerId, moved: false, j: -1 }; });
+      el.addEventListener('pointermove', ev => {
+        if (!d || ev.pointerId !== d.id) return;
+        const t = el.querySelector('[data-seg-thumb]'); if (!t) return;
+        if (!d.moved) {
+          if (Math.abs(ev.clientY - d.y0) > 10 && Math.abs(ev.clientY - d.y0) > Math.abs(ev.clientX - d.x0)) { d = null; return; }
+          if (Math.abs(ev.clientX - d.x0) < 8) return;
+          d.moved = true; try { el.setPointerCapture(ev.pointerId); } catch (e) { }
+          t.style.transition = 'left .12s cubic-bezier(.3,1.3,.6,1), transform .3s cubic-bezier(.34,1.8,.64,1)';
+          t.style.transform = 'scale(1.08,1.12)';
+        }
+        const r = el.getBoundingClientRect(), w = t.offsetWidth, first = btns()[0].getBoundingClientRect(), last = btns()[btns().length - 1].getBoundingClientRect();
+        t.style.left = KD.clamp(ev.clientX - r.left - w / 2, first.left - r.left, last.left - r.left) + 'px';
+        const j = idxAt(ev.clientX);
+        if (j !== d.j) { d.j = j; card.haptic && card.haptic('selection'); btns().forEach((b, k) => { b.style.color = k === j ? '' : ''; }); }
+      });
+      const end = ev => {
+        if (!d || ev.pointerId !== d.id) return;
+        const dd = d; d = null;
+        if (!dd.moved) return;
+        el._segDragEnd = performance.now(); el._segDragged = true;
+        const t = el.querySelector('[data-seg-thumb]');
+        if (t) { t.style.transition = ''; t.style.transform = ''; }
+        const j = ev.type === 'pointercancel' ? -1 : idxAt(ev.clientX), b = btns()[j];
+        const fn = card[el.getAttribute('data-seg-on')];
+        if (b && typeof fn === 'function') fn.call(card, ev, b.getAttribute('data-arg'), b);
+        card._force = true; card._queue && card._queue();
+      };
+      el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
+    }
+  };
+
   /** HTML for topp-pillen. Bruk KD.sheetTopHTML(ikon, tittel, sub) og KD.animateSheetTop(root) */
   KD.sheetTopHTML = (icon, title, sub, closeHandler = 'closeSheet', extraStyle = '') => `
 <div class="kd-sheet-top" style="${extraStyle}">
@@ -1351,7 +1416,8 @@ try {
       const GREEN = 'oklch(0.8 0.12 150)', BLUE = 'oklch(0.75 0.12 245)', AMBER = 'oklch(0.8 0.12 70)', PURP = 'oklch(0.68 0.2 285)';
       const badge = p => ({ show: !p.home || p.sleep, icon: p.sleep ? 'bedtime' : 'logout', style: { fontSize: 15, color: p.sleep ? 'oklch(0.75 0.12 275)' : PURP, fontVariationSettings: "'FILL' 1" } });
       const meS = this.personState(me), meB = badge(meS);
-      const meRing = `0 0 0 3px #141416,0 0 0 4.5px ${meS.home ? 'oklch(0.8 0.12 150 / 0.7)' : 'oklch(0.68 0.2 285 / 0.7)'}`;
+      const HUP = KD.ud(this, 'kd_hjem'), PNAVN = HUP.person_navn !== false, PSTED = HUP.person_sted !== false && PNAVN, PIKON = !!HUP.person_ikon;
+      const meRing = HUP.person_ring === false ? 'none' : `0 0 0 3px #141416,0 0 0 4.5px ${meS.home ? 'oklch(0.8 0.12 150 / 0.7)' : 'oklch(0.68 0.2 285 / 0.7)'}`;
       const people = PERS.filter(p => p.id !== meId).map(p => { const ps = this.personState(p); return { p, ps, b: badge(ps), avatar: { width: 46, height: 46, borderRadius: 23, display: 'grid', placeItems: 'center', fontSize: 16, fontWeight: 600, background: p.farge, opacity: ps.home ? 1 : 0.6, transition: 'opacity .3s' } }; });
 
       const W = this.weather();
@@ -1575,7 +1641,12 @@ try {
         <button data-on-click="hjemEditClose" style="height:34px;padding:0 14px;border-radius:17px;font-size:13px;font-weight:600;background:linear-gradient(135deg, oklch(0.78 0.13 350), oklch(0.9 0.05 20));color:#2a1720">Ferdig</button></div>
       ${head('Tittel øverst')}<div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 10px 6px">${[['server', 'Servernavn', 'dns'], ['person', 'Mitt navn', 'person']].map(([v, l, ic]) => chipH(((HU.tittel || c.tittel || 'server') === v), 'tittel|' + v, 'hjemSet', l, ic)).join('')}</div>
       ${head('Seksjoner')}${rows('sek', norm(HU.seksjoner, SEK_KEYS), HLABEL.sek, 'sek')}
-      ${head('Personer på toppen')}${persRows}
+      ${head('Personer på toppen')}<div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 10px 6px">
+        ${chipH(HU.person_navn !== false, 'person_navn|' + (HU.person_navn === false), 'hjemSet', 'Navn', 'badge')}
+        ${chipH(HU.person_sted !== false, 'person_sted|' + (HU.person_sted === false), 'hjemSet', 'Sted', 'location_on')}
+        ${chipH(!!HU.person_ikon, 'person_ikon|' + !HU.person_ikon, 'hjemSet', 'Ikon foran navn', 'home_pin')}
+        ${chipH(HU.person_ring !== false, 'person_ring|' + (HU.person_ring === false), 'hjemSet', 'Ring rundt meg', 'radio_button_unchecked')}
+      </div>${persRows}
       ${head('Etasjer')}${etgRows}
       ${head('Romkort')}<div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 10px 6px">${[['stor', 'Stor'], ['middels', 'Middels'], ['liten', 'Liten']].map(([v, l]) => chipH((HU.romkort || c.romkort || 'stor') === v, 'romkort|' + v, 'hjemSet', l)).join('')}
         ${chipH(HU.klimaknapp != null ? HU.klimaknapp !== false : c.klimaknapp !== false, 'klimaknapp|' + (HU.klimaknapp != null ? HU.klimaknapp === false : c.klimaknapp === false), 'hjemSet', 'Klimaknapp', 'thermostat')}</div>
@@ -1703,20 +1774,18 @@ try {
       const COLV = COLV0.filter(k => !HSKJUL.has('flis:' + k)), COLH = COLH0.filter(k => !HSKJUL.has('flis:' + k));
       const SEK = {
         personer: () => `    <div data-key="h-personer" style="display:flex;gap:14px;flex-wrap:wrap;margin-top:-6px">
-      ${people.map(({ p, avatar }) => { const pl = this.placeOf(p); return `<button data-key="pers-${e(p.id)}" data-on-click="openPerson" data-hold="quickPerson" data-arg="${e(p.id)}" title="${e(p.navn)} · ${e(pl.navn)}" style="position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;max-width:72px">
+      ${people.map(({ p, avatar }) => { const pl = this.placeOf(p); return `<button data-key="pers-${e(p.id)}" data-on-click="quickPerson" data-hold="openPerson" data-arg="${e(p.id)}" title="${e(p.navn)} · ${e(pl.navn)}" style="position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;max-width:72px">
           <span style="${S(avatar)}${this.pic(p)}">${e(p.navn[0])}</span>
           <span style="position:absolute;left:30px;top:-5px;width:24px;height:24px;border-radius:12px;background:#232326;box-shadow:0 0 0 2px #141416;display:grid;place-items:center">${this.placeIcon(pl, 15)}</span>
-          <span style="font-size:11px;color:#c9c7c2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:72px">${e(p.navn)}</span>
-          <span style="margin-top:-3px;font-size:10px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:72px">${e(pl.navn)}</span>
+          ${PNAVN ? `<span style="display:flex;align-items:center;gap:3px;font-size:11px;color:#c9c7c2;white-space:nowrap;max-width:72px">${PIKON ? this.placeIcon(pl, 12) : ''}<span style="min-width:0;overflow:hidden;text-overflow:ellipsis">${e(p.navn)}</span></span>` : ''}
+          ${PSTED ? `<span style="margin-top:-3px;font-size:10px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:72px">${e(pl.navn)}</span>` : ''}
         </button>`; }).join('')}
     </div>`,
         prosa: () => prVis.length ? `<div data-key="h-prosa" style="font-size:22px;font-weight:400;line-height:1.75;letter-spacing:-0.01em;text-wrap:pretty;margin-top:-6px">
       ${prosaTxt}
     </div>` : '',
         rom: () => `  <section data-key="h-rom" style="display:flex;flex-direction:column;gap:12px">
-    <div style="display:flex;gap:2px;padding:4px;border-radius:22px;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.14);align-self:flex-start">
-      ${FL.map(([k, label]) => `<button data-on-click="goFloor" data-arg="${k}" style="${S({ height: 38, padding: '0 16px', borderRadius: 19, fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', background: floor === k ? PINK : 'transparent', color: floor === k ? '#2a1720' : '#c9c7c2' })}">${e(label)}</button>`).join('')}
-    </div>
+    ${KD.segHTML('etg', FL.map(([k, label]) => [k, label]), floor, 'goFloor', { pink: true, bg: 'transparent', style: 'align-self:flex-start;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.14);max-width:100%' })}
     <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:start">
       <div style="display:flex;flex-direction:column;gap:8px;min-width:0">${COLV.map(k => TILE[k]()).join('')}</div>
       <div style="display:flex;flex-direction:column;gap:8px;min-width:0">${COLH.map(k => TILE[k]()).join('')}</div>
@@ -1736,10 +1805,7 @@ try {
   </section>` : ''}`,
         strom: () => `  <section data-key="h-strom" style="display:flex;flex-direction:column;gap:12px;margin-bottom:${+(HUR.gap_strom || c.gap_strom || 0)}px">
     <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:0 4px">Strømpriser</div>
-    <div data-key="pc-seg" style="position:relative;display:grid;grid-template-columns:repeat(${MODES.length},minmax(0,1fr));padding:4px;border-radius:20px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
-      <span style="position:absolute;top:4px;bottom:4px;left:calc(4px + ${Math.max(0, MODES.findIndex(m => m[0] === mode))} * ((100% - 8px) / ${MODES.length}));width:calc((100% - 8px) / ${MODES.length});border-radius:16px;background:${PINK};box-shadow:0 4px 12px rgba(0,0,0,0.25);transition:left .4s cubic-bezier(.34,1.3,.64,1)"></span>
-      ${MODES.map(([k, label]) => { const on = k === mode, ic = { total: 'receipt_long', spot: 'show_chart', norges: 'verified' }[k]; return `<button data-on-click="pcMode" data-arg="${k}" style="position:relative;height:38px;border-radius:16px;display:flex;align-items:center;justify-content:center;gap:6px;min-width:0;font-size:13px;font-weight:600;white-space:nowrap;color:${on ? '#2a1720' : '#a9a7a2'};transition:color .25s"><span class="ms" style="font-size:17px;font-variation-settings:'FILL' ${on ? 1 : 0}">${ic}</span><span style="overflow:hidden;text-overflow:ellipsis">${e(label)}</span></button>`; }).join('')}
-    </div>
+    ${KD.segHTML('pris', MODES.map(([k, label]) => [k, label, { total: 'receipt_long', spot: 'show_chart', norges: 'verified' }[k]]), mode, 'pcMode', { pink: true })}
     <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:12px;padding:0 4px">
       <div style="display:flex;flex-direction:column;gap:3px">
         <div style="font-size:12px;color:#8e8d89">${e(priceHead.label)}</div>
@@ -1797,7 +1863,7 @@ try {
         <button data-on-click="toggleServer" data-no-haptic="1" style="display:flex;align-items:center;gap:4px;max-width:100%;font-size:36px;font-weight:600;letter-spacing:-0.03em;line-height:1;white-space:nowrap"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis">${e(KD.ud(this, 'kd_hjem').tittel === 'person' || c.tittel === 'person' ? me.navn : (CUR.navn || 'Hjem'))}</span><span class="ms" style="${S(serverChev)}">arrow_drop_down</span></button>
         <button data-on-click="openWeather" style="font-size:16px;color:#8e8d89;white-space:nowrap;text-align:left">${W.head != null ? Math.round(W.head) : '–'} °C · ${e(W.cond)}</button>
       </div>
-      <button data-on-click="openMe" data-hold="quickPerson" title="${e(me.navn)} · ${e(this.placeOf(me).navn)}" style="position:relative;width:60px;height:60px;border-radius:30px;flex:none;display:grid;place-items:center;font-size:22px;font-weight:600;background:${e(me.farge)};box-shadow:${meRing};${this.pic(me)}">${e(me.navn[0])}<span style="position:absolute;right:-6px;top:-4px;width:24px;height:24px;border-radius:12px;background:#232326;box-shadow:0 0 0 2px #141416;display:grid;place-items:center">${this.placeIcon(this.placeOf(me), 15)}</span></button>
+      <button data-on-click="quickPerson" data-hold="openMe" title="${e(me.navn)} · ${e(this.placeOf(me).navn)}" style="position:relative;width:60px;height:60px;border-radius:30px;flex:none;display:grid;place-items:center;font-size:22px;font-weight:600;background:${e(me.farge)};box-shadow:${meRing};${this.pic(me)}">${e(me.navn[0])}<span style="position:absolute;right:-6px;top:-4px;width:24px;height:24px;border-radius:12px;background:#232326;box-shadow:0 0 0 2px #141416;display:grid;place-items:center">${this.placeIcon(this.placeOf(me), 15)}</span></button>
     </div>
   </header>
 
@@ -2759,7 +2825,7 @@ try {
 
   <section data-hscroll="1" style="display:flex;gap:12px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:2px var(--kd-kant,10px)">${modesHtml}</section>
 
-  <nav style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;padding:4px;border-radius:24px;background:#1c1c1f">${tabs}</nav>
+  ${KD.segHTML('fane', T, tabK, 'tab', { pink: true, stack: true })}
   ${main}
   ${this.extras(tabK)}
 </div>`;
@@ -4921,9 +4987,7 @@ try {
         const maxR = Math.max(1, ...rows.map(r => Math.max(r.u, r.e)));
         const stack = rows.filter(r => r.u).map((r, i) => ({ width: `${r.u / Math.max(usedSum, estSum, 1) * 100}%`, background: al(B, 1 - i * 0.08) })).concat(estSum ? [{ width: `${estSum / Math.max(usedSum, estSum) * 100}%`, background: al(B, 0.18) }] : []);
         html += `
-    <div style="display:flex;padding:3px;border-radius:14px;background:#1c1c1f;gap:2px;align-self:flex-start">
-      ${[['dag', 'I dag'], ['uke', 'Uke'], ['maned', 'Måned'], ['ar', 'År']].map(([k, label]) => `<button data-on-click="period" data-arg="${k}" style="${S({ height: 32, padding: '0 14px', borderRadius: 11, fontSize: 13, fontWeight: 500, background: s.period === k ? '#323235' : 'transparent', color: s.period === k ? '#f2f1ee' : '#8e8d89' })}"><span>${label}</span></button>`).join('')}
-    </div>
+    ${KD.segHTML('periode', [['dag', 'I dag'], ['uke', 'Uke'], ['maned', 'Måned'], ['ar', 'År']], s.period, 'period', { small: true })}
     <div style="background:#1c1c1f;border:1px solid rgba(255,255,255,0.05);border-radius:24px;padding:18px;display:flex;flex-direction:column;gap:14px">
       <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:12px">
         <div style="flex:none;display:flex;flex-direction:column;gap:4px;white-space:nowrap">
@@ -5042,9 +5106,7 @@ try {
       </button>`).join('')}
   </section>
 
-  <nav style="display:grid;grid-template-columns:repeat(5,1fr);padding:4px;border-radius:18px;background:#1c1c1f;gap:2px;position:sticky;top:8px;z-index:2;box-shadow:0 8px 20px rgba(0,0,0,0.35)">
-    ${tabs.map(t => `<button data-on-click="tab" data-arg="${t.k}" style="${S(t.style)}"><span class="ms" style="${S(t.iconStyle)}"><span>${t.icon}</span></span><span>${t.label}</span></button>`).join('')}
-  </nav>
+  ${KD.segHTML('fane', [['now', 'Nå', 'water_drop'], ['zones', 'Soner', 'sprinkler'], ['prog', 'Program', 'event_repeat'], ['use', 'Forbruk', 'bar_chart'], ['hist', 'Historikk', 'calendar_month']], s.tab, 'tab', { stack: true, style: 'position:sticky;top:8px;z-index:2;box-shadow:0 8px 20px rgba(0,0,0,0.35)' })}
   ${html}
 </div>`;
     }
@@ -5211,9 +5273,7 @@ try {
     <div style="font-size:14px;color:#8e8d89">${subHtml}</div>
   </section>
 
-  <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:2px;padding:4px;border-radius:20px;background:#1c1c1f">
-    ${tabs.map(t => `<button data-on-click="tab" data-arg="${t.k}" style="${S(t.style)}"><span>${t.label}</span></button>`).join('')}
-  </div>
+  ${KD.segHTML('fane', [['enkel', 'Enkel'], ['avansert', 'Avansert']], s.tab, 'tab', { pink: true })}
 
   <section style="display:flex;flex-direction:column;gap:8px">
     ${cards || `<div style="padding:16px;border-radius:24px;background:#1c1c1f;font-size:13px;color:#8e8d89">Legg til planter i KI Planter-integrasjonen.</div>`}
@@ -5447,9 +5507,7 @@ try {
     </div>
   </section>
 
-  <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:2px;padding:4px;border-radius:20px;background:#1c1c1f">
-    ${tabs.map(t => `<button data-on-click="tab" data-arg="${t.k}" style="${S(t.style)}"><span>${t.label}</span></button>`).join('')}
-  </div>
+  ${KD.segHTML('fane', [['sleep', 'Søvn'], ['wake', 'Vekking']], s.tab, 'tab', { pink: true })}
 
   ${s.tab === 'sleep' ? `
     <section style="display:flex;flex-direction:column">
@@ -6671,9 +6729,7 @@ try {
     <button data-on-click="${tv ? 'powerTv' : 'powerMusic'}" style="${S(powerBtn)}"><span class="ms" style="font-size:22px">power_settings_new</span></button>
   </section>
 
-  <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:2px;padding:4px;border-radius:20px;background:#1c1c1f">
-    ${tabs.map(t => `<button data-on-click="tab" data-arg="${t.k}" style="${S(t.style)}"><span class="ms" style="font-size:18px"><span>${t.icon}</span></span><span>${e(t.label)}</span></button>`).join('')}
-  </div>
+  ${KD.segHTML('fane', [['tv', 'TV', 'tv'], ['music', 'Musikk', 'music_note']], s.tab, 'tab', { pink: true })}
 
   ${tv ? `
     <section style="display:flex;justify-content:center">
@@ -7362,9 +7418,7 @@ try {
 
   ${canStart ? `<button data-on-click="startJob" style="height:56px;border-radius:28px;background:oklch(0.82 0.12 75);color:#1a1408;font-size:15px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:8px"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">print</span><span>${e(file ? `Skriv ut siste jobb · ${file}` : 'Skriv ut siste jobb')}</span></button>` : ''}
 
-  <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:2px;padding:4px;border-radius:20px;background:#1c1c1f">
-    ${tabs.map(t => `<button data-on-click="tab" data-arg="${t.k}" style="${S(t.style)}"><span>${e(t.label)}</span></button>`).join('')}
-  </div>
+  ${KD.segHTML('fane', [['simple', 'Enkel'], ['adv', 'Avansert']], s.tab, 'tab', { pink: true })}
 
   <section style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
     ${temps.map(t => `
