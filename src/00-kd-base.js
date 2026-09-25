@@ -441,10 +441,30 @@ input,select,textarea{font:inherit;color:inherit}
    * Levende romdata: { temp, hum, set, setId, lightsOn, lightId, lightsCount } for et rom.
    * Bruker ki_rom (`sensor.<id>_oversikt` / `sensor.<id>_lys`) når det finnes, ellers tabellen.
    */
+  /**
+   * Finn en KI Rom-sensor for et rom: først `sensor.<rom>_<type>`, ellers sensoren med integrasjon ki_rom og area_id = rommet
+   * (som ki-rom-card i ki-cards). type: 'oversikt' | 'lys' | 'effekt' … Bufres per rom.
+   */
+  const KIROM = new Map();
+  KD.kiRom = (card, id, type = 'oversikt') => {
+    const h = card._hass; if (!h || !id) return null;
+    const key = id + '|' + type, S = h.states;
+    const ok = x => S[x] && S[x].attributes.integrasjon === 'ki_rom';
+    let f = KIROM.get(key);
+    if (!f || !S[f]) {
+      f = ok(`sensor.${id}_${type}`) ? `sensor.${id}_${type}` : null;
+      if (!f) f = Object.keys(S).find(x => x.startsWith('sensor.') && x.endsWith('_' + type) && !x.endsWith('_lys_' + type) && ok(x) && S[x].attributes.area_id === id) || null;
+      if (!f && type !== 'oversikt') { const ov = KD.kiRom(card, id, 'oversikt'); if (ov) { const g = ov.entity_id.replace(/_oversikt$/, '_' + type); if (S[g]) f = g; } }
+      KIROM.set(key, f);
+    }
+    return f ? card.st(f) : null;
+  };
+  const entId = x => typeof x === 'string' ? x : x && (x.entity || x.entity_id);
+
   KD.roomLive = (card, r) => {
-    const ov = card.st(`sensor.${r.id}_oversikt`);
+    const ov = KD.kiRom(card, r.id, 'oversikt');
     const A = (ov && ov.attributes) || {};
-    const list = x => Array.isArray(x) ? x : x ? [x] : [];
+    const list = x => (Array.isArray(x) ? x : x ? [x] : []).map(entId).filter(Boolean);
     // første kandidat som finnes og har et tall (config/tabell først, så KI Rom-områdets sensorer)
     const firstNum = (...ids) => { for (const id of ids) { if (id && card.n(id) != null) return id; } return ids.find(Boolean) || null; };
     const tId = firstNum(r.temp, ...list(A.temperatur)), hId = firstNum(r.fukt, ...list(A.fuktighet));
@@ -458,7 +478,7 @@ input,select,textarea{font:inherit;color:inherit}
     else if (clim) { setId = clim; set = parseFloat(card.at(clim, 'temperature')); }
     if (set != null && isNaN(set)) set = null;
     // lys: romgruppa hvis den finnes, ellers KI Rom-telleren
-    const lysS = card.st(`sensor.${r.id}_lys`);
+    const lysS = KD.kiRom(card, r.id, 'lys');
     const lightId = r.lys && card.st(r.lys) ? r.lys : null;
     const lysListe = lysS ? list(lysS.attributes.entiteter).filter(id => String(id).startsWith('light.')) : [];
     const lightsOn = lightId ? card.v(lightId) === 'on' : lysS ? parseFloat(lysS.state) > 0 : false;

@@ -10,7 +10,7 @@
  * personer: { sebastian: { navn, entity, posisjon, sovn, mobil, farge, sovn_rom } }   # overstyr/utvid tabellen
  * entity / posisjon / sovn / mobil / navn / farge / sovn_rom   # overstyr for valgt person direkte
  * soner: { skole: { navn: Skole, ikon: school, farge: 'oklch(…)', bestemt: skolen } }   # nøkkel = zone-objekt-ID
- * bilde: false                 # true = bruk personens entity_picture i avataren i stedet for forbokstaven
+ * bilde: true                  # true = bruk personens entity_picture i avataren i stedet for forbokstaven
  * Mobil-sensorer (med prefiks): battery_level, battery_state, connection_type, ssid, geocoded_location, steps,
  * distance / walking_running_distance, sleep_duration, core_sleep, deep_sleep, rem_sleep, awake, sleep_score.
  */
@@ -56,7 +56,7 @@
 
   class KDPersonCard extends KD.KDSheet {
     static head = ['person', 'Tilstedeværelse', 'Mobil, sone og søvn'];
-    static defaults = { person: 'sebastian', personer: null, soner: null, bilde: false, sovn_rom: 'Soverom' };
+    static defaults = { person: 'sebastian', personer: null, soner: null, bilde: true, sovn_rom: 'Soverom' };
     static getStubConfig() { return { person: 'sebastian' }; }
     getCardSize() { return 14; }
 
@@ -231,7 +231,7 @@
         log: log.map(([text, sub, time, z], i, arr) => ({ text, sub, time: KD.hm(time), dot: { width: 9, height: 9, borderRadius: 5, marginTop: 5, background: this.zoneInfo(z)[2], flex: 'none' }, line: { flex: 1, width: 1, background: i < arr.length - 1 ? 'rgba(255,255,255,0.1)' : 'transparent', marginTop: 4 } })),
       };
       const pic = cfg.bilde && this.at(p.entity, 'entity_picture');
-      if (pic) Object.assign(vals.avatar, { backgroundImage: `url("${this._hass.hassUrl ? this._hass.hassUrl(pic) : pic}")`, backgroundSize: 'cover', backgroundPosition: 'center' });
+      if (pic) Object.assign(vals.avatar, { backgroundImage: `url('${KD.e(String(this._hass.hassUrl ? this._hass.hassUrl(pic) : pic).replace(/'/g, '%27'))}')`, backgroundSize: 'cover', backgroundPosition: 'center', color: 'transparent' });
       const v = vals;
 
       return `<div style="box-sizing:border-box;width:100%;max-width:420px;min-height:100vh;margin:0 auto;background:#141416;padding:20px 18px 40px;display:flex;flex-direction:column;gap:22px">
