@@ -248,9 +248,9 @@
       const radios = this.radios().map(r => ({ ...r, style: chip(playing && !!cur && (cur.includes(low(r.navn)) || low(r.navn).includes(cur))) }));
       const sources = cf.vis_kilder === false ? [] : (plA.source_list || []).map(src => ({ src, style: chip(low(src) === low(plA.source)) }));
       const secHead = (t) => `<div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:0 4px"><span>${e(t)}</span></div>`;
-      const chipRow = (items, fn) => `<div data-hscroll="1" style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -18px;padding:0 18px">${items.map(fn).join('')}</div>`;
+      const chipRow = (items, fn) => `<div data-hscroll="1" style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:0 var(--kd-kant,10px)">${items.map(fn).join('')}</div>`;
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Media</div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>

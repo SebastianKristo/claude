@@ -171,18 +171,50 @@
       const r = this._room(), ud = JSON.parse(JSON.stringify(H.userHideNow(this) || {}));
       delete ud[r.id]; H.saveUserHide(this, ud); this._queue();
     }
+    sensorAll(ev, k) { this.setState({ sensAll: this.state.sensAll === k ? null : k, sensQ: '' }); }
+    sensorQ(ev, arg, el) { this._sensQ = el.value; clearTimeout(this._sqT); this._sqT = setTimeout(() => this.setState({ sensQ: this._sensQ }), 150); }
+    /** Animasjonen i topp-pillen (innflyging + pulserende glød) – av/på per bruker, gjelder alle popups */
+    animTog() {
+      const v = { ...KD.ud(this, 'kd_innst') }; v.topp_animasjon = v.topp_animasjon === false;
+      this.haptic('selection'); KD.udSave(this, 'kd_innst', v);
+      if (v.topp_animasjon === false) KD.stopSheetTop(document.body);
+    }
+    /** alle temperatur-/fuktsensorer i HA (enhet/device_class), rommets egne først */
+    _allSensors(k, r) {
+      const all = this.all(), words = String(r.navn || r.id).toLowerCase().split(/\s+/)[0];
+      const ok = id => { if (!id.startsWith('sensor.')) return false; const A = all[id].attributes || {}, u = String(A.unit_of_measurement || '');
+        return k === 'temp' ? (A.device_class === 'temperature' || /°\s*[cf]/i.test(u)) : (A.device_class === 'humidity' || (u === '%' && /fukt|humid/i.test(id + ' ' + (A.friendly_name || '')))); };
+      const q = String(this.state.sensQ || '').toLowerCase();
+      return Object.keys(all).filter(ok).filter(id => !q || (id + ' ' + this.fname(id)).toLowerCase().includes(q))
+        .sort((x, y) => (y.includes(r.id) || this.fname(y).toLowerCase().includes(words)) - (x.includes(r.id) || this.fname(x).toLowerCase().includes(words)) || this.fname(x).localeCompare(this.fname(y), 'nb'));
+    }
     _sensorPicker(r, L) {
-      const U = KD.userRoom(this, r.id);
-      const row = (k, title, icon, list, cur, unit) => list.length ? `<div style="display:flex;flex-direction:column;gap:8px">
-      <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:#8e8d89"><span class="ms" style="font-size:16px">${icon}</span><span>${title}</span></div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px">${list.map(id => {
+      const U = KD.userRoom(this, r.id), s = this.state;
+      const chip = (k, id, cur, unit) => {
         const sel = id === cur, fixed = U[k] === id, v = this.n(id);
         return `<button class="kdr-a92" data-key="kd-sv-${k}-${E(id)}" data-on-click="sensorPick" data-arg="${E(k + '|' + id)}" style="${S({ display: 'flex', alignItems: 'center', gap: 6, maxWidth: '100%', minWidth: 0, height: 34, padding: '0 12px', borderRadius: 17, fontSize: 12, fontWeight: 500, background: sel ? 'oklch(0.78 0.13 350 / 0.2)' : 'rgba(255,255,255,0.06)', boxShadow: sel ? 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.7)' : 'none', color: sel ? '#f2f1ee' : '#a9a7a2' })}">${fixed ? '<span class="ms" style="font-size:14px">push_pin</span>' : ''}<span style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(this.fname(id))}</span><span style="color:#8e8d89;white-space:nowrap">${v != null ? E(nf(v, unit === '%' ? 0 : 1) + (unit === '%' ? ' %' : '°')) : '–'}</span></button>`;
-      }).join('')}</div></div>` : '';
+      };
+      const row = (k, title, icon, list0, cur, unit) => {
+        const list = [...new Set([...(U[k] ? [U[k]] : []), ...list0])];
+        const open = s.sensAll === k, more = open ? this._allSensors(k, r).filter(id => !list.includes(id)) : [];
+        return `<div style="display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:#8e8d89"><span class="ms" style="font-size:16px">${icon}</span><span style="flex:1">${title}</span>
+        <button class="kdr-a92" data-on-click="sensorAll" data-arg="${k}" style="height:28px;padding:0 10px;border-radius:14px;font-size:11px;font-weight:500;background:${open ? 'oklch(0.78 0.13 350 / 0.2)' : 'rgba(255,255,255,0.06)'};color:#c9c7c2;display:flex;align-items:center;gap:4px"><span class="ms" style="font-size:15px">${open ? 'expand_less' : 'search'}</span>${open ? 'Lukk' : 'Alle sensorer'}</button></div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">${list.map(id => chip(k, id, cur, unit)).join('') || '<span style="font-size:12px;color:#6d6c69">Ingen forslag i rommet – søk i alle sensorer</span>'}</div>
+      ${open ? `<input data-key="kd-sq-${k}" data-keep="1" data-on-input="sensorQ" placeholder="Søk etter sensor …" autocomplete="off" style="height:38px;padding:0 14px;border-radius:19px;border:none;outline:none;background:#262629;color:#f2f1ee;font:inherit;font-size:13px;box-sizing:border-box;width:100%">
+      <div style="display:flex;flex-wrap:wrap;gap:6px;max-height:260px;overflow-y:auto;overscroll-behavior:contain">${more.slice(0, 60).map(id => chip(k, id, cur, unit)).join('') || '<span style="font-size:12px;color:#6d6c69">Ingen treff</span>'}</div>
+      ${more.length > 60 ? `<span style="font-size:11px;color:#6d6c69">${more.length - 60} til – søk for å snevre inn</span>` : ''}` : ''}
+    </div>`;
+      };
       const t = row('temp', 'Temperatur fra', 'device_thermostat', L.tempValg || [], L.tempId, '°');
       const f = row('fukt', 'Fukt fra', 'humidity_percentage', L.humValg || [], L.humId, '%');
-      if (!t && !f) return '';
-      return `<section data-key="kd-sensorvalg" style="display:flex;flex-direction:column;gap:14px;padding:14px 16px;border-radius:24px;background:#1c1c1f">${t}${f}</section>`;
+      const anim = KD.ud(this, 'kd_innst').topp_animasjon !== false;
+      return `<section data-key="kd-sensorvalg" style="display:flex;flex-direction:column;gap:14px;padding:14px 16px;border-radius:24px;background:#1c1c1f">${t}${f}
+      <button class="kdr-a92" data-on-click="animTog" style="display:flex;align-items:center;gap:10px;min-height:44px;text-align:left">
+        <span class="ms" style="font-size:18px;color:#8e8d89">animation</span>
+        <span style="flex:1;min-width:0;display:flex;flex-direction:column"><span style="font-size:13px;font-weight:500">Animasjon i toppen</span><span style="font-size:11px;color:#8e8d89">Innflyging og glød i topp-pillen (alle popups)</span></span>
+        <span style="${S({ width: 44, height: 26, borderRadius: 13, flex: 'none', position: 'relative', background: anim ? 'oklch(0.78 0.13 350)' : '#3a3a3d', transition: 'background .2s' })}"><span style="${S({ position: 'absolute', top: 3, left: anim ? 21 : 3, width: 20, height: 20, borderRadius: 10, background: '#f4f3ef', transition: 'left .25s cubic-bezier(.34,1.56,.64,1)' })}"></span></span>
+      </button></section>`;
     }
     afterRender() {
       const root = this.$('.kd-root > div, .kd-sheet-body > div');
@@ -369,7 +401,7 @@
       const setVal = k ? (Number.isInteger(k.set) ? String(k.set) : nf(k.set, 1)) : '';
       this._headVals = [r.ikon, r.navn, `${temp != null ? nf(temp, 1) : '–'}° · ${hum != null ? nf(hum, 0) : '–'} %`];
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:18px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) ${s.edit ? 'calc(190px + env(safe-area-inset-bottom))' : '40px'};display:flex;flex-direction:column;gap:18px">
   <header style="display:flex;align-items:center;gap:12px;padding:0 4px">
     <span style="${S(headIcon)}"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">${E(r.ikon)}</span></span>
     <div style="flex:1;font-size:26px;font-weight:500;letter-spacing:-0.02em">${E(r.navn)}</div>
@@ -401,7 +433,7 @@
       </button>`).join('')}
   </section>
 
-  ${scenes.length ? `<section data-hscroll="1" style="display:flex;gap:14px;overflow-x:auto;scrollbar-width:none;margin:0 -14px;padding:2px 18px">
+  ${scenes.length ? `<section data-hscroll="1" style="display:flex;gap:14px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:2px var(--kd-kant,10px)">
     ${scenes.map(x => { const act = s.scene === x.key;
       const bubble = { width: 58, height: 58, borderRadius: 29, display: 'grid', placeItems: 'center', background: act ? PINK : '#1c1c1f', color: act ? '#2a1720' : '#c9c7c2', boxShadow: act ? '0 6px 18px rgba(240,140,190,0.3)' : 'inset 0 0 0 1px rgba(255,255,255,0.05)', transform: act ? 'scale(1.06)' : 'scale(1)', transition: 'transform .35s cubic-bezier(.34,1.8,.64,1), background .25s' };
       return `<button data-key="${E(x.key)}" data-on-click="sceneGo" data-arg="${E(x.key)}" style="flex:none;display:flex;flex-direction:column;align-items:center;gap:6px;width:62px">
@@ -469,7 +501,7 @@
     </div>
   </section>` : ''}
 
-  ${s.edit ? `<div data-key="kd-edit-bar" style="position:sticky;bottom:96px;z-index:4;display:flex;align-items:center;gap:10px;padding:8px 8px 8px 16px;border-radius:30px;background:rgba(38,38,41,0.92);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.07),0 8px 24px rgba(0,0,0,0.35)">
+  ${s.edit ? `<div data-key="kd-edit-bar" style="position:fixed;left:var(--kd-kant,10px);right:var(--kd-kant,10px);bottom:calc(100px + env(safe-area-inset-bottom));z-index:30;max-width:620px;margin:0 auto;display:flex;align-items:center;gap:10px;padding:8px 8px 8px 16px;border-radius:30px;background:rgba(38,38,41,0.92);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.07),0 8px 24px rgba(0,0,0,0.35)">
     <span class="ms" style="font-size:20px;color:oklch(0.82 0.1 350)">visibility</span>
     <span style="flex:1;min-width:0;display:flex;flex-direction:column"><span style="font-size:14px;font-weight:500">Tilpass rommet</span><span style="font-size:11px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Trykk for å skjule eller vise</span></span>
     <button class="kdr-a92" data-on-click="editReset" style="height:40px;padding:0 14px;border-radius:20px;background:rgba(255,255,255,0.08);font-size:13px;font-weight:500">Nullstill</button>

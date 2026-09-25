@@ -408,7 +408,7 @@
       const statusStyle = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 500, color: '#c9c7c2' };
       const statusDot = { width: 8, height: 8, borderRadius: 4, flex: 'none', background: V.ok, boxShadow: `0 0 10px ${V.ok}` };
       const tl = tabs.map(t => tab(...t));
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
   <header style="display:flex;align-items:center;gap:12px">
     <span style="width:40px;height:40px;border-radius:20px;background:#e9e8e4;color:#141416;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">dns</span></span>
     <div style="flex:1;font-size:26px;font-weight:500;letter-spacing:-0.02em">Server</div>

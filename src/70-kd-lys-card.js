@@ -477,7 +477,7 @@ a:hover{color:oklch(0.86 0.12 95)}`;
       else if (tab === 'f1' || tab === 'f2') inner = this._floor(tab, fl[tab]);
       else inner = this._on(fl);
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:12px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:12px">
   <header style="display:flex;align-items:center;gap:12px;padding:0 4px">
     <span style="width:40px;height:40px;border-radius:20px;background:#e9e8e4;color:#141416;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">lightbulb</span></span>
     <div style="flex:1;font-size:26px;font-weight:500;letter-spacing:-0.02em">Lys</div>
@@ -601,7 +601,7 @@ ${inner}
         bubble: { width: 58, height: 58, borderRadius: 29, display: 'grid', placeItems: 'center', background: act ? PINK : '#1c1c1f', color: act ? '#2a1720' : '#c9c7c2', transform: act ? 'scale(1.06)' : 'scale(1)', transition: 'transform .35s cubic-bezier(.34,1.8,.64,1), background .25s' },
         iconStyle: { fontSize: 24, fontVariationSettings: `'FILL' ${act ? 1 : 0}` }, labelStyle: { fontSize: 11, fontWeight: 500, color: act ? '#f2f1ee' : '#8e8d89' } }; });
       return `
-    <section data-hscroll="1" style="display:flex;gap:12px;overflow-x:auto;scrollbar-width:none;margin:0 -14px;padding:2px 18px">
+    <section data-hscroll="1" style="display:flex;gap:12px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:2px var(--kd-kant,10px)">
       ${scenes.map(c => `<button data-on-click="sceneGo" data-arg="${c.k}" style="flex:none;display:flex;flex-direction:column;align-items:center;gap:6px;width:62px">
           <span style="${S(c.bubble)}"><span class="ms" style="${S(c.iconStyle)}">${c.icon}</span></span>
           <span style="${S(c.labelStyle)}">${E(c.label)}</span>

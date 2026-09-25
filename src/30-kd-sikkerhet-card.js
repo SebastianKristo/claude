@@ -51,7 +51,13 @@
     { entity: 'lock.boddor', rom: 'Bod', type: 'lock', name: 'Boddør' },
   ];
   const LOCK_ON = ['unlocked', 'open', 'opening', 'unlocking', 'jammed'];
-  const WHO = { door: 'Dørsensor', window: 'Vindussensor', lock: 'Dørlås', motion: 'Sensor', presence: 'Sensor' };
+  const WHO = { door: 'Dørsensor', window: 'Vindussensor', lock: 'Dørlås', motion: 'Sensor', presence: 'Sensor', safety: 'Sensor' };
+  const SAFETY = ['smoke', 'moisture', 'tamper', 'vibration', 'gas', 'safety', 'carbon_monoxide'];
+  // «Legg til»-kandidater: device_class som hører hjemme i alarmoversikten
+  const ADD_DC = ['door', 'window', 'garage_door', 'opening', 'motion', 'occupancy', 'presence', 'smoke', 'moisture', 'tamper', 'vibration'];
+  const TYPE_ROOM = { door: 'Dører', window: 'Vinduer', lock: 'Låser', motion: 'Bevegelse', presence: 'Bevegelse', safety: 'Sikkerhet' };
+  const SAFETY_ICON = { smoke: 'detector_smoke', moisture: 'water_drop', tamper: 'warning', vibration: 'vibration', gas: 'detector_co', carbon_monoxide: 'detector_co' };
+  const UD = 'kd_alarm'; // brukerdata: { soner: [{ entity, name, rom, type, battery? }, …] } – samme flate form som zones
   const WD = ['søn.', 'man.', 'tir.', 'ons.', 'tor.', 'fre.', 'lør.'];
   const t = x => `<span>${e(x)}</span>`;
   const today = d => new Date(d).toDateString() === new Date().toDateString();
@@ -77,18 +83,89 @@
       if (dom === 'lock' || z.kind === 'lock') return 'lock';
       const dc = this.at(id, 'device_class', '');
       if (dc === 'window') return 'window';
-      if (['door', 'garage_door', 'opening'].includes(dc)) return 'door';
+      if (['door', 'garage_door', 'opening', 'garage'].includes(dc) || dom === 'cover') return 'door';
+      if (SAFETY.includes(dc)) return 'safety';
       if (['occupancy', 'presence'].includes(dc) && /presence|tilstede/i.test(`${id} ${it.name || ''}`)) return 'presence';
       if (['motion', 'occupancy', 'presence', 'moving'].includes(dc) || z.kind === 'motion') return 'motion';
       return /vindu|window/i.test(`${z.title || ''} ${z.icon || ''} ${id}`) ? 'window' : 'door';
     }
-    sensorList() {
+    /** brukerens egen liste (kd_alarm.soner) om den finnes, ellers config/standard */
+    zonesSrc() { const u = KD.ud(this, UD); return u && Array.isArray(u.soner) ? u.soner : this.config.zones || []; }
+    flatZones(zones = this.zonesSrc()) {
       const flat = [];
-      for (const z of this.config.zones || []) {
+      for (const z of zones || []) {
         if (!z) continue;
         if (Array.isArray(z.items)) for (const it of z.items) { if (it && it.entity) flat.push([z, it]); }
         else if (z.entity) flat.push([{}, z]);
       }
+      return flat;
+    }
+    /** redigerbar flat liste: [{ entity, name, rom, type, battery }] i visningsrekkefølge (gruppert per rom) */
+    editList() {
+      const list = this.flatZones().map(([z, it]) => {
+        const o = { entity: it.entity, type: this.typeOf(z, it) };
+        const name = it.name || it.navn, rom = it.rom || it.room, bat = it.battery || it.batteri;
+        if (name) o.name = name;
+        if (rom) o.rom = rom;
+        if (bat) o.battery = bat;
+        return o;
+      });
+      const roomOf = o => o.rom || o.name || 'Annet', order = [...new Set(list.map(roomOf))];
+      return order.flatMap(r => list.filter(o => roomOf(o) === r));
+    }
+    saveZones(list) {
+      const u = KD.ud(this, UD) || {};
+      this.haptic('selection');
+      KD.udSave(this, UD, { ...u, soner: list });
+    }
+    editTog() { this.setState({ edit: !this.state.edit, q: '' }); }
+    editReset() {
+      const u = { ...(KD.ud(this, UD) || {}) }; delete u.soner;
+      this.haptic('selection');
+      KD.udSave(this, UD, u);
+    }
+    zMove(ev, arg) {
+      const [i, d] = String(arg).split('|').map(Number), list = this.editList(), j = i + d;
+      if (!list[i] || !list[j]) return;
+      [list[i], list[j]] = [list[j], list[i]];
+      this.saveZones(list);
+    }
+    zDel(ev, i) { const list = this.editList(); list.splice(Number(i), 1); this.saveZones(list); }
+    areaOf(id) {
+      const h = this._hass, en = h && h.entities && h.entities[id]; if (!en) return null;
+      const aid = en.area_id || (en.device_id && h.devices && h.devices[en.device_id] && h.devices[en.device_id].area_id);
+      return (aid && h.areas && h.areas[aid] && h.areas[aid].name) || null;
+    }
+    zAdd(ev, id) {
+      if (!id || !this.st(id)) return;
+      const list = this.editList();
+      if (list.some(o => o.entity === id)) return;
+      const type = this.typeOf({}, { entity: id }), area = this.areaOf(id);
+      const rom = area || TYPE_ROOM[type] || 'Annet';
+      let name = String(this.fname(id));
+      if (area && name.toLowerCase().startsWith(area.toLowerCase() + ' ')) name = name.slice(area.length + 1);
+      const o = { entity: id, name: name.charAt(0).toUpperCase() + name.slice(1), rom, type };
+      const last = list.map(x => x.rom || x.name || 'Annet').lastIndexOf(rom); // samme rom → legg etter de andre der
+      if (last >= 0) list.splice(last + 1, 0, o); else list.push(o);
+      this.saveZones(list);
+    }
+    setQ(ev) { this.setState({ q: ev.target.value }); }
+    candidates(have) {
+      const S0 = (this._hass && this._hass.states) || {}, q = String(this.state.q || '').trim().toLowerCase();
+      const out = [];
+      for (const id of Object.keys(S0)) {
+        if (have.has(id)) continue;
+        const dom = id.split('.')[0], dc = (S0[id].attributes || {}).device_class;
+        const ok = dom === 'lock' || (dom === 'binary_sensor' && ADD_DC.includes(dc)) || (dom === 'cover' && (dc === 'garage' || /garasje|garage/i.test(id)));
+        if (!ok) continue;
+        const name = String((S0[id].attributes || {}).friendly_name || id), area = this.areaOf(id) || '';
+        if (q && !`${id} ${name} ${area}`.toLowerCase().includes(q)) continue;
+        out.push({ id, name, area, type: this.typeOf({}, { entity: id }), dc });
+      }
+      return out.sort((p, r) => p.name.localeCompare(r.name, 'nb'));
+    }
+    sensorList() {
+      const flat = this.flatZones();
       const out = [];
       flat.forEach(([z, it], i) => {
         const st = this.st(it.entity);
@@ -99,7 +176,7 @@
         let batId = it.battery || it.batteri;
         if (!batId) { const guess = 'sensor.' + it.entity.split('.')[1] + '_battery'; if (this.st(guess)) batId = guess; }
         const bat = batId ? this.n(batId) : null;
-        out.push({ id: it.entity, key: 's' + i, room: it.rom || it.room || it.name || 'Annet', type, name: it.name || it.navn || this.fname(it.entity), on, avail, bat: bat == null ? null : Math.round(bat), batId });
+        out.push({ id: it.entity, key: 's' + i, room: it.rom || it.room || it.name || 'Annet', type, dc: st.attributes.device_class, name: it.name || it.navn || this.fname(it.entity), on, avail, bat: bat == null ? null : Math.round(bat), batId });
       });
       return out;
     }
@@ -204,6 +281,7 @@
           const on = s.type === 'lock' ? LOCK_ON.includes(ev.state) : ev.state === 'on' || ev.state === 'open';
           if (!on && s.type !== 'lock') continue; // «lukket» og «ingen bevegelse» er støy
           if (s.type === 'lock') text = `${s.room} ${on ? 'låst opp' : 'låst'}`;
+          else if (s.type === 'safety') text = `${s.room}: ${s.name.toLowerCase()} utløst`;
           else if (s.type === 'motion' || s.type === 'presence') text = `Bevegelse i ${s.room.toLowerCase()}`;
           else text = `${s.room} åpnet`;
           who = user ? `${user} · app` : ev.context_entity_id ? 'Automatisk' : WHO[s.type];
@@ -250,9 +328,9 @@
       const alerts = sensors.filter(x => this.isAlert(x));
       const motion = sensors.filter(x => (x.type === 'motion' || x.type === 'presence') && x.on);
       const n = sensors.length;
-      const icon = x => ({ door: x.on ? 'door_open' : 'door_front', window: x.on ? 'sensor_window' : 'window', lock: x.on ? 'lock_open' : 'lock', motion: x.on ? 'directions_run' : 'directions_walk', presence: 'person' })[x.type];
-      const label = x => ({ door: x.on ? 'Åpen' : x.name, window: x.on ? 'Åpent' : x.name, lock: x.on ? `${x.name} ulåst` : x.name, motion: x.on ? 'Bevegelse nå' : x.name, presence: x.on ? 'Noen her' : x.name })[x.type];
-      const colorOf = x => this.isAlert(x) ? C.amber : x.on ? C.blue : null;
+      const icon = x => x.id.startsWith('cover.') ? (x.on ? 'garage_open' : 'garage') : ({ door: x.on ? 'door_open' : 'door_front', window: x.on ? 'sensor_window' : 'window', lock: x.on ? 'lock_open' : 'lock', motion: x.on ? 'directions_run' : 'directions_walk', presence: 'person', safety: SAFETY_ICON[x.dc] || 'sensors' })[x.type] || 'sensors';
+      const label = x => ({ door: x.on ? 'Åpen' : x.name, window: x.on ? 'Åpent' : x.name, lock: x.on ? `${x.name} ulåst` : x.name, motion: x.on ? 'Bevegelse nå' : x.name, presence: x.on ? 'Noen her' : x.name, safety: x.on ? `${x.name} utløst` : x.name })[x.type] || x.name;
+      const colorOf = x => this.isAlert(x) || (x.type === 'safety' && x.on) ? C.amber : x.on ? C.blue : null;
       const roomsOrder = [...new Set(sensors.map(x => x.room))];
       const plural = (k, one, many) => `${k} ${k === 1 ? one : many}`;
       const words = { door: ['dør', 'dører'], window: ['vindu', 'vinduer'], lock: ['lås', 'låser'] };
@@ -286,6 +364,7 @@
       });
       const alertRows = [
         ...alerts.map(x => ({ id: x.id, icon: icon(x), text: x.type === 'lock' ? `${x.name} er ulåst` : `${x.name} er ${x.type === 'window' ? 'åpent' : 'åpen'}`, room: x.room, action: x.type === 'lock' ? 'Lås' : 'Vis' })),
+        ...sensors.filter(x => x.type === 'safety' && x.on).map(x => ({ id: x.id, icon: icon(x), text: `${x.name} utløst`, room: x.room, action: 'Vis' })),
         ...lowBat.map(x => ({ id: x.batId, icon: 'battery_alert', text: `Lavt batteri · ${x.bat} %`, room: `${x.room} · ${x.name}`, action: 'Vis' })),
       ];
       const rooms = roomsOrder.map((room, i) => {
@@ -311,7 +390,7 @@
         return { text, who, time, dot: { width: 9, height: 9, borderRadius: 5, marginTop: 5, background: col, flex: 'none' }, line: { flex: 1, width: 1, background: i < arr.length - 1 ? 'rgba(255,255,255,0.1)' : 'transparent', marginTop: 4 } };
       });
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 28px;display:flex;flex-direction:column;gap:22px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) ${s.edit ? 'calc(120px + env(safe-area-inset-bottom))' : '28px'};display:flex;flex-direction:column;gap:22px">
 
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Sikkerhet</div>
@@ -356,7 +435,7 @@
         </div>`).join('')}
     </section>` : ''}
 
-  <section style="display:flex;flex-direction:column;gap:2px">
+  ${s.edit ? this.editHTML() : `<section style="display:flex;flex-direction:column;gap:2px">
     <div style="display:flex;justify-content:space-between;align-items:baseline;padding:0 4px 8px">
       <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Rom</div>
       <div style="font-size:12px;color:#6d6c69;white-space:nowrap"><span>${n} sensorer</span></div>
@@ -370,7 +449,7 @@
           ${room.sensors.map(x => `<button class="kd-sik-chip" data-on-click="info" data-arg="${e(x.id)}" style="${S(x.style)}"><span class="ms" style="${S(x.iconStyle)}">${t(x.icon)}</span>${t(x.label)}</button>`).join('')}
         </div>
       </div>`).join('')}
-  </section>
+  </section>`}
 
   ${Number(cfg.hendelser) ? `<section style="display:flex;flex-direction:column;gap:8px">
     <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:0 4px">Siste hendelser</div>
@@ -391,7 +470,67 @@
       ${!log.length && this._lastLog ? `<div style="padding:4px 0 8px;font-size:13px;color:#6d6c69">Ingen hendelser</div>` : ''}
     </div>
   </section>` : ''}
+  ${s.edit ? `<div data-key="kd-sik-editbar" style="position:fixed;left:var(--kd-kant,10px);right:var(--kd-kant,10px);bottom:calc(100px + env(safe-area-inset-bottom));z-index:30;max-width:var(--kd-bredde,100%);overflow-x:clip;margin:0 auto;box-sizing:border-box;display:flex;align-items:center;gap:10px;padding:8px 8px 8px 16px;border-radius:30px;background:rgba(38,38,41,0.92);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.07),0 8px 24px rgba(0,0,0,0.35)">
+    <span class="ms" style="font-size:20px;color:oklch(0.82 0.1 350)">tune</span>
+    <span style="flex:1;min-width:0;display:flex;flex-direction:column"><span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Tilpass sensorene</span><span style="font-size:11px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Flytt, fjern eller legg til</span></span>
+    <button class="kd-sik-fix" data-on-click="editReset" style="height:40px;padding:0 14px;border-radius:20px;background:rgba(255,255,255,0.08);font-size:13px;font-weight:500;flex:none">Nullstill</button>
+    <button class="kd-sik-fix" data-on-click="editTog" style="height:40px;padding:0 16px;border-radius:20px;background:linear-gradient(135deg, oklch(0.78 0.13 350), oklch(0.9 0.05 20));color:#2a1720;font-size:13px;font-weight:600;flex:none">Ferdig</button>
+  </div>` : `<button class="kd-sik-fix" data-key="kd-sik-editbtn" data-on-click="editTog" style="display:flex;align-items:center;justify-content:center;gap:8px;height:48px;border-radius:24px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);color:#a9a7a2;font-size:13px;font-weight:500"><span class="ms" style="font-size:18px">tune</span>Tilpass sensorene</button>`}
 </div>`;
+    }
+
+    /* ---------- tilpass-modus: flytt / fjern / legg til sensorer (lagres per bruker i kd_alarm) ---------- */
+    editHTML() {
+      const list = this.editList(), have = new Set(list.map(o => o.entity));
+      const custom = Array.isArray((KD.ud(this, UD) || {}).soner);
+      const roomOf = o => o.rom || o.name || 'Annet';
+      const ic = (type, dc, id) => (id || '').startsWith('cover.') ? 'garage' : ({ door: 'door_front', window: 'window', lock: 'lock', motion: 'directions_walk', presence: 'person', safety: SAFETY_ICON[dc] || 'sensors' })[type] || 'sensors';
+      const ibtn = (fn, arg, icon, col, off, title) => `<button class="kd-sik-fix" data-on-click="${fn}" data-arg="${e(arg)}" title="${title}" ${off ? 'disabled' : ''} style="width:34px;height:34px;border-radius:17px;display:grid;place-items:center;flex:none;color:${col};opacity:${off ? 0.25 : 1};transition:transform .12s"><span class="ms" style="font-size:20px">${icon}</span></button>`;
+      let prev = null;
+      const rows = list.map((o, i) => {
+        const room = roomOf(o), head = room !== prev; prev = room;
+        const first = i === 0 || roomOf(list[i - 1]) !== room, last = i === list.length - 1 || roomOf(list[i + 1]) !== room;
+        const st = this.st(o.entity), name = o.name || (st ? this.fname(o.entity) : o.entity);
+        const sub = st ? o.entity : `${o.entity} · finnes ikke`;
+        return `${head ? `<div data-key="kd-sik-eh-${e(room)}" style="font-size:12px;font-weight:500;color:#8e8d89;padding:${i ? 12 : 2}px 6px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t(room)}</div>` : ''}
+        <div data-key="kd-sik-e-${e(o.entity)}" style="display:grid;grid-template-columns:28px minmax(0,1fr) auto;align-items:center;gap:8px;padding:6px 4px 6px 12px;border-radius:18px;background:#1c1c1f;opacity:${st ? 1 : 0.5}">
+          <span class="ms" style="font-size:19px;color:#8e8d89">${ic(o.type, st && st.attributes.device_class, o.entity)}</span>
+          <div style="min-width:0;display:flex;flex-direction:column;gap:1px">
+            <span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t(name)}</span>
+            <span style="font-size:11px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t(sub)}</span>
+          </div>
+          <div style="display:flex;align-items:center">
+            ${ibtn('zMove', `${i}|-1`, 'arrow_upward', '#c9c7c2', first, 'Flytt opp')}
+            ${ibtn('zMove', `${i}|1`, 'arrow_downward', '#c9c7c2', last, 'Flytt ned')}
+            ${ibtn('zDel', String(i), 'remove_circle', 'oklch(0.72 0.15 25)', false, 'Fjern')}
+          </div>
+        </div>`;
+      }).join('');
+      const MAX = 40, cand = this.candidates(have);
+      const add = cand.slice(0, MAX).map(c => `<div data-key="kd-sik-a-${e(c.id)}" style="display:grid;grid-template-columns:28px minmax(0,1fr) auto;align-items:center;gap:8px;padding:6px 4px 6px 12px;border-radius:18px;background:#1c1c1f">
+          <span class="ms" style="font-size:19px;color:#8e8d89">${ic(c.type, c.dc, c.id)}</span>
+          <div style="min-width:0;display:flex;flex-direction:column;gap:1px">
+            <span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t(c.name)}</span>
+            <span style="font-size:11px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t([c.area, c.id].filter(Boolean).join(' · '))}</span>
+          </div>
+          ${ibtn('zAdd', c.id, 'add_circle', 'oklch(0.8 0.12 150)', false, 'Legg til')}
+        </div>`).join('');
+      return `<section data-key="kd-sik-edit" style="display:flex;flex-direction:column;gap:6px;min-width:0">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:0 4px 4px">
+      <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Sensorer</div>
+      <div style="font-size:12px;color:#6d6c69;white-space:nowrap">${t(`${list.length} · ${custom ? 'din liste' : 'standard'}`)}</div>
+    </div>
+    ${rows || `<div style="padding:8px 6px;font-size:13px;color:#6d6c69">Ingen sensorer</div>`}
+  </section>
+  <section data-key="kd-sik-add" style="display:flex;flex-direction:column;gap:6px;min-width:0">
+    <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:0 4px 4px">Legg til</div>
+    <label style="display:flex;align-items:center;gap:8px;height:42px;padding:0 14px;border-radius:21px;background:#1c1c1f;min-width:0">
+      <span class="ms" style="font-size:18px;color:#8e8d89">search</span>
+      <input data-key="kd-sik-q" data-on-input="setQ" value="${e(this.state.q || '')}" placeholder="Søk etter sensor, lås eller rom" style="flex:1;min-width:0;height:100%;border:0;outline:none;background:transparent;color:#f2f1ee;font:inherit;font-size:14px">
+    </label>
+    ${add || `<div style="padding:8px 6px;font-size:13px;color:#6d6c69">${this.state.q ? 'Ingen treff' : 'Ingen flere sensorer å legge til'}</div>`}
+    ${cand.length > MAX ? `<div style="padding:4px 6px;font-size:12px;color:#6d6c69">${t(`${cand.length - MAX} til – søk for å snevre inn`)}</div>` : ''}
+  </section>`;
     }
     noMenu(ev) { ev.preventDefault(); }
     onDisconnect() { cancelAnimationFrame(this._holdRaf); super.onDisconnect(); }

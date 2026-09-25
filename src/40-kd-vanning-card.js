@@ -611,7 +611,7 @@
       }
 
       return `
-<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 28px;display:flex;flex-direction:column;gap:16px">
+<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 28px;display:flex;flex-direction:column;gap:16px">
 
   <header style="display:flex;align-items:center;gap:10px">
     <div style="flex:1;font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Vanning</div>

@@ -352,6 +352,8 @@ input,select,textarea{font:inherit;color:inherit}
   KD.animateSheetTop = (root) => {
     const q = k => root.querySelector('[data-bh="' + k + '"]');
     const pill = q('pill'); if (!pill || !pill.animate) return;
+    const host = root.host || root; // topp_animasjon: false (config eller «Tilpass rommet») slår av animasjonen
+    if ((host.config && host.config.topp_animasjon === false) || (KD._udMap.kd_innst || (host.cached ? KD.ud(host, 'kd_innst') : {})).topp_animasjon === false) { KD.scrollSheetTop(root, 0); return; }
     const sp = 'cubic-bezier(.2,.9,.25,1.25)', out = 'cubic-bezier(.2,.8,.2,1)';
     const run = (k, kf, o) => { const el = q(k); if (el) el.animate(kf, { fill: 'backwards', ...o }); };
     run('pill', [{ transform: 'translateY(-28px) scale(0.9)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 560, easing: sp });
@@ -363,6 +365,12 @@ input,select,textarea{font:inherit;color:inherit}
     run('sheen', [{ transform: 'translateX(-120%)' }, { transform: 'translateX(260%)' }], { duration: 1100, delay: 320, easing: 'ease-in-out' });
     const g = q('glow'); if (g) { if (g._kdGlow) g._kdGlow.cancel(); g._kdGlow = g.animate([{ transform: 'scale(1)', opacity: 0.45 }, { transform: 'scale(1.55)', opacity: 0 }], { duration: 2400, delay: 900, iterations: Infinity, easing: 'ease-out' }); }
     KD.scrollSheetTop(root, 0);
+  };
+  /** Stopp gløden i alle topp-piller under et element (også i shadow roots) */
+  KD.stopSheetTop = (el) => {
+    const walk = n => { if (!n) return; if (n.getAttribute && n.getAttribute('data-bh') === 'glow' && n._kdGlow) { n._kdGlow.cancel(); n._kdGlow = null; }
+      if (n.shadowRoot) walk(n.shadowRoot); for (const c of n.children || []) walk(c); };
+    walk(el);
   };
   /** Pillen krymper når arket scrolles (designets bhScroll) */
   KD.scrollSheetTop = (root, y) => {
@@ -505,6 +513,15 @@ input,select,textarea{font:inherit;color:inherit}
   KD.saveUserData = (card, map) => {
     KD._udOverride = map; card.invalidate('kd-ud-');
     return card.ws({ type: 'frontend/set_user_data', key: KD.UD_KEY, value: map }).catch(e => card.toast('Kunne ikke lagre: ' + (e.message || e)));
+  };
+  /** Generell brukerlagring i HA (frontend/set_user_data) per nøkkel – f.eks. 'kd_kamera', 'kd_alarm', 'kd_hjem' */
+  KD._udMap = {};
+  KD.ud = (card, key) => KD._udMap[key] || card.cached('kd-udk-' + key, 5 * 60e3,
+    () => card.ws({ type: 'frontend/get_user_data', key }).then(r => (r && r.value) || {}).catch(() => ({})), {}) || {};
+  KD.udSave = (card, key, value) => {
+    KD._udMap[key] = value; card.invalidate('kd-udk-' + key);
+    if (card._queue) card._queue();
+    return card.ws({ type: 'frontend/set_user_data', key, value }).catch(e => card.toast('Kunne ikke lagre: ' + (e.message || e)));
   };
   KD.userRoom = (card, id) => (KD.userData(card) || {})[id] || {};
 

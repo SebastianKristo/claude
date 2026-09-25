@@ -132,6 +132,17 @@ Valgene lagres per bruker i HA. Standardverdiene kan også settes i config: `dok
 Automatisk: personen som hører til innlogget bruker blir «meg»; romdata (temperatur, fukt, lys) hentes fra KI Rom-sensorene når de finnes;
 antall lys på faller tilbake til å telle `light.*`; hendelser i dag faller tilbake til kalender-API-et.
 
+## Tilpass fra appen (lagres per bruker i HA)
+
+- **«Mer» → Tilpass Hjem** – rekkefølge og synlighet for seksjonene (personer, setningen øverst, rom/fliser, søppel, strømpriser),
+  delene av setningen øverst (ute, strømpris, effekt, lys, hendelser) og flisene i hver kolonne (flytt, bytt kolonne, skjul).
+- **«Mer» → Tilpass dokken** – knapper i dokken / bak de tre prikkene, bred stil, navn, krymping. Dokken markerer popupen som er åpen, og «Hjem» når ingen er åpen.
+- **Rom → Tilpass rommet** – skjul/vis elementer, velg temperatur- og fuktsensor (også søk i alle sensorer), og slå av animasjonen i topp-pillen (`topp_animasjon: false` i config gjør det samme).
+- **Kamera → Tilpass kameraer** – rekkefølge, bytt entitet, fjern og legg til kameraer.
+- **Alarm → Tilpass sensorene** – rekkefølge, fjern og legg til dører, vinduer, bevegelse, låser, røyk/lekkasje m.m. (med søk).
+
+Hjem og popupene bruker full bredde (Pixel Fold, iPad). `bredde`-variabelen `--kd-bredde` kan begrense den via kortets `card_mod`/tema om ønskelig.
+
 ## Arkene – konfig
 
 Alle nøkler er valgfrie; standardverdiene er dine entiteter (se `docs/entiteter.md`) og resten finnes automatisk.

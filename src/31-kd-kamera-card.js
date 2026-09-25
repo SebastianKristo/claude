@@ -47,12 +47,15 @@
     [/veranda|terrasse|deck|balkong|patio/, 'deck'], [/stue|living/, 'weekend'], [/garasje|garage/, 'garage'], [/kj[øo]kken/, 'countertops'], [/hage|ute|yard|garden|innkj/, 'yard']];
   const slug = s => String(s || '').toLowerCase().replace(/æ/g, 'ae').replace(/ø/g, 'o').replace(/å/g, 'a').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
   const mmss = s => { s = Math.max(0, Math.round(s)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+  const UD = 'kd_kamera';
+  const PINK_GRAD = 'linear-gradient(135deg, oklch(0.78 0.13 350), oklch(0.9 0.05 20))';
+  const RED_E = 'oklch(0.72 0.15 25)', GREEN_E = 'oklch(0.8 0.12 150)';
   const dayStart = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
 
   class KDKameraCard extends KD.KDSheet {
     static head = function () { const n = this.cams().length; return ['videocam', 'Kamera', `${n} ${n === 1 ? 'kamera' : 'kameraer'}`]; };
     static defaults = { kameraer: DEFAULT_CAMS, auto: true, skjul: [], navn: { ringeklokke: 'Inngang' }, oppdater: 10, oppdater_enkel: 2, direkte: true, sirene: null, bilde_mappe: '/config/www/kamera', frigate: 'auto', lagring: null, fane: null };
-    static sheetCss = `.kd-cam-ctl:active,.kd-cam-ev:active{filter:brightness(1.15)}`;
+    static sheetCss = `.kd-cam-ctl:active,.kd-cam-ev:active,.kd-cam-ed:active{filter:brightness(1.15)}.kd-cam-ed:disabled{opacity:.3}`;
     static getStubConfig() { return {}; }
     getCardSize() { return 14; }
     constructor() { super(); this.state = { tab: 'live', view: 'alle', obj: 'all', fav: {} }; this._tick = [0, 0]; }
@@ -66,9 +69,21 @@
       if (!this._scan.m.has(k)) this._scan.m.set(k, ids.filter(id => re.test(id)));
       return this._scan.m.get(k);
     }
+    /** Brukerens egen liste (Tilpass kameraer), lagret i HA-brukerdata 'kd_kamera' → { liste: ['camera.a', …] }. null = ingen overstyring. */
+    userList() {
+      const u = KD.ud(this, UD) || {};
+      return Array.isArray(u.liste) && u.liste.length ? u.liste.filter(x => typeof x === 'string' && x.startsWith('camera.')) : null;
+    }
     cams() {
-      const cfg = this.config, hide = new Set(cfg.skjul || []);
-      const entries = (Array.isArray(cfg.kameraer) ? cfg.kameraer : []).map(x => typeof x === 'string' ? { entity: x } : { ...x }).filter(x => x && (x.entity || x.frigate));
+      const cfg = this.config, user = this.userList();
+      const entries0 = (Array.isArray(cfg.kameraer) ? cfg.kameraer : []).map(x => typeof x === 'string' ? { entity: x } : { ...x }).filter(x => x && (x.entity || x.frigate));
+      if (user) {
+        // brukerlista bestemmer rekkefølge og utvalg; navn/ikon/bevegelse arves fra config-oppføringen for samme kamera
+        const cfgFor = id => entries0.find(c => c.entity === id || (c.frigate && 'camera.' + c.frigate === id));
+        return this._camInfo(user.filter(id => this.st(id)).map(id => ({ ...(cfgFor(id) || {}), entity: id })), false);
+      }
+      const hide = new Set(cfg.skjul || []);
+      const entries = entries0;
       const used = new Set();
       for (const c of entries) { if (c.entity) used.add(c.entity); if (c.frigate) used.add('camera.' + c.frigate); }
       // UniFi-strømmen først; finnes den ikke, Frigate-kameraet med samme navn
@@ -78,7 +93,11 @@
       }).filter(Boolean);
       if (cfg.auto !== false) list = list.concat(this.scan(/^camera\./).filter(id => !used.has(id) && !/_(medium|low)(_resolution_channel|_res)?$|_insecure$|_(medium|low)_resolution/.test(id)).map(id => ({ entity: id })));
       list = list.filter(x => !hide.has(x.entity));
-      const seen = new Set();
+      return this._camInfo(list, true);
+    }
+    /** Beriker kameraoppføringer med navn, ikon og deteksjonssensorer. dedupe: én per enhet (auto-lista). */
+    _camInfo(list, dedupe) {
+      const cfg = this.config, seen = new Set();
       return list.map(c => {
         const id = c.entity, obj = id.split('.')[1];
         const pkg = /_package(_camera)?$/.test(obj) || /pakke|package/i.test(c.frigate || '');
@@ -98,7 +117,7 @@
           if (hit) det[k] = hit;
         }
         const motion = c.bevegelse || (pkg ? null : devs.map(d => `binary_sensor.${d}_motion`).find(x => this.st(x)) || null);
-        const key = dev + (pkg ? '_pkg' : '');
+        const key = dedupe ? dev + (pkg ? '_pkg' : '') : id;
         if (seen.has(key)) return null; seen.add(key);
         return { ...c, id, obj, dev, pkg, name, icon, det, motion, frigate: c.frigate || null, key: obj };
       }).filter(Boolean).map((c, i, all) => {
@@ -216,6 +235,88 @@
     }
     open(ev, id) { this.setState({ view: id }); }
 
+    /* ---------- tilpass kameraer (per bruker) ---------- */
+    editTog() { this.setState({ edit: !this.state.edit, pickFor: null, tab: 'live', view: 'alle' }); this.haptic('selection'); }
+    /** Lista som redigeres: brukerens egen, ellers det kortet viser nå. */
+    editList() {
+      const l = this.userList() || this.cams().map(c => c.id);
+      return l.filter((x, i) => l.indexOf(x) === i);
+    }
+    _saveList(l) { KD.udSave(this, UD, { liste: l }); this.haptic('selection'); }
+    camMove(ev, arg) {
+      const [i0, d] = arg.split('|'), i = Number(i0), j = i + (d === 'up' ? -1 : 1), l = this.editList();
+      if (j < 0 || j >= l.length) return;
+      [l[i], l[j]] = [l[j], l[i]];
+      this.setState({ pickFor: null }); this._saveList(l);
+    }
+    camDel(ev, i) { const l = this.editList(); l.splice(Number(i), 1); this.setState({ pickFor: null }); this._saveList(l); }
+    camAdd(ev, id) { const l = this.editList(); if (!l.includes(id)) l.push(id); this._saveList(l); }
+    camPick(ev, i) { this.setState({ pickFor: this.state.pickFor === String(i) ? null : String(i) }); this.haptic('selection'); }
+    camSet(ev, arg) {
+      const k = arg.indexOf('|'), i = Number(arg.slice(0, k)), id = arg.slice(k + 1), l = this.editList();
+      const j = l.indexOf(id);
+      if (j >= 0 && j !== i) l[j] = l[i]; // valgt kamera står allerede i lista → bytt plass
+      l[i] = id;
+      this.setState({ pickFor: null }); this._saveList(l);
+    }
+    editReset() { KD.udSave(this, UD, {}); this.setState({ pickFor: null }); this.haptic('selection'); }
+    editHTML() {
+      const s = this.state, cfg = this.config, ids = this.editList();
+      const cfgE = (Array.isArray(cfg.kameraer) ? cfg.kameraer : []).map(x => typeof x === 'string' ? { entity: x } : { ...x }).filter(Boolean);
+      const cfgFor = id => cfgE.find(c => c.entity === id || (c.frigate && 'camera.' + c.frigate === id));
+      const info = this._camInfo(ids.map(id => ({ ...(cfgFor(id) || {}), entity: id })), false);
+      const all = this.find(/^camera\./).slice().sort((p, q) => {
+        const lo = x => /_(medium|low)(_resolution|_res)|_insecure$/.test(x) ? 1 : 0;
+        return lo(p) - lo(q) || String(this.fname(p)).localeCompare(String(this.fname(q)), 'nb');
+      });
+      const ico = (icon, col) => `<span class="ms" style="font-size:20px;color:${col || '#f2f1ee'}">${icon}</span>`;
+      const sq = 'width:36px;height:36px;border-radius:18px;display:grid;place-items:center;flex:none;background:rgba(255,255,255,0.06)';
+      const rows = info.map((c, i) => {
+        const open = s.pickFor === String(i), src = this.img(c, 0), ok = !!this.st(c.id);
+        return `<div data-key="ed-${e(c.id)}" style="display:flex;flex-direction:column;gap:10px;padding:8px;border-radius:20px;background:#1c1c1f;box-shadow:${open ? 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.55)' : 'none'};min-width:0">
+        <div style="display:grid;grid-template-columns:64px minmax(0,1fr) auto;align-items:center;gap:10px;min-width:0">
+          <span style="position:relative;width:64px;height:36px;border-radius:10px;overflow:hidden;background:#0c0c0d;display:grid;place-items:center">${src ? `<img src="${e(src)}" alt="" draggable="false" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">` : `<span class="ms" style="font-size:18px;color:#6d6c69">${e(c.icon)}</span>`}</span>
+          <button class="kd-cam-ed" data-on-click="camPick" data-arg="${i}" title="Velg kamera" style="min-width:0;display:flex;align-items:center;gap:6px;text-align:left;padding:2px 0">
+            <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+              <span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(c.name)}</span>
+              <span style="font-size:11px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ok ? e(c.id) : 'Utilgjengelig · ' + e(c.id)}</span>
+            </span>
+            <span class="ms" style="font-size:18px;color:#8e8d89;flex:none">${open ? 'expand_less' : 'expand_more'}</span>
+          </button>
+          <span style="display:flex;gap:4px">
+            <button class="kd-cam-ed" data-on-click="camMove" data-arg="${i}|up" title="Flytt opp" ${i ? '' : 'disabled'} style="${sq}">${ico('arrow_upward')}</button>
+            <button class="kd-cam-ed" data-on-click="camMove" data-arg="${i}|down" title="Flytt ned" ${i < info.length - 1 ? '' : 'disabled'} style="${sq}">${ico('arrow_downward')}</button>
+            <button class="kd-cam-ed" data-on-click="camDel" data-arg="${i}" title="Fjern" style="${sq}"><span class="ms" style="font-size:20px;color:${RED_E};font-variation-settings:'FILL' 1">remove_circle</span></button>
+          </span>
+        </div>
+        ${open ? `<div style="display:flex;flex-wrap:wrap;gap:6px;padding:2px 2px 4px;min-width:0">${all.map(id => {
+          const sel = id === c.id, used = !sel && ids.includes(id);
+          return `<button class="kd-cam-ed" data-on-click="camSet" data-arg="${e(i + '|' + id)}" title="${e(id)}" style="${S({ display: 'flex', alignItems: 'center', gap: 6, maxWidth: '100%', minWidth: 0, height: 34, padding: '0 12px', borderRadius: 17, fontSize: 12, fontWeight: 500, background: sel ? 'oklch(0.78 0.13 350 / 0.2)' : 'rgba(255,255,255,0.06)', boxShadow: sel ? 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.7)' : 'none', color: sel ? '#f2f1ee' : used ? '#6d6c69' : '#c9c7c2' })}">${used ? '<span class="ms" style="font-size:14px">swap_vert</span>' : ''}<span style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(this.fname(id))}</span></button>`;
+        }).join('')}</div>` : ''}
+      </div>`;
+      }).join('');
+      const add = all.filter(id => !ids.includes(id));
+      const head = x => `<div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:6px 4px 0">${x}</div>`;
+      return `${head('Kameraer som vises')}
+  <section style="display:flex;flex-direction:column;gap:8px;min-width:0">
+    ${rows || `<div style="padding:24px 0;text-align:center;font-size:13px;color:#6d6c69">Ingen kameraer valgt</div>`}
+  </section>
+  ${add.length ? `${head('Legg til kamera')}
+  <section style="display:flex;flex-direction:column;gap:6px;min-width:0">
+    ${add.map(id => `<button class="kd-cam-ed" data-key="add-${e(id)}" data-on-click="camAdd" data-arg="${e(id)}" style="display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;padding:10px 12px 10px 14px;border-radius:18px;background:#1c1c1f;text-align:left;width:100%;min-width:0">
+        <span class="ms" style="font-size:20px;color:#8e8d89">videocam</span>
+        <span style="min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(this.fname(id))}</span><span style="font-size:11px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(id)}</span></span>
+        <span class="ms" style="font-size:24px;color:${GREEN_E};font-variation-settings:'FILL' 1">add_circle</span>
+      </button>`).join('')}
+  </section>` : ''}
+  <div data-key="kd-edit-bar" style="position:fixed;left:var(--kd-kant,10px);right:var(--kd-kant,10px);bottom:calc(100px + env(safe-area-inset-bottom));z-index:30;max-width:620px;margin:0 auto;box-sizing:border-box;display:flex;align-items:center;gap:10px;padding:8px 8px 8px 16px;border-radius:30px;background:rgba(38,38,41,0.92);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.07),0 8px 24px rgba(0,0,0,0.35)">
+    <span class="ms" style="font-size:20px;color:oklch(0.82 0.1 350);flex:none">tune</span>
+    <span style="flex:1;min-width:0;display:flex;flex-direction:column"><span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Tilpass kameraer</span><span style="font-size:11px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${this.userList() ? 'Din egen rekkefølge' : 'Trykk på navnet for å bytte'}</span></span>
+    <button class="kd-cam-ed" data-on-click="editReset" style="height:40px;padding:0 14px;border-radius:20px;background:rgba(255,255,255,0.08);font-size:13px;font-weight:500;flex:none">Nullstill</button>
+    <button class="kd-cam-ed" data-on-click="editTog" style="height:40px;padding:0 16px;border-radius:20px;background:${PINK_GRAD};color:#2a1720;font-size:13px;font-weight:600;flex:none">Ferdig</button>
+  </div>`;
+    }
+
     /* ---------- tidtaker for stillbilder ---------- */
     onConnect() {
       super.onConnect();
@@ -316,19 +417,19 @@
         star: { fontSize: 20, color: fav ? C.amber : '#48474a', fontVariationSettings: `'FILL' ${fav ? 1 : 0}` } }; });
       const n = CAMS.length;
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,560px);min-height:100vh;margin:0 auto;background:#141416;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:14px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) ${s.edit ? 'calc(190px + env(safe-area-inset-bottom))' : '40px'};display:flex;flex-direction:column;gap:14px">
   <header style="display:flex;align-items:center;gap:12px;padding:0 4px">
     <span style="width:40px;height:40px;border-radius:20px;background:#e9e8e4;color:#141416;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">videocam</span></span>
     <div style="flex:1;font-size:26px;font-weight:500;letter-spacing:-0.02em">Kamera</div>
     <span style="font-size:12px;color:#8e8d89;white-space:nowrap">${t(`${n} ${n === 1 ? 'kamera' : 'kameraer'}`)}</span>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
   </header>
-
+${s.edit ? this.editHTML() : `
   <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:2px;padding:4px;border-radius:22px;background:#1c1c1f">
     ${tabs.map(x => `<button data-on-click="go" data-arg="tab:${x.k}" style="${S(x.style)}">${t(x.label)}</button>`).join('')}
   </div>
 
-  <nav data-hscroll style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -14px;padding:0 14px">
+  <nav data-hscroll style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:0 var(--kd-kant,10px)">
     ${chips.map(c => `<button data-on-click="go" data-arg="view:${e(c.k)}" style="${S(c.style)}"><span class="ms" style="font-size:16px">${t(c.icon)}</span>${t(c.label)}<span style="${S(c.dot)}"></span></button>`).join('')}
   </nav>
 
@@ -381,6 +482,8 @@
         </button>`).join('')}
       ${!ev.length ? `<div style="padding:24px 0;text-align:center;font-size:13px;color:#6d6c69">Ingen hendelser</div>` : ''}
     </section>` : ''}
+
+  ${isLive && s.view === 'alle' ? `<button class="kd-cam-ed" data-key="kd-edit-btn" data-on-click="editTog" style="display:flex;align-items:center;justify-content:center;gap:8px;height:48px;border-radius:24px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);color:#a9a7a2;font-size:13px;font-weight:500"><span class="ms" style="font-size:18px">tune</span>Tilpass kameraer</button>` : ''}`}
 </div>`;
     }
   }

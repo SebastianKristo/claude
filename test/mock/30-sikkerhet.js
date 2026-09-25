@@ -23,6 +23,10 @@
     'sensor.dorlas_wifi_battery': { state: '40', attributes: { unit_of_measurement: '%' } },
     'binary_sensor.stue_g6_turret_motion': { state: 'on', attributes: { device_class: 'motion' } },
     'binary_sensor.mellomgang_g5_turret_ultra_motion': bs('motion'),
+    'binary_sensor.stue_royk': bs('smoke', 'off', 'Røykvarsler stue'),
+    'binary_sensor.vaskerom_lekkasje': bs('moisture', 'off', 'Lekkasje vaskerom'),
+    'binary_sensor.kjellerdor': bs('door', 'off', 'Kjellerdør'),
+    'cover.garasjeport': { state: 'closed', attributes: { device_class: 'garage', friendly_name: 'Garasjeport' } },
     'person.rune_jemtland': { state: 'home', attributes: { friendly_name: 'Rune', user_id: 'u-rune' } },
   });
   const LOG = [
