@@ -1,4 +1,4 @@
-/* KI Hjem Design – pikselkopi av Claude Design «Home Assistant sikkerhetspanel». Bygget 2026-09-25T23:57Z. */
+/* KI Hjem Design – pikselkopi av Claude Design «Home Assistant sikkerhetspanel». Bygget 2026-09-25T23:34Z. */
 
 /* ===== 00-kd-base.js ===== */
 try {
@@ -188,7 +188,6 @@ input,select,textarea{font:inherit;color:inherit}
       this._root.className = 'kd-root' + (this.config.header === false || this.config.embedded ? ' kd-embedded' : '');
       KD.morph(this._root, html);
       if (this.afterRender) this.afterRender();
-      KD.segInit(this);
     }
     /** Finn element i kortet */
     $(sel) { return this.shadowRoot.querySelector(sel); }
@@ -196,7 +195,6 @@ input,select,textarea{font:inherit;color:inherit}
 
     /* ----- hendelser ----- */
     _dispatch(type, ev) {
-      if (type === 'click') { const p0 = ev.composedPath ? ev.composedPath()[0] : ev.target, sg = p0 && p0.closest && p0.closest('[data-seg]'); if (sg && performance.now() - (sg._segDragEnd || 0) < 350) return; } // klikk etter dra i fanevelger
       if (type === 'click' && this._holdFired) { this._holdFired = false; ev.stopPropagation(); ev.preventDefault(); return; }
       const attr = 'data-on-' + type;
       let el = ev.composedPath ? ev.composedPath()[0] : ev.target;
@@ -337,69 +335,6 @@ input,select,textarea{font:inherit;color:inherit}
 .kd-sheet-top{position:sticky;top:0;left:0;right:0;z-index:3;padding:8px 12px 18px;display:flex;flex-direction:column;align-items:center;gap:8px;background:linear-gradient(180deg,#141416 0,#141416 72%,rgba(20,20,22,0) 100%);pointer-events:none;box-sizing:border-box}
 .kd-sheet-top .kd-grip{width:36px;height:4px;border-radius:2px;background:rgba(255,255,255,0.22)}
 `;
-  /* ----- Liquid glass-fanevelger (felles for alle kort) -----
-     KD.segHTML(key, items, cur, method, opts) → HTML. items: [[verdi, tekst, ikon?], …]. Trykk kaller this[method](ev, verdi).
-     Glassboblen glir og strekkes når valget endres, og kan dras med fingeren mellom valgene (slipp velger).
-     opts: { pink: true (rosa boble, mørk tekst), h: høyde (38), r: radius, bg, gap, style: ekstra stil på rammen, small: true } */
-  KD.segHTML = (key, items, cur, method, o = {}) => {
-    const n = Math.max(1, items.length), i = Math.max(0, items.findIndex(x => x[0] === cur)), h = o.h || (o.stack ? 54 : o.small ? 32 : 38), P = 4;
-    const r = o.r != null ? o.r : Math.round((h + 2 * P) / 2);
-    const cell = `((100% - ${2 * P}px) / ${n})`;
-    const thumbBg = o.pink ? KD.PINK : 'linear-gradient(180deg, rgba(255,255,255,0.26), rgba(255,255,255,0.10))';
-    const thumbSh = o.pink ? '0 4px 14px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.35)' : 'inset 0 1px 0 rgba(255,255,255,0.45), inset 0 -1px 1px rgba(255,255,255,0.10), 0 4px 14px rgba(0,0,0,0.28)';
-    const on = o.pink ? '#2a1720' : '#f2f1ee', off = '#a9a7a2';
-    return `<div data-key="seg-${KD.e(key)}" data-seg="${KD.e(key)}" data-seg-on="${KD.e(method)}" data-seg-i="${i}" data-seg-n="${n}" style="position:relative;display:grid;grid-template-columns:repeat(${n},minmax(0,1fr));padding:${P}px;border-radius:${r}px;background:${o.bg || '#1c1c1f'};box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);touch-action:pan-y;user-select:none;-webkit-user-select:none;isolation:isolate;${o.style || ''}">
-  <span data-seg-thumb="1" style="position:absolute;z-index:0;top:${P}px;bottom:${P}px;left:calc(${P}px + ${i} * ${cell});width:calc(${cell});border-radius:${Math.max(4, r - P)}px;background:${thumbBg};box-shadow:${thumbSh};backdrop-filter:blur(8px) saturate(180%);-webkit-backdrop-filter:blur(8px) saturate(180%);transition:left .5s cubic-bezier(.34,1.35,.64,1), transform .35s cubic-bezier(.34,1.8,.64,1);pointer-events:none"></span>
-  ${items.map(([k, label, icon], j) => `<button data-on-click="${KD.e(method)}" data-arg="${KD.e(k)}" data-seg-b="${j}" style="position:relative;z-index:1;height:${h}px;min-width:0;border-radius:${Math.max(4, r - P)}px;display:flex;flex-direction:${o.stack ? 'column' : 'row'};align-items:center;justify-content:center;gap:${o.stack ? 3 : 6}px;padding:0 ${o.stack ? 2 : 6}px;font-size:${o.stack ? 10 : o.small ? 12 : 13}px;font-weight:${j === i ? 600 : 500};white-space:nowrap;color:${j === i ? on : off};transition:color .25s">${icon ? `<span class="ms" style="font-size:${o.stack ? 20 : o.small ? 15 : 17}px;font-variation-settings:'FILL' ${j === i ? 1 : 0}">${KD.e(icon)}</span>` : ''}<span style="min-width:0;overflow:hidden;text-overflow:ellipsis">${KD.e(label)}</span></button>`).join('')}
-</div>`;
-  };
-  /** Kobler dra-støtte og strekk-animasjon til alle [data-seg] i kortet (kalles etter hver rendring) */
-  KD.segInit = (card) => {
-    const root = card.shadowRoot; if (!root) return;
-    for (const el of root.querySelectorAll('[data-seg]')) {
-      const i = +el.getAttribute('data-seg-i'), th = el.querySelector('[data-seg-thumb]');
-      // strekk («flytende glass») når valget endres
-      if (el._segI != null && el._segI !== i && th && th.animate && !el._segDragged) {
-        const d = Math.min(3, Math.abs(i - el._segI));
-        th.animate([{ transform: 'scale(1,1)' }, { transform: `scale(${1 + 0.14 * d},${1 - 0.06 * d})`, offset: 0.35 }, { transform: 'scale(0.98,1.02)', offset: 0.7 }, { transform: 'scale(1,1)' }], { duration: 520, easing: 'ease-out' });
-      }
-      el._segI = i; el._segDragged = false;
-      if (el._segInit) continue; el._segInit = true;
-      let d = null;
-      const btns = () => [...el.querySelectorAll('[data-seg-b]')];
-      const idxAt = x => { let best = 0, bd = 1e9; btns().forEach((b, j) => { const r = b.getBoundingClientRect(), dd = Math.abs(x - (r.left + r.width / 2)); if (dd < bd) { bd = dd; best = j; } }); return best; };
-      el.addEventListener('pointerdown', ev => { if (ev.button > 0) return; d = { x0: ev.clientX, y0: ev.clientY, id: ev.pointerId, moved: false, j: -1 }; });
-      el.addEventListener('pointermove', ev => {
-        if (!d || ev.pointerId !== d.id) return;
-        const t = el.querySelector('[data-seg-thumb]'); if (!t) return;
-        if (!d.moved) {
-          if (Math.abs(ev.clientY - d.y0) > 10 && Math.abs(ev.clientY - d.y0) > Math.abs(ev.clientX - d.x0)) { d = null; return; }
-          if (Math.abs(ev.clientX - d.x0) < 8) return;
-          d.moved = true; try { el.setPointerCapture(ev.pointerId); } catch (e) { }
-          t.style.transition = 'left .12s cubic-bezier(.3,1.3,.6,1), transform .3s cubic-bezier(.34,1.8,.64,1)';
-          t.style.transform = 'scale(1.08,1.12)';
-        }
-        const r = el.getBoundingClientRect(), w = t.offsetWidth, first = btns()[0].getBoundingClientRect(), last = btns()[btns().length - 1].getBoundingClientRect();
-        t.style.left = KD.clamp(ev.clientX - r.left - w / 2, first.left - r.left, last.left - r.left) + 'px';
-        const j = idxAt(ev.clientX);
-        if (j !== d.j) { d.j = j; card.haptic && card.haptic('selection'); btns().forEach((b, k) => { b.style.color = k === j ? '' : ''; }); }
-      });
-      const end = ev => {
-        if (!d || ev.pointerId !== d.id) return;
-        const dd = d; d = null;
-        if (!dd.moved) return;
-        el._segDragEnd = performance.now(); el._segDragged = true;
-        const t = el.querySelector('[data-seg-thumb]');
-        if (t) { t.style.transition = ''; t.style.transform = ''; }
-        const j = ev.type === 'pointercancel' ? -1 : idxAt(ev.clientX), b = btns()[j];
-        const fn = card[el.getAttribute('data-seg-on')];
-        if (b && typeof fn === 'function') fn.call(card, ev, b.getAttribute('data-arg'), b);
-        card._force = true; card._queue && card._queue();
-      };
-      el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
-    }
-  };
-
   /** HTML for topp-pillen. Bruk KD.sheetTopHTML(ikon, tittel, sub) og KD.animateSheetTop(root) */
   KD.sheetTopHTML = (icon, title, sub, closeHandler = 'closeSheet', extraStyle = '') => `
 <div class="kd-sheet-top" style="${extraStyle}">
@@ -1416,8 +1351,7 @@ try {
       const GREEN = 'oklch(0.8 0.12 150)', BLUE = 'oklch(0.75 0.12 245)', AMBER = 'oklch(0.8 0.12 70)', PURP = 'oklch(0.68 0.2 285)';
       const badge = p => ({ show: !p.home || p.sleep, icon: p.sleep ? 'bedtime' : 'logout', style: { fontSize: 15, color: p.sleep ? 'oklch(0.75 0.12 275)' : PURP, fontVariationSettings: "'FILL' 1" } });
       const meS = this.personState(me), meB = badge(meS);
-      const HUP = KD.ud(this, 'kd_hjem'), PNAVN = HUP.person_navn !== false, PSTED = HUP.person_sted !== false && PNAVN, PIKON = !!HUP.person_ikon;
-      const meRing = HUP.person_ring === false ? 'none' : `0 0 0 3px #141416,0 0 0 4.5px ${meS.home ? 'oklch(0.8 0.12 150 / 0.7)' : 'oklch(0.68 0.2 285 / 0.7)'}`;
+      const meRing = `0 0 0 3px #141416,0 0 0 4.5px ${meS.home ? 'oklch(0.8 0.12 150 / 0.7)' : 'oklch(0.68 0.2 285 / 0.7)'}`;
       const people = PERS.filter(p => p.id !== meId).map(p => { const ps = this.personState(p); return { p, ps, b: badge(ps), avatar: { width: 46, height: 46, borderRadius: 23, display: 'grid', placeItems: 'center', fontSize: 16, fontWeight: 600, background: p.farge, opacity: ps.home ? 1 : 0.6, transition: 'opacity .3s' } }; });
 
       const W = this.weather();
@@ -1641,12 +1575,7 @@ try {
         <button data-on-click="hjemEditClose" style="height:34px;padding:0 14px;border-radius:17px;font-size:13px;font-weight:600;background:linear-gradient(135deg, oklch(0.78 0.13 350), oklch(0.9 0.05 20));color:#2a1720">Ferdig</button></div>
       ${head('Tittel øverst')}<div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 10px 6px">${[['server', 'Servernavn', 'dns'], ['person', 'Mitt navn', 'person']].map(([v, l, ic]) => chipH(((HU.tittel || c.tittel || 'server') === v), 'tittel|' + v, 'hjemSet', l, ic)).join('')}</div>
       ${head('Seksjoner')}${rows('sek', norm(HU.seksjoner, SEK_KEYS), HLABEL.sek, 'sek')}
-      ${head('Personer på toppen')}<div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 10px 6px">
-        ${chipH(HU.person_navn !== false, 'person_navn|' + (HU.person_navn === false), 'hjemSet', 'Navn', 'badge')}
-        ${chipH(HU.person_sted !== false, 'person_sted|' + (HU.person_sted === false), 'hjemSet', 'Sted', 'location_on')}
-        ${chipH(!!HU.person_ikon, 'person_ikon|' + !HU.person_ikon, 'hjemSet', 'Ikon foran navn', 'home_pin')}
-        ${chipH(HU.person_ring !== false, 'person_ring|' + (HU.person_ring === false), 'hjemSet', 'Ring rundt meg', 'radio_button_unchecked')}
-      </div>${persRows}
+      ${head('Personer på toppen')}${persRows}
       ${head('Etasjer')}${etgRows}
       ${head('Romkort')}<div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 10px 6px">${[['stor', 'Stor'], ['middels', 'Middels'], ['liten', 'Liten']].map(([v, l]) => chipH((HU.romkort || c.romkort || 'stor') === v, 'romkort|' + v, 'hjemSet', l)).join('')}
         ${chipH(HU.klimaknapp != null ? HU.klimaknapp !== false : c.klimaknapp !== false, 'klimaknapp|' + (HU.klimaknapp != null ? HU.klimaknapp === false : c.klimaknapp === false), 'hjemSet', 'Klimaknapp', 'thermostat')}</div>
@@ -1774,18 +1703,20 @@ try {
       const COLV = COLV0.filter(k => !HSKJUL.has('flis:' + k)), COLH = COLH0.filter(k => !HSKJUL.has('flis:' + k));
       const SEK = {
         personer: () => `    <div data-key="h-personer" style="display:flex;gap:14px;flex-wrap:wrap;margin-top:-6px">
-      ${people.map(({ p, avatar }) => { const pl = this.placeOf(p); return `<button data-key="pers-${e(p.id)}" data-on-click="quickPerson" data-hold="openPerson" data-arg="${e(p.id)}" title="${e(p.navn)} · ${e(pl.navn)}" style="position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;max-width:72px">
+      ${people.map(({ p, avatar }) => { const pl = this.placeOf(p); return `<button data-key="pers-${e(p.id)}" data-on-click="openPerson" data-hold="quickPerson" data-arg="${e(p.id)}" title="${e(p.navn)} · ${e(pl.navn)}" style="position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;max-width:72px">
           <span style="${S(avatar)}${this.pic(p)}">${e(p.navn[0])}</span>
           <span style="position:absolute;left:30px;top:-5px;width:24px;height:24px;border-radius:12px;background:#232326;box-shadow:0 0 0 2px #141416;display:grid;place-items:center">${this.placeIcon(pl, 15)}</span>
-          ${PNAVN ? `<span style="display:flex;align-items:center;gap:3px;font-size:11px;color:#c9c7c2;white-space:nowrap;max-width:72px">${PIKON ? this.placeIcon(pl, 12) : ''}<span style="min-width:0;overflow:hidden;text-overflow:ellipsis">${e(p.navn)}</span></span>` : ''}
-          ${PSTED ? `<span style="margin-top:-3px;font-size:10px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:72px">${e(pl.navn)}</span>` : ''}
+          <span style="font-size:11px;color:#c9c7c2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:72px">${e(p.navn)}</span>
+          <span style="margin-top:-3px;font-size:10px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:72px">${e(pl.navn)}</span>
         </button>`; }).join('')}
     </div>`,
         prosa: () => prVis.length ? `<div data-key="h-prosa" style="font-size:22px;font-weight:400;line-height:1.75;letter-spacing:-0.01em;text-wrap:pretty;margin-top:-6px">
       ${prosaTxt}
     </div>` : '',
         rom: () => `  <section data-key="h-rom" style="display:flex;flex-direction:column;gap:12px">
-    ${KD.segHTML('etg', FL.map(([k, label]) => [k, label]), floor, 'goFloor', { pink: true, bg: 'transparent', style: 'align-self:flex-start;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.14);max-width:100%' })}
+    <div style="display:flex;gap:2px;padding:4px;border-radius:22px;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.14);align-self:flex-start">
+      ${FL.map(([k, label]) => `<button data-on-click="goFloor" data-arg="${k}" style="${S({ height: 38, padding: '0 16px', borderRadius: 19, fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', background: floor === k ? PINK : 'transparent', color: floor === k ? '#2a1720' : '#c9c7c2' })}">${e(label)}</button>`).join('')}
+    </div>
     <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:start">
       <div style="display:flex;flex-direction:column;gap:8px;min-width:0">${COLV.map(k => TILE[k]()).join('')}</div>
       <div style="display:flex;flex-direction:column;gap:8px;min-width:0">${COLH.map(k => TILE[k]()).join('')}</div>
@@ -1805,7 +1736,10 @@ try {
   </section>` : ''}`,
         strom: () => `  <section data-key="h-strom" style="display:flex;flex-direction:column;gap:12px;margin-bottom:${+(HUR.gap_strom || c.gap_strom || 0)}px">
     <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:0 4px">Strømpriser</div>
-    ${KD.segHTML('pris', MODES.map(([k, label]) => [k, label, { total: 'receipt_long', spot: 'show_chart', norges: 'verified' }[k]]), mode, 'pcMode', { pink: true })}
+    <div data-key="pc-seg" style="position:relative;display:grid;grid-template-columns:repeat(${MODES.length},minmax(0,1fr));padding:4px;border-radius:20px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
+      <span style="position:absolute;top:4px;bottom:4px;left:calc(4px + ${Math.max(0, MODES.findIndex(m => m[0] === mode))} * ((100% - 8px) / ${MODES.length}));width:calc((100% - 8px) / ${MODES.length});border-radius:16px;background:${PINK};box-shadow:0 4px 12px rgba(0,0,0,0.25);transition:left .4s cubic-bezier(.34,1.3,.64,1)"></span>
+      ${MODES.map(([k, label]) => { const on = k === mode, ic = { total: 'receipt_long', spot: 'show_chart', norges: 'verified' }[k]; return `<button data-on-click="pcMode" data-arg="${k}" style="position:relative;height:38px;border-radius:16px;display:flex;align-items:center;justify-content:center;gap:6px;min-width:0;font-size:13px;font-weight:600;white-space:nowrap;color:${on ? '#2a1720' : '#a9a7a2'};transition:color .25s"><span class="ms" style="font-size:17px;font-variation-settings:'FILL' ${on ? 1 : 0}">${ic}</span><span style="overflow:hidden;text-overflow:ellipsis">${e(label)}</span></button>`; }).join('')}
+    </div>
     <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:12px;padding:0 4px">
       <div style="display:flex;flex-direction:column;gap:3px">
         <div style="font-size:12px;color:#8e8d89">${e(priceHead.label)}</div>
@@ -1863,7 +1797,7 @@ try {
         <button data-on-click="toggleServer" data-no-haptic="1" style="display:flex;align-items:center;gap:4px;max-width:100%;font-size:36px;font-weight:600;letter-spacing:-0.03em;line-height:1;white-space:nowrap"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis">${e(KD.ud(this, 'kd_hjem').tittel === 'person' || c.tittel === 'person' ? me.navn : (CUR.navn || 'Hjem'))}</span><span class="ms" style="${S(serverChev)}">arrow_drop_down</span></button>
         <button data-on-click="openWeather" style="font-size:16px;color:#8e8d89;white-space:nowrap;text-align:left">${W.head != null ? Math.round(W.head) : '–'} °C · ${e(W.cond)}</button>
       </div>
-      <button data-on-click="quickPerson" data-hold="openMe" title="${e(me.navn)} · ${e(this.placeOf(me).navn)}" style="position:relative;width:60px;height:60px;border-radius:30px;flex:none;display:grid;place-items:center;font-size:22px;font-weight:600;background:${e(me.farge)};box-shadow:${meRing};${this.pic(me)}">${e(me.navn[0])}<span style="position:absolute;right:-6px;top:-4px;width:24px;height:24px;border-radius:12px;background:#232326;box-shadow:0 0 0 2px #141416;display:grid;place-items:center">${this.placeIcon(this.placeOf(me), 15)}</span></button>
+      <button data-on-click="openMe" data-hold="quickPerson" title="${e(me.navn)} · ${e(this.placeOf(me).navn)}" style="position:relative;width:60px;height:60px;border-radius:30px;flex:none;display:grid;place-items:center;font-size:22px;font-weight:600;background:${e(me.farge)};box-shadow:${meRing};${this.pic(me)}">${e(me.navn[0])}<span style="position:absolute;right:-6px;top:-4px;width:24px;height:24px;border-radius:12px;background:#232326;box-shadow:0 0 0 2px #141416;display:grid;place-items:center">${this.placeIcon(this.placeOf(me), 15)}</span></button>
     </div>
   </header>
 
@@ -2026,11 +1960,9 @@ try {
       min_w: 3,                                                            // under dette regnes enheten som av
       logg_antall: 5,
     };
-    static sheetCss = `.kd-sv-dev{cursor:pointer;-webkit-user-select:none;user-select:none}.kd-sv-dev:active{transform:scale(.985)}
-.kd-sv-seg [data-seg-thumb]{background:linear-gradient(180deg, oklch(0.82 0.12 75 / 0.30), oklch(0.82 0.12 75 / 0.14)) !important;box-shadow:inset 0 0 0 1px oklch(0.82 0.12 75 / 0.45), inset 0 1px 0 rgba(255,255,255,0.25), 0 4px 14px rgba(0,0,0,0.3) !important}
-.kd-sv-seg [data-seg-b] .ms{transition:color .25s}.kd-sv-seg [data-seg-b][style*="font-weight:600"] .ms{color:oklch(0.82 0.12 75)}`;
+    static sheetCss = `.kd-sv-dev{cursor:pointer}`;
 
-    constructor() { super(); this.state = { view: 'pris', sel: null, open: {} }; }
+    constructor() { super(); this.state = { view: 'pris', sel: null }; }
     now() { return new Date(window.__kdMockNowStrom || Date.now()); }
 
     /* ---------- data ---------- */
@@ -2174,10 +2106,10 @@ try {
               }), null);
             if (kwh != null) { const pr = NORGES != null ? NORGES : (today && today[s0.getHours()] != null ? today[s0.getHours()] : null); w = `${nf(kwh, 1)} kWh${pr != null ? ` · ${nf(kwh * pr)} kr` : ''}`; }
           }
-          ev.push({ t, text: `${name} ferdig`, who: w, kind: 'ok', icon: d.icon });
+          ev.push({ t, text: `${name} ferdig`, who: w, kind: 'ok' });
           continue;
         }
-        ev.push({ t, text: e.state === 'on' ? `${name} slått på` : `${name}${room} av`, who, kind: e.state, icon: d ? d.icon : null });
+        ev.push({ t, text: e.state === 'on' ? `${name} slått på` : `${name}${room} av`, who, kind: e.state });
       }
       // Spotpris over varselgrensen (siste gang den krysset i dag)
       const lim = Number(c.spot_varsel);
@@ -2196,8 +2128,7 @@ try {
 
     /* ---------- handlinger ---------- */
     pick(e, h) { h = Number(h); this.setState({ sel: this.state.sel === h ? null : h }); }
-    go(e, k) { if (k && k !== this.state.view) this.setState({ view: k, sel: null }); }
-    openRoom(e, r) { const o = { ...(this.state.open || {}) }; o[r] = !o[r]; this.setState({ open: o }); }
+    go(e, k) { this.setState({ view: k, sel: null }); }
     tapDev(e, id) {
       const d = (this._devs || []).find((x) => x.id === id); if (!d) return;
       if (d.ctl && /^(switch|fan|light|input_boolean)\./.test(d.ctl)) this.toggle(d.ctl); else this.more(d.ctl || d.pow);
@@ -2268,7 +2199,15 @@ try {
       }).join('');
       const ringLabels = [['00', 50, 1], ['06', 99, 50], ['12', 50, 99], ['18', 1, 50]].map(([t, x, y]) => `<span style="${KD.S({ position: 'absolute', left: `${x}%`, top: `${y}%`, transform: 'translate(-50%,-50%)', fontSize: 10, color: '#6d6c69', fontVariantNumeric: 'tabular-nums', pointerEvents: 'none' })}">${E(t)}</span>`).join('');
 
-      const views = KD.segHTML('view', VIEWS, s.view, 'go', { h: 44, r: 22, style: 'margin:0' });
+      const views = VIEWS.map(([k, l, ic]) => {
+        const act = s.view === k;
+        const st = { height: 60, borderRadius: 17, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 5, background: act ? a(C.amber, 0.16) : 'transparent', boxShadow: act ? `inset 0 0 0 1px ${a(C.amber, 0.45)}` : 'none', color: act ? '#f2f1ee' : '#a9a7a2', transition: 'background .25s' };
+        const ist = { fontSize: 21, color: act ? C.amber : '#a9a7a2', fontVariationSettings: `'FILL' ${act ? 1 : 0}` };
+        return `<button data-on-click="go" data-arg="${k}" style="${KD.S(st)}">
+        <span class="ms" style="${KD.S(ist)}">${E(ic)}</span>
+        <span style="font-size:12px;font-weight:500;white-space:nowrap">${E(l)}</span>
+      </button>`;
+      }).join('');
 
       const stats = [
         ...(NORGES != null || this.P.fast ? [[FAST, NORGES != null ? `${nf(NORGES)} kr` : '–', '#f2f1ee'], ['Spart i dag', saved != null ? `${nf(saved, 0)} kr` : '–', C.green]]
@@ -2280,97 +2219,47 @@ try {
       </div>`).join('');
 
       const devices = this._devs = this._devices();
-      const minW = Number(c.min_w) || 0;
-      const canSw = (d) => !!d.ctl && /^(switch|fan|light|input_boolean)\./.test(d.ctl);
-      const onW = (d) => (d.on && d.w != null ? d.w : 0);
-      const rooms = [...new Set(devices.map((d) => d.room))].map((room, i) => {
-        const list = devices.filter((d) => d.room === room).map((d, j) => [d, j]).sort((x, y) => (onW(y[0]) - onW(x[0])) || ((y[0].on ? 1 : 0) - (x[0].on ? 1 : 0)) || (x[1] - y[1])).map((x) => x[0]);
-        return { room, i, list, w: list.reduce((t, d) => t + onW(d), 0), on: list.filter((d) => d.on).length };
-      }).sort((x, y) => (y.w - x.w) || (y.on - x.on) || (x.i - y.i));
-      const devSum = rooms.reduce((t, r) => t + r.w, 0);
-      const houseW = Math.max(devSum, watt != null ? watt : 0);
-      const restW = Math.max(0, houseW - devSum);
-      const roomCol = (k) => a(C.amber, [1, 0.72, 0.52, 0.38, 0.28, 0.22][Math.min(5, k)]);
-      const litRooms = rooms.filter((r) => r.w > 0);
-      const mixBar = houseW > 0 ? `<div style="display:flex;gap:3px;height:10px;border-radius:5px;overflow:hidden">
-        ${litRooms.map((r, k) => `<span title="${KD.e(r.room)}" style="flex:${r.w} 1 0;min-width:4px;background:${roomCol(k)};transition:flex .5s"></span>`).join('')}
-        ${restW > 0 ? `<span title="Annet" style="flex:${restW} 1 0;min-width:4px;background:#3a3a3e"></span>` : ''}
-      </div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px 14px;font-size:11.5px;color:#8e8d89;min-width:0">
-        ${litRooms.slice(0, 5).map((r, k) => `<span style="display:inline-flex;align-items:center;gap:6px;min-width:0;white-space:nowrap"><span style="width:8px;height:8px;border-radius:3px;background:${roomCol(k)};flex:none"></span>${E(r.room)}<span style="color:#6d6c69;font-variant-numeric:tabular-nums">${E(Math.round(r.w / houseW * 100) + ' %')}</span></span>`).join('')}
-        ${restW > 0 ? `<span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap"><span style="width:8px;height:8px;border-radius:3px;background:#3a3a3e;flex:none"></span>${E('Annet')}<span style="color:#6d6c69;font-variant-numeric:tabular-nums">${E(Math.round(restW / houseW * 100) + ' %')}</span></span>` : ''}
-      </div>` : '';
-
-      const devRow = (d, roomW) => {
-        const sw = canSw(d), isOn = !!d.on, w = d.w, swOn = sw && this.v(d.ctl) === 'on';
-        const val = w != null && (isOn || w > 0 || swOn) ? intl(w) : isOn ? 'På' : 'Av';
-        const sub = isOn && w != null && roomW > 0 ? `${Math.round(w / roomW * 100)} % av rommet` : isOn ? (w != null && w < minW ? 'Standby' : 'På') : swOn ? (w ? `Standby · ${intl(w)} W` : 'Standby') : w != null && w > 0 ? `Standby · ${intl(w)} W` : (/^climate\./.test(d.ctl || '') ? 'Varmer ikke' : 'Av');
-        const tg = sw ? `<span style="position:relative;flex:none;width:40px;height:24px;border-radius:12px;background:${swOn ? C.amber : '#3a3a3e'};transition:background .25s;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05)">
-            <span style="position:absolute;top:3px;left:${swOn ? 19 : 3}px;width:18px;height:18px;border-radius:9px;background:${swOn ? '#161618' : '#a9a7a2'};box-shadow:0 1px 3px rgba(0,0,0,0.35);transition:left .3s cubic-bezier(.34,1.4,.64,1),background .25s"></span></span>`
-          : `<span class="ms" style="flex:none;width:40px;text-align:center;font-size:20px;color:#6d6c69">chevron_right</span>`;
-        return `<div class="kd-sv-dev" data-key="dev-${KD.e(d.id)}" data-on-click="tapDev" data-hold="holdDev" data-arg="${KD.e(d.id)}" role="button" style="display:flex;align-items:center;gap:12px;min-width:0;padding:9px 10px 9px 8px;border-radius:16px;background:${isOn ? '#232326' : 'transparent'};transition:background .25s">
-          <span style="flex:none;width:36px;height:36px;border-radius:12px;display:grid;place-items:center;background:${isOn ? a(C.amber, 0.16) : '#232326'}">
-            <span class="ms" style="font-size:19px;color:${isOn ? C.amber : '#6d6c69'};font-variation-settings:'FILL' ${isOn ? 1 : 0}">${E(d.icon)}</span>
-          </span>
-          <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
-            <span style="font-size:14px;font-weight:500;color:${isOn ? '#f2f1ee' : '#a9a7a2'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(d.name)}</span>
-            <span style="font-size:11.5px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(sub)}</span>
-          </span>
-          <span style="flex:none;font-size:14px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap;color:${isOn && w ? '#f2f1ee' : '#6d6c69'}">${E(val)}${w != null && (isOn || w > 0 || swOn) ? `<span style="font-size:11px;color:#8e8d89;font-weight:400"> W</span>` : ''}</span>
-          ${tg}
-        </div>`;
-      };
-      const roomsHtml = rooms.map((r, k) => {
-        const open = !!(s.open || {})[r.room], TOP = 3;
-        const shown = open ? r.list : r.list.slice(0, TOP);
-        const pct = houseW > 0 ? r.w / houseW * 100 : 0;
-        const lit = r.w > 0;
-        return `<div data-key="room-${KD.e(r.room)}" style="display:flex;flex-direction:column;gap:10px;min-width:0;padding:14px 10px 10px;border-radius:24px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
-          <div style="display:flex;align-items:center;gap:10px;min-width:0;padding:0 6px">
-            <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
-              <div style="font-size:16px;font-weight:500;letter-spacing:-0.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(r.room)}</div>
-              <div style="font-size:11.5px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(`${r.on} av ${r.list.length} på${lit && houseW ? ` · ${Math.round(pct)} % av huset` : ''}`)}</div>
-            </div>
-            <div style="flex:none;font-size:22px;font-weight:500;letter-spacing:-0.02em;font-variant-numeric:tabular-nums;white-space:nowrap;color:${lit ? '#f2f1ee' : '#6d6c69'}">${E(lit ? intl(r.w) : '0')}<span style="font-size:12px;color:#8e8d89;font-weight:400"> W</span></div>
+      const roomNames = [...new Set(devices.map((d) => d.room))];
+      const roomsHtml = roomNames.map((room, i) => {
+        const list = devices.filter((d) => d.room === room);
+        const w = list.filter((d) => d.on).reduce((t, d) => t + (d.w || 0), 0);
+        const rowStyle = { display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 4px', borderTop: i ? '1px solid rgba(255,255,255,0.05)' : 'none' };
+        const dot = { width: 7, height: 7, borderRadius: 4, flex: 'none', background: w >= 800 ? C.amber : w ? a(C.amber, 0.5) : '#48474a' };
+        const devs = list.map((d) => {
+          const st = { height: 32, padding: '0 11px 0 8px', borderRadius: 16, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap', background: d.on ? a(C.amber, 0.14) : '#1f1f22', color: d.on ? '#f2f1ee' : '#8e8d89', boxShadow: d.on ? `inset 0 0 0 1px ${a(C.amber, 0.35)}` : 'inset 0 0 0 1px rgba(255,255,255,0.04)', transition: 'background .2s' };
+          const ist = { fontSize: 16, color: d.on ? C.amber : '#6d6c69', fontVariationSettings: `'FILL' ${d.on ? 1 : 0}` };
+          const label = d.on && d.w != null ? `${d.name} · ${intl(d.w)} W` : d.name;
+          return `<button class="kd-sv-dev" data-on-click="tapDev" data-hold="holdDev" data-arg="${KD.e(d.id)}" style="${KD.S(st)}"><span class="ms" style="${KD.S(ist)}">${E(d.icon)}</span>${E(label)}</button>`;
+        }).join('');
+        return `<div style="${KD.S(rowStyle)}">
+        <div style="display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;padding-top:6px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="${KD.S(dot)}"></span>
+            <span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(room)}</span>
           </div>
-          <div style="margin:0 6px;height:6px;border-radius:3px;background:#2a2a2d;overflow:hidden">
-            <div style="height:100%;width:${lit ? Math.max(2, pct).toFixed(1) : 0}%;border-radius:3px;background:linear-gradient(90deg, ${a(C.amber, 0.55)}, ${roomCol(k < litRooms.length ? k : 5)});box-shadow:0 0 12px ${a(C.amber, 0.35)};transition:width .6s cubic-bezier(.3,1,.4,1)"></div>
-          </div>
-          <div style="display:flex;flex-direction:column;gap:2px;min-width:0">${shown.map((d) => devRow(d, r.w)).join('')}</div>
-          ${r.list.length > TOP ? `<button data-on-click="openRoom" data-arg="${KD.e(r.room)}" style="align-self:stretch;height:36px;border-radius:14px;background:#232326;display:flex;align-items:center;justify-content:center;gap:6px;font-size:12.5px;font-weight:500;color:#c9c7c2">
-            ${E(open ? 'Vis færre' : `Vis alle ${r.list.length}`)}<span class="ms" style="font-size:18px;transition:transform .3s;transform:rotate(${open ? 180 : 0}deg)">expand_more</span></button>` : ''}
-        </div>`;
+          <span style="font-size:12px;color:#8e8d89;padding-left:15px;font-variant-numeric:tabular-nums;white-space:nowrap">${E(w ? `${intl(w)} W` : 'Av')}</span>
+        </div>
+        <div style="flex:none;max-width:64%;display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end">${devs}</div>
+      </div>`;
       }).join('');
 
       const spot = this._series(this.P.spotpris, 'today');
       const log = this._log(devices, spot, NOW_H, today);
-      const rel = (t) => {
-        const m = Math.round((now - t) / 60e3);
-        if (m < 1) return 'nå'; if (m < 60) return `${m} min siden`;
-        const h = Math.floor(m / 60), r = m % 60;
-        return h < 6 && r ? `${h} t ${r} min siden` : `${h} t siden`;
-      };
       const logHtml = log.map((e, i, arr) => {
         const col = e.kind === 'alert' ? C.red : e.kind === 'on' ? C.amber : e.kind === 'off' ? C.blue : C.green;
-        const ic = e.kind === 'alert' ? 'trending_up' : e.kind === 'ok' ? 'check_circle' : (e.icon || (e.kind === 'on' ? 'power' : 'power_off'));
-        const badge = e.kind === 'on' ? 'Slått på' : e.kind === 'off' ? 'Slått av' : e.kind === 'ok' ? 'Ferdig' : 'Pris';
-        const last = i === arr.length - 1;
-        return `<div data-key="ev-${i}" style="display:flex;gap:12px;align-items:stretch;min-width:0">
-          <div style="display:flex;flex-direction:column;align-items:center;width:34px;flex:none">
-            <span style="width:34px;height:34px;border-radius:12px;flex:none;display:grid;place-items:center;background:${a(col, 0.14)};box-shadow:inset 0 0 0 1px ${a(col, 0.3)}">
-              <span class="ms" style="font-size:18px;color:${col};font-variation-settings:'FILL' 1">${E(ic)}</span>
-            </span>
-            <span style="flex:1;width:2px;min-height:10px;margin:4px 0;border-radius:1px;background:${last ? 'transparent' : `linear-gradient(${a(col, 0.35)}, rgba(255,255,255,0.06))`}"></span>
+        const dot = { width: 9, height: 9, borderRadius: 5, marginTop: 5, background: col, flex: 'none' };
+        const line = { flex: 1, width: 1, background: i < arr.length - 1 ? 'rgba(255,255,255,0.1)' : 'transparent', marginTop: 4 };
+        return `<div style="display:flex;gap:14px;align-items:stretch">
+          <div style="display:flex;flex-direction:column;align-items:center;width:10px;flex:none">
+            <span style="${KD.S(dot)}"></span>
+            <span style="${KD.S(line)}"></span>
           </div>
-          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;padding:2px 0 ${last ? 0 : 14}px">
-            <div style="display:flex;align-items:baseline;gap:10px;min-width:0">
-              <div style="flex:1;min-width:0;font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(e.text)}</div>
-              <div style="flex:none;font-size:11.5px;color:#8e8d89;font-variant-numeric:tabular-nums;white-space:nowrap">${E(KD.hm(e.t))}</div>
+          <div style="flex:1;display:flex;justify-content:space-between;gap:12px;padding-bottom:14px">
+            <div style="display:flex;flex-direction:column;gap:2px">
+              <div style="font-size:14px">${E(e.text)}</div>
+              <div style="font-size:12px;color:#8e8d89">${E(e.who)}</div>
             </div>
-            <div style="display:flex;align-items:center;gap:8px;min-width:0;font-size:12px;color:#8e8d89">
-              <span style="flex:none;padding:1px 7px;border-radius:7px;font-size:10.5px;font-weight:600;letter-spacing:0.02em;color:${col};background:${a(col, 0.12)}">${E(badge)}</span>
-              <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E([rel(e.t), e.who].filter(Boolean).join(' · '))}</span>
-            </div>
+            <div style="font-size:12px;color:#8e8d89;font-variant-numeric:tabular-nums">${E(KD.hm(e.t))}</div>
           </div>
         </div>`;
       }).join('');
@@ -2398,9 +2287,9 @@ try {
     </div>
   </section>
 
-  <section class="kd-sv-seg">${views}</section>
+  <section style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:5px;border-radius:22px;background:#1c1c1f">${views}</section>
 
-  <section style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">${stats}</section>
+  <section style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">${stats}</section>
 
   ${alerts.length ? `<section style="display:flex;flex-direction:column;gap:8px">
       <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:oklch(0.82 0.12 75);padding:0 4px">Krever oppmerksomhet</div>
@@ -2414,23 +2303,17 @@ try {
         </div>`).join('')}
     </section>` : ''}
 
-  ${devices.length ? `<section data-kd-rom style="display:flex;flex-direction:column;gap:10px;min-width:0">
-    <div style="display:flex;flex-direction:column;gap:10px;padding:0 4px 4px;min-width:0">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
-        <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Rom</div>
-        <div style="font-size:12px;color:#8e8d89;white-space:nowrap;font-variant-numeric:tabular-nums">${E(`${devices.filter((d) => d.on).length} av ${devices.length} på${houseW ? ` · ${intl(houseW)} W` : ''}`)}</div>
-      </div>
-      ${mixBar}
+  ${devices.length ? `<section data-kd-rom style="display:flex;flex-direction:column;gap:2px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;padding:0 4px 8px">
+      <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Rom</div>
+      <div style="font-size:12px;color:#6d6c69;white-space:nowrap">${E(`${devices.filter((d) => d.on).length} av ${devices.length} på`)}</div>
     </div>
     ${roomsHtml}
   </section>` : ''}
 
-  ${log.length ? `<section style="display:flex;flex-direction:column;gap:10px;min-width:0">
-    <div style="display:flex;justify-content:space-between;align-items:baseline;padding:0 4px">
-      <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Siste hendelser</div>
-      <div style="font-size:12px;color:#6d6c69;white-space:nowrap">Siste døgn</div>
-    </div>
-    <div style="display:flex;flex-direction:column;padding:16px 14px;border-radius:24px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);min-width:0">${logHtml}</div>
+  ${log.length ? `<section style="display:flex;flex-direction:column;gap:8px">
+    <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:0 4px">Siste hendelser</div>
+    <div style="display:flex;flex-direction:column;padding-left:4px">${logHtml}</div>
   </section>` : ''}
 </div>`;
     }
@@ -2876,7 +2759,7 @@ try {
 
   <section data-hscroll="1" style="display:flex;gap:12px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:2px var(--kd-kant,10px)">${modesHtml}</section>
 
-  ${KD.segHTML('fane', T, tabK, 'tab', { pink: true, stack: true })}
+  <nav style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;padding:4px;border-radius:24px;background:#1c1c1f">${tabs}</nav>
   ${main}
   ${this.extras(tabK)}
 </div>`;
@@ -3707,10 +3590,6 @@ try {
  * frigate: auto                     # true/false, eller instans-ID
  * lagring: null                     # auto: sensor.*_recording_capacity (sek) → «7 d»
  * fane: null                        # navn på fane 2 (auto: «Frigate» med Frigate, ellers «Hendelser»)
- * oppsett: liste                    # standardvisning: liste | rutenett | masonry | oversikt | fokus | 2x2 | 3kol
- *
- * Per bruker (HA-brukerdata 'kd_kamera'): { liste: [camera.*…], oppsett: 'masonry', bilde: { 'camera.x_high…': 'camera.x_low…' } }
- * «bilde» = egen entitet for stillbildene i oversikten (f.eks. lav oppløsning); strømmen/enkeltvisningen bruker hovedentiteten.
  */
 (() => {
   const KD = window.KD;
@@ -3738,9 +3617,6 @@ try {
   const UD = 'kd_kamera';
   const PINK_GRAD = 'linear-gradient(135deg, oklch(0.78 0.13 350), oklch(0.9 0.05 20))';
   const RED_E = 'oklch(0.72 0.15 25)', GREEN_E = 'oklch(0.8 0.12 150)';
-  const LAYOUTS = [['liste', 'Liste', 'view_agenda'], ['rutenett', 'Rutenett', 'grid_view'], ['masonry', 'Masonry', 'dashboard'], ['oversikt', 'Oversikt', 'view_quilt'], ['fokus', 'Fokus', 'crop_free'], ['2x2', '2×2', 'grid_on'], ['3kol', '3 kolonner', 'view_week']];
-  const QUAL = id => /_high|_ultra_high/.test(id) ? 'Høy' : /_medium/.test(id) ? 'Middels' : /_low/.test(id) ? 'Lav' : /_insecure/.test(id) ? 'Usikret' : /_package/.test(id) ? 'Pakke' : '';
-  const devOf = obj => obj.replace(/_(ultra_)?(high|medium|low)(_resolution_channel|_resolution|_res)?$/, '').replace(/_insecure$/, '').replace(/_package(_camera)?$/, '');
   const dayStart = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
 
   class KDKameraCard extends KD.KDSheet {
@@ -3788,7 +3664,7 @@ try {
     }
     /** Beriker kameraoppføringer med navn, ikon og deteksjonssensorer. dedupe: én per enhet (auto-lista). */
     _camInfo(list, dedupe) {
-      const cfg = this.config, seen = new Set(), bild = (KD.ud(this, UD) || {}).bilde || {};
+      const cfg = this.config, seen = new Set();
       return list.map(c => {
         const id = c.entity, obj = id.split('.')[1];
         const pkg = /_package(_camera)?$/.test(obj) || /pakke|package/i.test(c.frigate || '');
@@ -3810,8 +3686,7 @@ try {
         const motion = c.bevegelse || (pkg ? null : devs.map(d => `binary_sensor.${d}_motion`).find(x => this.st(x)) || null);
         const key = dedupe ? dev + (pkg ? '_pkg' : '') : id;
         if (seen.has(key)) return null; seen.add(key);
-        const snap = bild[id] && bild[id] !== id && this.st(bild[id]) ? bild[id] : null;
-        return { ...c, id, obj, dev, pkg, name, icon, det, motion, snap, frigate: c.frigate || null, key: obj };
+        return { ...c, id, obj, dev, pkg, name, icon, det, motion, frigate: c.frigate || null, key: obj };
       }).filter(Boolean).map((c, i, all) => {
         // pakke-deteksjonen hører til pakkekameraet når enheten har et
         if (!c.pkg && c.det.package && all.some(x => x.pkg && x.dev === c.dev)) { const det = { ...c.det }; delete det.package; return { ...c, det }; }
@@ -3832,7 +3707,7 @@ try {
       return v == null ? '–' : `${Math.round((this.unit(id) === 'd' ? v * 86400 : this.unit(id) === 'h' ? v * 3600 : v) / 86400)} d`;
     }
     img(c, which) {
-      const st = this.st(which === 0 && c.snap ? c.snap : c.id);
+      const st = this.st(c.id);
       if (!st || KD.BAD.has(st.state)) return null;
       const p = st.attributes.entity_picture;
       if (!p) return null;
@@ -3926,91 +3801,6 @@ try {
       this.toggle(id);
     }
     open(ev, id) { this.setState({ view: id }); }
-    goTab(ev, v) { this.go(ev, 'tab:' + v); }
-
-    /* ---------- visningsoppsett (per bruker) ---------- */
-    layout() { const u = (KD.ud(this, UD) || {}).oppsett || this.config.oppsett; return LAYOUTS.some(x => x[0] === u) ? u : 'liste'; }
-    setLayout(ev, v) { if (!LAYOUTS.some(x => x[0] === v) || v === this.layout()) return; KD.udSave(this, UD, { ...KD.ud(this, UD), oppsett: v }); this.setState({ pg: 0, fi: 0 }); this.haptic('selection'); }
-    feat(ev, k) { if (this.state.feat === k) return; this.setState({ feat: k }); this.haptic('selection'); }
-    pageGo(ev, d) { this.setState(s => ({ pg: Math.max(0, (s.pg || 0) + Number(d)) })); this.haptic('selection'); }
-    fokScroll(ev, a0, el) {
-      el = el || ev.target; const w = el.clientWidth || 1, i = Math.round(el.scrollLeft / w);
-      if (i !== (this.state.fi || 0) && i >= 0 && i < el.children.length) this.setState({ fi: i });
-    }
-    fokGo(ev, d) {
-      const el = this.$('[data-kd-fokus]'), n = el ? el.children.length : 0; if (!n) return;
-      const i = Math.max(0, Math.min(n - 1, typeof d === 'string' && d[0] === '=' ? Number(d.slice(1)) : (this.state.fi || 0) + Number(d)));
-      el.scrollTo({ left: i * el.clientWidth, behavior: 'smooth' }); this.setState({ fi: i }); this.haptic('selection');
-    }
-    layoutPickHTML() {
-      const cur = this.layout(), L = LAYOUTS.find(x => x[0] === cur);
-      return `<div data-key="kam-lay" data-lay="Visning" data-lay-navn="Visning (oppsett)" style="display:flex;flex-direction:column;gap:6px;min-width:0">
-    <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:0 4px;min-width:0">
-      <span style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Visning</span>
-      <span style="font-size:12px;color:#c9c7c2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(L[1])}</span>
-    </div>
-    ${KD.segHTML('kam-oppsett', LAYOUTS.map(([k, , icon]) => [k, '', icon]), cur, 'setLayout', { small: true })}
-  </div>`;
-    }
-    /** Én kameraflis. sz: lg | md | sm. tap: 'feat' gjør hele flisa til knapp som løfter kameraet fram. */
-    tileHTML(f, o = {}) {
-      const sz = o.sz || 'lg', lg = sz === 'lg', sm = sz === 'sm';
-      const box = o.h ? `height:${o.h}` : `aspect-ratio:${o.ar || '16/9'}`;
-      const badge = sm ? `<span style="display:flex;align-items:center;gap:4px">${f.act ? `<span style="width:18px;height:18px;border-radius:9px;display:grid;place-items:center;background:${a(C.pink, 0.95)};color:#2a1720"><span class="ms" style="font-size:12px;font-variation-settings:'FILL' 1">${e(f.motionIcon)}</span></span>` : `<span style="width:7px;height:7px;border-radius:4px;background:${f.avail ? C.red : '#6d6c69'};box-shadow:0 0 0 2px rgba(0,0,0,0.35)"></span>`}</span>`
-        : `<span style="${S({ ...f.live, ...(lg ? {} : { fontSize: 9, padding: '2px 6px' }) })}">${t(f.liveT)}</span>
-            <span style="${S({ ...f.motion, ...(lg ? {} : { fontSize: 9, padding: '2px 6px' }) })}"><span class="ms" style="font-size:${lg ? 13 : 11}px;font-variation-settings:'FILL' 1">${t(f.motionIcon)}</span>${lg ? t(f.motionT) : ''}</span>`;
-      const tap = o.tap === 'feat' ? ` data-on-click="feat" data-arg="${e(f.key)}"` : '';
-      return `<div data-key="${e((o.kp || '') + f.key)}"${tap} style="position:relative;${box};border-radius:${sm ? 14 : lg ? 20 : 18}px;overflow:hidden;background:#0c0c0d;min-width:0;${tap ? 'cursor:pointer;' : ''}${o.style || ''}">
-          ${this.slotHTML(f.src, sm ? '' : f.ph)}
-          ${o.live ? `<div data-keep data-cam-live="${e(f.id)}" style="position:absolute;inset:0"></div>` : ''}
-          <div style="position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(0,0,0,0.35),transparent 30%,transparent 62%,rgba(0,0,0,0.55))"></div>
-          <div style="position:absolute;left:${sm ? 7 : lg ? 12 : 10}px;top:${sm ? 7 : lg ? 10 : 9}px;display:flex;align-items:center;gap:${lg ? 6 : 4}px;pointer-events:none">${badge}</div>
-          ${sm ? '' : `<button data-on-click="open" data-arg="${e(f.key)}" title="Åpne" style="position:absolute;right:${lg ? 10 : 8}px;top:${lg ? 8 : 6}px;width:${lg ? 34 : 30}px;height:${lg ? 34 : 30}px;border-radius:${lg ? 17 : 15}px;background:rgba(20,20,22,0.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:grid;place-items:center"><span class="ms" style="font-size:${lg ? 18 : 16}px">open_in_full</span></button>`}
-          <span style="position:absolute;left:${sm ? 8 : lg ? 12 : 10}px;right:${lg ? '45%' : sm ? '6px' : '10px'};bottom:${sm ? 6 : lg ? 10 : 8}px;font-size:${sm ? 11 : lg ? 13 : 12}px;font-weight:600;pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t(f.name)}</span>
-          ${lg ? `<span style="position:absolute;right:12px;bottom:10px;max-width:42%;font-size:11px;color:#c9c7c2;pointer-events:none;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t(f.meta)}</span>` : ''}
-          ${o.ring ? `<div style="position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 2px oklch(0.78 0.13 350 / 0.9);pointer-events:none"></div>` : ''}
-        </div>`;
-    }
-    /** Alle-visningen i valgt oppsett */
-    gridHTML(feeds) {
-      const s = this.state, L = this.layout(), n = feeds.length;
-      const empty = `<div style="padding:24px 0;text-align:center;font-size:13px;color:#6d6c69">Ingen kameraer funnet</div>`;
-      if (!n) return `<section data-lay="Kameraer" style="display:grid;grid-template-columns:minmax(0,1fr)">${empty}</section>`;
-      const grid = (cols, html) => `<section data-lay="Kameraer" data-key="kam-grid-${L}" style="display:grid;grid-template-columns:repeat(${cols},minmax(0,1fr));gap:8px;min-width:0">${html}</section>`;
-      const nav = (btn, mid) => `<div style="display:flex;align-items:center;gap:8px;min-width:0">${btn('-1', 'chevron_left')}<div style="flex:1;min-width:0;display:flex;justify-content:center;align-items:center;gap:6px">${mid}</div>${btn('1', 'chevron_right')}</div>`;
-      if (L === 'rutenett') return grid(2, feeds.map(f => this.tileHTML(f, { sz: 'md', ar: '4/3' })).join(''));
-      if (L === '3kol') return grid(3, feeds.map(f => this.tileHTML(f, { sz: 'sm', ar: '16/9' })).join(''));
-      if (L === 'masonry') {
-        const col = c => `<div style="display:flex;flex-direction:column;gap:8px;min-width:0">${feeds.map((f, i) => [f, i]).filter(([, i]) => i % 2 === c).map(([f, i]) => this.tileHTML(f, { sz: 'md', ar: i % 4 === 0 || i % 4 === 3 ? '3/4' : '4/3' })).join('')}</div>`;
-        return `<section data-lay="Kameraer" data-key="kam-grid-${L}" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:start;min-width:0">${col(0)}${col(1)}</section>`;
-      }
-      if (L === '2x2') {
-        const pages = Math.ceil(n / 4), pg = Math.min(s.pg || 0, pages - 1);
-        const btn = (d, icon) => { const dis = d < 0 ? pg === 0 : pg >= pages - 1; return `<button class="kd-cam-ed" data-on-click="pageGo" data-arg="${d}" ${dis ? 'disabled' : ''} style="width:40px;height:40px;border-radius:20px;background:#1c1c1f;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:22px">${icon}</span></button>`; };
-        return `<section data-lay="Kameraer" data-key="kam-grid-${L}" style="display:flex;flex-direction:column;gap:8px;min-width:0">
-      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;min-width:0">${feeds.slice(pg * 4, pg * 4 + 4).map(f => this.tileHTML(f, { sz: 'md', ar: '16/10' })).join('')}</div>
-      ${pages > 1 ? nav(btn, Array.from({ length: pages }, (_, i) => `<span style="width:${i === pg ? 18 : 7}px;height:7px;border-radius:4px;background:${i === pg ? '#f2f1ee' : '#48474a'};transition:width .3s"></span>`).join('') + `<span style="font-size:12px;color:#8e8d89;margin-left:6px;font-variant-numeric:tabular-nums">${pg * 4 + 1}–${Math.min(n, pg * 4 + 4)} av ${n}</span>`) : ''}
-    </section>`;
-      }
-      if (L === 'oversikt') {
-        const F = feeds.find(f => f.key === s.feat) || feeds[0], rest = feeds.filter(f => f !== F);
-        return `<section data-lay="Kameraer" data-key="kam-grid-${L}" style="display:flex;flex-direction:column;gap:8px;min-width:0">
-      ${this.tileHTML(F, { sz: 'lg', ar: '16/10', live: true, kp: 'feat-' })}
-      ${rest.length ? `<div style="display:grid;grid-template-columns:repeat(${rest.length > 4 ? 4 : 3},minmax(0,1fr));gap:6px;min-width:0">${rest.map(f => this.tileHTML(f, { sz: 'sm', ar: '16/10', tap: 'feat' })).join('')}</div>` : ''}
-    </section>`;
-      }
-      if (L === 'fokus') {
-        const fi = Math.min(s.fi || 0, n - 1), F = feeds[fi];
-        const btn = (d, icon) => { const dis = d < 0 ? fi === 0 : fi >= n - 1; return `<button class="kd-cam-ed" data-on-click="fokGo" data-arg="${d}" ${dis ? 'disabled' : ''} style="width:44px;height:44px;border-radius:22px;background:#1c1c1f;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:24px">${icon}</span></button>`; };
-        return `<section data-lay="Kameraer" data-key="kam-grid-${L}" style="display:flex;flex-direction:column;gap:10px;min-width:0">
-      <div data-hscroll="1" data-kd-fokus="1" data-on-scroll="fokScroll" style="display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;border-radius:24px;min-width:0">
-        ${feeds.map((f, i) => `<div data-key="fok-${e(f.key)}" style="flex:none;width:100%;scroll-snap-align:center;scroll-snap-stop:always">${this.tileHTML(f, { sz: 'lg', ar: '3/4', live: i === fi, kp: 'fk-', style: 'border-radius:24px' })}</div>`).join('')}
-      </div>
-      ${nav(btn, `<span style="display:flex;flex-direction:column;align-items:center;min-width:0;gap:4px"><span style="font-size:14px;font-weight:500;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t(F.name)}</span><span style="display:flex;gap:5px">${feeds.map((f, i) => `<button data-on-click="fokGo" data-arg="=${i}" title="${e(f.name)}" style="width:${i === fi ? 18 : 7}px;height:7px;border-radius:4px;background:${i === fi ? '#f2f1ee' : f.act ? C.pink : '#48474a'};transition:width .3s"></button>`).join('')}</span></span>`)}
-    </section>`;
-      }
-      return grid(1, feeds.map(f => this.tileHTML(f, { sz: 'lg' })).join(''));
-    }
 
     /* ---------- tilpass kameraer (per bruker) ---------- */
     editTog() { this.setState({ edit: !this.state.edit, pickFor: null, tab: 'live', view: 'alle' }); this.haptic('selection'); }
@@ -4019,18 +3809,7 @@ try {
       const l = this.userList() || this.cams().map(c => c.id);
       return l.filter((x, i) => l.indexOf(x) === i);
     }
-    _saveList(l) { KD.udSave(this, UD, { ...KD.ud(this, UD), liste: l }); this.haptic('selection'); }
-    /** Andre camera.* for samme enhet (høy/middels/lav oppløsning, usikret …) – kandidater til stillbilde-entitet */
-    siblings(id) {
-      const h = this._hass, R = (h && h.entities) || {}, dv = R[id] && R[id].device_id, d0 = devOf(id.split('.')[1]);
-      return this.find(/^camera\./).filter(x => x !== id && !/_package(_camera)?$/.test(x) && (dv ? R[x] && R[x].device_id === dv : devOf(x.split('.')[1]) === d0));
-    }
-    camSnap(ev, arg) {
-      const k = arg.indexOf('|'), id = arg.slice(0, k), snap = arg.slice(k + 1), u = KD.ud(this, UD) || {}, b = { ...(u.bilde || {}) };
-      if (!snap || snap === id) delete b[id]; else b[id] = snap;
-      KD.udSave(this, UD, { ...u, bilde: b }); this.haptic('selection');
-    }
-    edSearch(ev) { this.setState({ edQ: ev.target.value }); }
+    _saveList(l) { KD.udSave(this, UD, { liste: l }); this.haptic('selection'); }
     camMove(ev, arg) {
       const [i0, d] = arg.split('|'), i = Number(i0), j = i + (d === 'up' ? -1 : 1), l = this.editList();
       if (j < 0 || j >= l.length) return;
@@ -4039,7 +3818,7 @@ try {
     }
     camDel(ev, i) { const l = this.editList(); l.splice(Number(i), 1); this.setState({ pickFor: null }); this._saveList(l); }
     camAdd(ev, id) { const l = this.editList(); if (!l.includes(id)) l.push(id); this._saveList(l); }
-    camPick(ev, i) { this.setState({ pickFor: this.state.pickFor === String(i) ? null : String(i), edQ: '' }); this.haptic('selection'); }
+    camPick(ev, i) { this.setState({ pickFor: this.state.pickFor === String(i) ? null : String(i) }); this.haptic('selection'); }
     camSet(ev, arg) {
       const k = arg.indexOf('|'), i = Number(arg.slice(0, k)), id = arg.slice(k + 1), l = this.editList();
       const j = l.indexOf(id);
@@ -4047,7 +3826,7 @@ try {
       l[i] = id;
       this.setState({ pickFor: null }); this._saveList(l);
     }
-    editReset() { const u = KD.ud(this, UD) || {}; KD.udSave(this, UD, u.oppsett ? { oppsett: u.oppsett } : {}); this.setState({ pickFor: null }); this.haptic('selection'); }
+    editReset() { KD.udSave(this, UD, {}); this.setState({ pickFor: null }); this.haptic('selection'); }
     editHTML() {
       const s = this.state, cfg = this.config, ids = this.editList();
       const cfgE = (Array.isArray(cfg.kameraer) ? cfg.kameraer : []).map(x => typeof x === 'string' ? { entity: x } : { ...x }).filter(Boolean);
@@ -4059,16 +3838,6 @@ try {
       });
       const ico = (icon, col) => `<span class="ms" style="font-size:20px;color:${col || '#f2f1ee'}">${icon}</span>`;
       const sq = 'width:36px;height:36px;border-radius:18px;display:grid;place-items:center;flex:none;background:rgba(255,255,255,0.06)';
-      // stillbilde-entitet: bare når enheten har flere camera.* (f.eks. høy/lav oppløsning)
-      const sibs = c => {
-        const sb = c.pkg ? [] : this.siblings(c.id); if (!sb.length) return '';
-        const cur = c.snap || c.id;
-        const chip = (id, label) => { const sel = id === cur; return `<button class="kd-cam-ed" data-on-click="camSnap" data-arg="${e(c.id + '|' + id)}" title="${e(id)}" style="${S({ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0, maxWidth: '100%', height: 30, padding: '0 11px', borderRadius: 15, fontSize: 12, fontWeight: 500, background: sel ? 'oklch(0.78 0.13 350 / 0.2)' : 'rgba(255,255,255,0.06)', boxShadow: sel ? 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.7)' : 'none', color: sel ? '#f2f1ee' : '#c9c7c2' })}"><span style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(label)}</span></button>`; };
-        return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:0 2px 2px;min-width:0">
-          <span style="display:flex;align-items:center;gap:4px;font-size:11px;color:#8e8d89;flex:none"><span class="ms" style="font-size:14px">photo_library</span>Stillbilde</span>
-          ${chip(c.id, 'Samme' + (QUAL(c.id) ? ' · ' + QUAL(c.id) : ''))}${sb.map(id => chip(id, QUAL(id) || this.fname(id))).join('')}
-        </div>`;
-      };
       const rows = info.map((c, i) => {
         const open = s.pickFor === String(i), src = this.img(c, 0), ok = !!this.st(c.id);
         return `<div data-key="ed-${e(c.id)}" style="display:flex;flex-direction:column;gap:10px;padding:8px;border-radius:20px;background:#1c1c1f;box-shadow:${open ? 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.55)' : 'none'};min-width:0">
@@ -4077,7 +3846,7 @@ try {
           <button class="kd-cam-ed" data-on-click="camPick" data-arg="${i}" title="Velg kamera" style="min-width:0;display:flex;align-items:center;gap:6px;text-align:left;padding:2px 0">
             <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
               <span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(c.name)}</span>
-              <span style="display:flex;align-items:flex-start;gap:4px;min-width:0;font-size:11px;color:${ok ? '#8e8d89' : RED_E}"><span class="ms" style="font-size:13px;flex:none">videocam</span><span style="min-width:0;overflow:hidden;word-break:break-all;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.35;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">${ok ? '' : 'Utilgjengelig · '}${e(c.id)}</span></span>
+              <span style="font-size:11px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ok ? e(c.id) : 'Utilgjengelig · ' + e(c.id)}</span>
             </span>
             <span class="ms" style="font-size:18px;color:#8e8d89;flex:none">${open ? 'expand_less' : 'expand_more'}</span>
           </button>
@@ -4087,19 +3856,15 @@ try {
             <button class="kd-cam-ed" data-on-click="camDel" data-arg="${i}" title="Fjern" style="${sq}"><span class="ms" style="font-size:20px;color:${RED_E};font-variation-settings:'FILL' 1">remove_circle</span></button>
           </span>
         </div>
-        ${sibs(c)}
-        ${open ? `<div style="display:flex;flex-direction:column;gap:8px;min-width:0">
-          <div style="display:flex;align-items:center;gap:8px;height:40px;padding:0 14px;border-radius:20px;background:#232326;min-width:0"><span class="ms" style="font-size:18px;color:#8e8d89">search</span><input data-on-input="edSearch" value="${e(s.edQ || '')}" placeholder="Søk etter camera.*" style="flex:1;min-width:0;border:0;outline:none;background:transparent;color:#f2f1ee;font:inherit;font-size:13px"></div>
-          <div style="display:flex;flex-wrap:wrap;gap:6px;padding:2px 2px 4px;min-width:0">${all.filter(id => { const q = String(s.edQ || '').trim().toLowerCase(); return !q || id.toLowerCase().includes(q) || String(this.fname(id)).toLowerCase().includes(q); }).map(id => {
+        ${open ? `<div style="display:flex;flex-wrap:wrap;gap:6px;padding:2px 2px 4px;min-width:0">${all.map(id => {
           const sel = id === c.id, used = !sel && ids.includes(id);
           return `<button class="kd-cam-ed" data-on-click="camSet" data-arg="${e(i + '|' + id)}" title="${e(id)}" style="${S({ display: 'flex', alignItems: 'center', gap: 6, maxWidth: '100%', minWidth: 0, height: 34, padding: '0 12px', borderRadius: 17, fontSize: 12, fontWeight: 500, background: sel ? 'oklch(0.78 0.13 350 / 0.2)' : 'rgba(255,255,255,0.06)', boxShadow: sel ? 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.7)' : 'none', color: sel ? '#f2f1ee' : used ? '#6d6c69' : '#c9c7c2' })}">${used ? '<span class="ms" style="font-size:14px">swap_vert</span>' : ''}<span style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(this.fname(id))}</span></button>`;
-        }).join('')}</div></div>` : ''}
+        }).join('')}</div>` : ''}
       </div>`;
       }).join('');
       const add = all.filter(id => !ids.includes(id));
       const head = x => `<div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:6px 4px 0">${x}</div>`;
-      return `${this.layoutPickHTML()}
-  ${head('Kameraer som vises')}
+      return `${head('Kameraer som vises')}
   <section style="display:flex;flex-direction:column;gap:8px;min-width:0">
     ${rows || `<div style="padding:24px 0;text-align:center;font-size:13px;color:#6d6c69">Ingen kameraer valgt</div>`}
   </section>
@@ -4179,11 +3944,12 @@ try {
       const ctrlStyle = (on, col, ok = true) => ({
         style: { height: 72, borderRadius: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, background: on ? a(col, 0.18) : '#1c1c1f', boxShadow: on ? `inset 0 0 0 1px ${a(col, 0.5)}` : 'none', transition: 'background .2s', opacity: ok ? 1 : 0.45 },
         iconStyle: { fontSize: 24, color: on ? col : '#f2f1ee', fontVariationSettings: `'FILL' ${on ? 1 : 0}` } });
-      const tabs = [['live', 'Direkte'], ['frigate', cfg.fane || (fr ? 'Frigate' : 'Hendelser')]].map(([k, label]) => ({ k, label }));
+      const tabs = [['live', 'Direkte'], ['frigate', cfg.fane || (fr ? 'Frigate' : 'Hendelser')]].map(([k, label]) => ({ k, label,
+        style: { height: 44, borderRadius: 18, fontSize: 14, fontWeight: 500, background: s.tab === k ? PINK : 'transparent', color: s.tab === k ? '#2a1720' : '#a9a7a2', transition: 'background .25s' } }));
       const chips = [chip('alle', 'Alle', 'grid_view'), ...CAMS.map(c => chip(c.key, c.name, c.icon, !!this.active(c))), ...(isLive ? [chip('logg', 'Logg', 'list')] : [])];
       const feeds = CAMS.map(c => {
         const act = this.active(c), avail = this.ok(c.id), o = act && act !== 'motion' ? OBJ[act] : null;
-        return { key: c.key, id: c.id, act: !!act, avail, name: c.name, src: this.img(c, 0), ph: avail ? `Stillbilde fra ${c.name}` : `${c.name} er utilgjengelig`, liveT: avail ? (this.v(c.id) === 'recording' ? '● OPPTAK' : 'LIVE') : 'AV', live: live(avail),
+        return { key: c.key, name: c.name, src: this.img(c, 0), ph: avail ? `Stillbilde fra ${c.name}` : `${c.name} er utilgjengelig`, liveT: avail ? (this.v(c.id) === 'recording' ? '● OPPTAK' : 'LIVE') : 'AV', live: live(avail),
           motionT: act ? (o ? o[0] : 'Bevegelse') : '', motionIcon: o ? o[1] : 'directions_run',
           motion: { display: act ? 'flex' : 'none', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 600, padding: '3px 7px', borderRadius: 7, background: a(C.pink, 0.9), color: '#2a1720' },
           meta: act ? 'Bevegelse nå' : this.model(c) };
@@ -4226,13 +3992,28 @@ try {
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
   </header>
 ${s.edit ? this.editHTML() : `
-  ${KD.segHTML('kam-fane', tabs.map(x => [x.k, x.label, x.k === 'live' ? 'videocam' : 'history']), s.tab, 'goTab', { pink: true, h: 40 })}
+  <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:2px;padding:4px;border-radius:22px;background:#1c1c1f">
+    ${tabs.map(x => `<button data-on-click="go" data-arg="tab:${x.k}" style="${S(x.style)}">${t(x.label)}</button>`).join('')}
+  </div>
 
   <nav data-hscroll style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:0 var(--kd-kant,10px)">
     ${chips.map(c => `<button data-on-click="go" data-arg="view:${e(c.k)}" style="${S(c.style)}"><span class="ms" style="font-size:16px">${t(c.icon)}</span>${t(c.label)}<span style="${S(c.dot)}"></span></button>`).join('')}
   </nav>
 
-  ${isLive && s.view === 'alle' ? this.layoutPickHTML() + this.gridHTML(feeds) : ''}
+  ${isLive && s.view === 'alle' ? `<section style="display:grid;grid-template-columns:minmax(0,1fr);gap:8px">
+      ${feeds.map(f => `<div data-key="${e(f.key)}" style="position:relative;aspect-ratio:16/9;border-radius:20px;overflow:hidden;background:#0c0c0d">
+          ${this.slotHTML(f.src, f.ph)}
+          <div style="position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(0,0,0,0.35),transparent 30%,transparent 70%,rgba(0,0,0,0.45))"></div>
+          <div style="position:absolute;left:12px;top:10px;display:flex;align-items:center;gap:6px;pointer-events:none">
+            <span style="${S(f.live)}">${t(f.liveT)}</span>
+            <span style="${S(f.motion)}"><span class="ms" style="font-size:13px;font-variation-settings:'FILL' 1">${t(f.motionIcon)}</span>${t(f.motionT)}</span>
+          </div>
+          <button data-on-click="open" data-arg="${e(f.key)}" title="Åpne" style="position:absolute;right:10px;top:8px;width:34px;height:34px;border-radius:17px;background:rgba(20,20,22,0.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:grid;place-items:center"><span class="ms" style="font-size:18px">open_in_full</span></button>
+          <span style="position:absolute;left:12px;bottom:10px;font-size:13px;font-weight:600;pointer-events:none">${t(f.name)}</span>
+          <span style="position:absolute;right:12px;bottom:10px;font-size:11px;color:#c9c7c2;pointer-events:none;font-variant-numeric:tabular-nums;white-space:nowrap">${t(f.meta)}</span>
+        </div>`).join('')}
+      ${!n ? `<div style="padding:24px 0;text-align:center;font-size:13px;color:#6d6c69">Ingen kameraer funnet</div>` : ''}
+    </section>` : ''}
 
   ${isLive && single ? `<section data-key="one-${e(one.id)}" style="position:relative;aspect-ratio:4/3;border-radius:24px;overflow:hidden;background:#0c0c0d">
       ${this.slotHTML(one.src, one.ph)}
@@ -5140,7 +4921,9 @@ try {
         const maxR = Math.max(1, ...rows.map(r => Math.max(r.u, r.e)));
         const stack = rows.filter(r => r.u).map((r, i) => ({ width: `${r.u / Math.max(usedSum, estSum, 1) * 100}%`, background: al(B, 1 - i * 0.08) })).concat(estSum ? [{ width: `${estSum / Math.max(usedSum, estSum) * 100}%`, background: al(B, 0.18) }] : []);
         html += `
-    ${KD.segHTML('periode', [['dag', 'I dag'], ['uke', 'Uke'], ['maned', 'Måned'], ['ar', 'År']], s.period, 'period', { small: true })}
+    <div style="display:flex;padding:3px;border-radius:14px;background:#1c1c1f;gap:2px;align-self:flex-start">
+      ${[['dag', 'I dag'], ['uke', 'Uke'], ['maned', 'Måned'], ['ar', 'År']].map(([k, label]) => `<button data-on-click="period" data-arg="${k}" style="${S({ height: 32, padding: '0 14px', borderRadius: 11, fontSize: 13, fontWeight: 500, background: s.period === k ? '#323235' : 'transparent', color: s.period === k ? '#f2f1ee' : '#8e8d89' })}"><span>${label}</span></button>`).join('')}
+    </div>
     <div style="background:#1c1c1f;border:1px solid rgba(255,255,255,0.05);border-radius:24px;padding:18px;display:flex;flex-direction:column;gap:14px">
       <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:12px">
         <div style="flex:none;display:flex;flex-direction:column;gap:4px;white-space:nowrap">
@@ -5259,7 +5042,9 @@ try {
       </button>`).join('')}
   </section>
 
-  ${KD.segHTML('fane', [['now', 'Nå', 'water_drop'], ['zones', 'Soner', 'sprinkler'], ['prog', 'Program', 'event_repeat'], ['use', 'Forbruk', 'bar_chart'], ['hist', 'Historikk', 'calendar_month']], s.tab, 'tab', { stack: true, style: 'position:sticky;top:8px;z-index:2;box-shadow:0 8px 20px rgba(0,0,0,0.35)' })}
+  <nav style="display:grid;grid-template-columns:repeat(5,1fr);padding:4px;border-radius:18px;background:#1c1c1f;gap:2px;position:sticky;top:8px;z-index:2;box-shadow:0 8px 20px rgba(0,0,0,0.35)">
+    ${tabs.map(t => `<button data-on-click="tab" data-arg="${t.k}" style="${S(t.style)}"><span class="ms" style="${S(t.iconStyle)}"><span>${t.icon}</span></span><span>${t.label}</span></button>`).join('')}
+  </nav>
   ${html}
 </div>`;
     }
@@ -5426,7 +5211,9 @@ try {
     <div style="font-size:14px;color:#8e8d89">${subHtml}</div>
   </section>
 
-  ${KD.segHTML('fane', [['enkel', 'Enkel'], ['avansert', 'Avansert']], s.tab, 'tab', { pink: true })}
+  <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:2px;padding:4px;border-radius:20px;background:#1c1c1f">
+    ${tabs.map(t => `<button data-on-click="tab" data-arg="${t.k}" style="${S(t.style)}"><span>${t.label}</span></button>`).join('')}
+  </div>
 
   <section style="display:flex;flex-direction:column;gap:8px">
     ${cards || `<div style="padding:16px;border-radius:24px;background:#1c1c1f;font-size:13px;color:#8e8d89">Legg til planter i KI Planter-integrasjonen.</div>`}
@@ -5660,7 +5447,9 @@ try {
     </div>
   </section>
 
-  ${KD.segHTML('fane', [['sleep', 'Søvn'], ['wake', 'Vekking']], s.tab, 'tab', { pink: true })}
+  <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:2px;padding:4px;border-radius:20px;background:#1c1c1f">
+    ${tabs.map(t => `<button data-on-click="tab" data-arg="${t.k}" style="${S(t.style)}"><span>${t.label}</span></button>`).join('')}
+  </div>
 
   ${s.tab === 'sleep' ? `
     <section style="display:flex;flex-direction:column">
@@ -6124,13 +5913,6 @@ try {
   // [nøkkel i designet, tekst] → fan_speed-verdier som godtas (første som finnes i fan_speed_list brukes)
   const SUG = [['quiet', 'Stille', ['quiet', 'silent', 'low']], ['std', 'Standard', ['balanced', 'standard', 'medium', 'normal']],
     ['turbo', 'Turbo', ['turbo', 'strong', 'high']], ['max', 'Maks', ['max', 'max_plus', 'maximum', 'full']]];
-  // norske navn på valg i select-entiteter (moppeintensitet, moppemodus, rengjøringsmodus …)
-  const OPT = { off: 'Av', on: 'På', mild: 'Mild', low: 'Lav', slight: 'Lav', moderate: 'Middels', medium: 'Middels', middle: 'Middels', intense: 'Intens', high: 'Høy',
-    standard: 'Standard', normal: 'Normal', deep: 'Dyp', deep_plus: 'Dyp+', fast: 'Rask', custom: 'Egen', custom_water_flow: 'Egen', smart_mode: 'Smart', extreme: 'Ekstrem',
-    sweeping: 'Støvsug', mopping: 'Mopp', sweeping_and_mopping: 'Begge', mopping_after_sweeping: 'Etter', vacuum: 'Støvsug', mop: 'Mopp', vacuum_and_mop: 'Begge',
-    quiet: 'Stille', silent: 'Stille', balanced: 'Normal', turbo: 'Turbo', max: 'Maks', strong: 'Sterk' };
-  const SNAVN = { mop_intensity: 'Vannmengde', water_box_mode: 'Vannmengde', water_level: 'Vannmengde', water_volume: 'Vannmengde', mop_mode: 'Moppemodus', mop_route: 'Moppemodus',
-    cleaning_mode: 'Rengjøringsmodus', clean_mode: 'Rengjøringsmodus', suction_level: 'Sugenivå', mop_pad_humidity: 'Moppefukt' };
 
   class KDStovsugerCard extends KD.KDSheet {
     static head = ['cleaning_services', 'Støvsuger', 'Sir Sweeps'];
@@ -6171,9 +5953,7 @@ try {
       ],
       mopp_pa: 'moderate',
     };
-    static sheetCss = `.kd-vac-ctl:active{transform:scale(0.96)}
-@keyframes kdvspin{to{transform:rotate(360deg)}}
-@keyframes kdvpulse{0%,100%{opacity:1}50%{opacity:.35}}`;
+    static sheetCss = `.kd-vac-ctl:active{transform:scale(0.95)}`;
 
     constructor() { super(); this.state = { tab: 'clean', zone: null }; }
 
@@ -6198,7 +5978,6 @@ try {
         stille: this.pick('stille', `switch.${b}_do_not_disturb`, `switch.${b}_dnd`),
         stille_fra: this.pick('stille_fra', `time.${b}_do_not_disturb_begin`),
         stille_til: this.pick('stille_til', `time.${b}_do_not_disturb_end`),
-        rom_na: this.pick('rom_na', `sensor.${b}_current_room`, `sensor.${b}_room`),
       };
     }
     rooms() {
@@ -6230,22 +6009,6 @@ try {
         const reset = p.reset || this.find(new RegExp(`^button\\.${b}_reset_.*${k.replace('filter', '(air_)?filter')}`))[0] || null;
         return { navn: p.navn, id, left, life, pct: KD.clamp(Math.round(left / life * 100), 0, 100), reset };
       }).filter(Boolean);
-    }
-    /** select-entiteter for modus (moppeintensitet/-modus, rengjøringsmodus …) – config `valg: [select.x]` legger til egne */
-    selects() {
-      const b = this.base, E = this.ents();
-      const ids = [E.mopp, ...(Array.isArray(this.config.valg) ? this.config.valg : []), ...Object.keys(SNAVN).map(k => `select.${b}_${k}`)];
-      return [...new Set(ids.filter(Boolean))].filter(id => this.ok(id)).map(id => {
-        const k = id.slice(`select.${b}_`.length);
-        return { id, navn: SNAVN[k] || this.fname(id).replace(/^sir sweeps a lot\s*/i, ''), opts: (this.at(id, 'options', []) || []).map(String) };
-      }).filter(x => x.opts.length > 1 && x.opts.length <= 7);
-    }
-    /** kartbilder: image./camera.-entiteter med robotens navn som har et bilde */
-    maps() {
-      const b = this.base;
-      const ids = [...(Array.isArray(this.config.kart) ? this.config.kart : this.config.kart ? [this.config.kart] : []), ...this.find(new RegExp(`^(image|camera)\\.${b}_`))];
-      return [...new Set(ids)].filter(id => this.ok(id) && this.at(id, 'entity_picture')).map(id => ({
-        id, src: this.at(id, 'entity_picture'), navn: this.fname(id).replace(/^sir sweeps a lot\s*/i, '').replace(/_/g, ' ') || 'Kart' }));
     }
     /** total rengjøringstid → timer (støtter «HH:MM:SS», s, min, h) */
     hours(id) {
@@ -6293,10 +6056,6 @@ try {
       } else if (k === 'quiet' && E.stille) this.call('switch', 'toggle', { entity_id: E.stille });
     }
     resetPart(e, id) { if (id) this.press(id); }
-    clearRooms() { this.setState({ zone: null }); for (const r of this.rooms()) if (r.on && r.entity) this.call('input_boolean', 'turn_off', { entity_id: r.entity }); }
-    selOpt(e, arg) { const i = String(arg).lastIndexOf('|'); if (i > 0) this.call('select', 'select_option', { entity_id: arg.slice(0, i), option: arg.slice(i + 1) }); }
-    pickMap(e, id) { this.setState({ map: id }); }
-    openMap(e, id) { this.more(id); }
     openMore() { this.more(this.config.entity); }
 
     status() {
@@ -6311,11 +6070,12 @@ try {
     }
 
     body() {
-      const s = this.state, cf = this.config, E = this.ents(), st = this.status(), e = KD.e, S = KD.S;
+      const s = this.state, cf = this.config, E = this.ents(), st = this.status();
       const vac = cf.entity;
       let bRaw = this.n(cf.batteri); if (bRaw == null) bRaw = parseFloat(this.at(vac, 'battery_level'));
       const hasB = bRaw != null && !isNaN(bRaw);
       const b = hasB ? Math.round(bRaw) : 0;
+      const n = 24, filled = Math.round(b / 100 * n);
       const col = st === 'cleaning' ? C.green : st === 'paused' ? C.amber : st === 'returning' ? C.blue : st === 'error' || st === 'unavailable' ? C.red : C.green;
       const rooms = this.rooms(), zones = this.zones();
       const sel = rooms.filter(r => r.on && r.entity);
@@ -6325,199 +6085,206 @@ try {
       const charging = this.st(cf.lader) ? this.isOn(cf.lader) : (hasB && b < 100);
       const labels = { docked: charging ? 'Lader i dokken' : 'I dokken', cleaning: 'Støvsuger', paused: 'Pause', returning: 'På vei hjem', idle: 'Klar', error: 'Feil', unavailable: 'Utilgjengelig' };
       const errTxt = E.feil && this.ok(E.feil) && !/^(none|no.?error|ingen|0)$/i.test(this.v(E.feil)) ? this.v(E.feil) : this.at(vac, 'error', '');
-      const curRoom = E.rom_na && this.ok(E.rom_na) ? String(this.v(E.rom_na)) : null;
-      const headline = st === 'cleaning' ? (curRoom ? `Støvsuger ${curRoom.toLowerCase()}` : `Støvsuger ${target.join(', ').toLowerCase()}`) : st === 'paused' ? 'Satt på pause' : st === 'returning' ? 'Ferdig, kjører hjem'
+      const headline = st === 'cleaning' ? `Støvsuger ${target.join(', ').toLowerCase()}` : st === 'paused' ? 'Satt på pause' : st === 'returning' ? 'Ferdig, kjører hjem'
         : st === 'error' ? 'Trenger hjelp' : st === 'unavailable' ? 'Ikke tilgjengelig' : 'Klar til å støvsuge';
       const prog = E.fremdrift ? this.n(E.fremdrift) : null;
-      const minsOf = id => { const x = this.n(id); if (x == null) return null; const u = this.unit(id); return u === 's' ? x / 60 : u === 'h' ? x * 60 : x; };
-      const elMin = minsOf(E.tid), area = this.ok(E.areal) ? Math.round(this.n(E.areal)) : null;
-      const rest = st === 'cleaning' && prog != null && elMin != null && prog > 0 ? Math.max(1, Math.round(elMin * (100 - prog) / prog)) : null;
-      const endS = E.slutt ? this.v(E.slutt) : '';
-      const end = endS && !KD.BAD.has(endS) ? new Date(endS) : null;
-      const endOk = end && !isNaN(end);
-      let subline;
-      if (st === 'cleaning') subline = [curRoom && sel.length > 1 ? `${sel.length} rom valgt` : '', prog != null ? `${Math.round(prog)} % ferdig` : '', rest != null ? `ca. ${rest} min igjen` : ''].filter(Boolean).join(' · ') || 'I gang';
-      else if (st === 'error') subline = errTxt ? String(errTxt) : 'Sjekk roboten';
+      // underlinje
+      let subline = '';
+      if (st === 'cleaning') {
+        const mins = this.n(E.tid); const tidU = E.tid ? this.unit(E.tid) : '';
+        const el = mins == null ? null : tidU === 's' ? mins / 60 : tidU === 'h' ? mins * 60 : mins;
+        if (prog != null) {
+          const rest = el != null && prog > 0 ? Math.max(1, Math.round(el * (100 - prog) / prog)) : null;
+          subline = `${Math.round(prog)} % ferdig` + (rest != null ? ` · ca. ${rest} min igjen` : '');
+        } else {
+          subline = [el != null ? `${Math.round(el)} min` : '', this.ok(E.areal) ? `${Math.round(this.n(E.areal))} m²` : ''].filter(Boolean).join(' · ') || labels.cleaning;
+        }
+      } else if (st === 'error' && errTxt) subline = String(errTxt);
       else if (this.isOn(cf.vannmangel)) subline = 'Vanntanken er tom';
-      else subline = endOk ? `Sist støvsuget ${this.dayWord(end)} ${KD.hm(end)}` : labels[st];
+      else {
+        const endS = E.slutt ? this.v(E.slutt) : '';
+        const end = endS && !KD.BAD.has(endS) ? new Date(endS) : null;
+        const parts = [];
+        if (end && !isNaN(end)) parts.push(`Sist støvsuget ${this.dayWord(end)} ${KD.hm(end)}`);
+        if (this.ok(E.areal)) parts.push(`${Math.round(this.n(E.areal))} m²`);
+        subline = parts.join(' · ') || '–';
+      }
+      const tab = (k, l) => ({ k, label: l, style: { height: 38, borderRadius: 16, fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', background: s.tab === k ? PINK : 'transparent', color: s.tab === k ? '#2a1720' : '#a9a7a2' } });
+      const sw = (on) => ({ track: { position: 'relative', width: 46, height: 28, borderRadius: 14, flex: 'none', background: on ? 'oklch(0.72 0.14 150)' : '#3a3a3d', transition: 'background .2s' }, knob: { position: 'absolute', top: 3, left: on ? 21 : 3, width: 22, height: 22, borderRadius: 11, background: '#f4f3ef', transition: 'left .2s' } });
+      const rpRoom = sel.find(r => r.kart) || rooms.find(r => r.kart);
+      const rp = rpRoom ? rpRoom.kart : [4, 4, 44, 34];
+      const t = (prog || 0) / 100;
+      const moving = st === 'cleaning' || st === 'paused';
 
-      // sugestyrke
+      const ring = Array.from({ length: n }, (_, i) => ({ position: 'absolute', left: 'calc(50% - 4px)', top: 'calc(50% - 14px)', width: 8, height: 28, borderRadius: 4, transform: `rotate(${i * 15}deg) translateY(-102px)`, background: i < filled ? col : '#2a2a2d', boxShadow: i < filled && st === 'cleaning' ? `0 0 12px ${a(col, 0.6)}` : 'none', transition: 'background .4s' }));
+      const coreIcon = { fontSize: 28, color: col, fontVariationSettings: "'FILL' 1" };
+      const coreIconName = st === 'docked' ? 'battery_charging_full' : st === 'error' ? 'error' : 'robot_2';
+      const tabs = [tab('clean', 'Renhold'), tab('control', 'Kontroll'), tab('info', 'Info'), tab('map', 'Kart')];
+      const selMeta = sel.length ? `${sel.length} valgt` : 'Ingen valgt · hele huset';
+      const roomCards = rooms.filter(r => r.entity).map(r => {
+        const on = r.on;
+        return { ...r, sub: r.areal != null ? `${r.areal} m²` : on ? 'Valgt' : 'Ikke valgt',
+          style: { position: 'relative', height: 104, borderRadius: 22, padding: 16, boxSizing: 'border-box', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', alignItems: 'flex-start', background: on ? a(C.green, 0.14) : '#1c1c1f', boxShadow: on ? `inset 0 0 0 1px ${a(C.green, 0.45)}` : 'inset 0 0 0 1px rgba(255,255,255,0.04)', transition: 'background .2s' },
+          iconStyle: { fontSize: 24, color: on ? C.green : '#a9a7a2', fontVariationSettings: `'FILL' ${on ? 1 : 0}` },
+          check: { position: 'absolute', right: 14, top: 14, fontSize: 20, color: C.green, opacity: on ? 1 : 0, fontVariationSettings: "'FILL' 1", transition: 'opacity .2s' } };
+      });
+      const zoneBtns = zones.map(z => {
+        const on = s.zone === z.entity;
+        return { ...z, style: { flex: 'none', height: 40, padding: '0 14px 0 10px', borderRadius: 20, display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', background: on ? a(C.green, 0.14) : '#1c1c1f', color: on ? '#f2f1ee' : '#c9c7c2', boxShadow: on ? `inset 0 0 0 1px ${a(C.green, 0.45)}` : 'inset 0 0 0 1px rgba(255,255,255,0.04)' } };
+      });
+      const controls = [
+        { icon: st === 'cleaning' ? 'pause' : 'play_arrow', label: st === 'cleaning' ? 'Pause' : 'Start', k: st === 'cleaning' ? 'pause' : 'start' },
+        { icon: 'home', label: 'Dokk', k: 'dock' },
+        { icon: 'location_searching', label: 'Finn', k: 'locate' },
+        { icon: 'delete', label: 'Tøm', k: 'empty' },
+      ];
       const fanNow = String(this.at(vac, 'fan_speed', '') || '').toLowerCase();
       const fanList = (this.at(vac, 'fan_speed_list', []) || []).map(String);
-      const FICON = { quiet: 'volume_down', std: 'air', turbo: 'bolt', max: 'rocket_launch' };
-      const suction = SUG.map(([k, l, vals]) => ({ k, l, val: fanList.find(f => vals.includes(f.toLowerCase())) || vals[0], on: vals.includes(fanNow) }));
-      const fanCur = (suction.find(x => x.on) || {}).val || '';
-      const fanLabel = (suction.find(x => x.on) || {}).l || (fanNow ? fanNow.charAt(0).toUpperCase() + fanNow.slice(1) : '–');
-
-      // helt
-      const ringV = st === 'cleaning' && prog != null ? KD.clamp(prog, 0, 100) : hasB ? b : 0;
-      const ringC = st === 'cleaning' || st === 'paused' || st === 'returning' || st === 'error' || st === 'unavailable' ? col : b < 20 ? C.red : b < 40 ? C.amber : C.green;
-      const RL = 2 * Math.PI * 86;
-      const batIcon = charging ? 'battery_charging_full' : b > 90 ? 'battery_full' : b > 65 ? 'battery_5_bar' : b > 40 ? 'battery_4_bar' : b > 20 ? 'battery_2_bar' : 'battery_alert';
-      const heroStats = st === 'cleaning' || st === 'paused'
-        ? [['Fremdrift', prog != null ? `${Math.round(prog)} %` : '–'], ['Areal', area != null ? `${area} m²` : '–'], ['Tid', elMin != null ? `${Math.round(elMin)} min` : '–']]
-        : [['Sugestyrke', fanLabel], ['Siste areal', area != null ? `${area} m²` : '–'], ['Siste tid', elMin != null ? `${Math.round(elMin)} min` : '–']];
-      const moving = st === 'cleaning';
-      const robot = `<svg viewBox="0 0 100 100" style="position:absolute;inset:30px;width:calc(100% - 60px);height:calc(100% - 60px);filter:drop-shadow(0 10px 18px rgba(0,0,0,0.5))">
-        <defs><radialGradient id="kdvBody" cx="38%" cy="28%" r="85%"><stop offset="0" stop-color="#46464c"></stop><stop offset="0.55" stop-color="#2a2a2e"></stop><stop offset="1" stop-color="#1b1b1e"></stop></radialGradient></defs>
-        <circle cx="50" cy="50" r="46" fill="url(#kdvBody)" stroke="rgba(255,255,255,0.10)" stroke-width="1"></circle>
-        <path d="M13 40 A38 38 0 0 1 87 40" fill="none" stroke="rgba(255,255,255,0.16)" stroke-width="3" stroke-linecap="round"></path>
-        <circle cx="50" cy="36" r="13" fill="#232327" stroke="rgba(255,255,255,0.14)" stroke-width="1"></circle>
-        <circle cx="50" cy="36" r="5" fill="${ringC}"${moving ? ' style="animation:kdvpulse 1.4s ease-in-out infinite"' : ''}></circle>
-        <rect x="38" y="64" width="24" height="5" rx="2.5" fill="rgba(255,255,255,0.14)"></rect>
-      </svg>`;
-      const hero = `<section style="position:relative;overflow:hidden;border-radius:30px;padding:16px 16px 14px;background:radial-gradient(120% 70% at 50% 0%, ${a(col, 0.16)} 0%, rgba(28,28,31,0) 62%), #1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05);display:flex;flex-direction:column;align-items:center;gap:12px">
-    <div style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px">
-      <span style="display:inline-flex;align-items:center;gap:8px;height:30px;padding:0 12px;border-radius:15px;background:rgba(255,255,255,0.06);font-size:12px;font-weight:600;min-width:0"><span style="width:8px;height:8px;border-radius:4px;flex:none;background:${col};box-shadow:0 0 10px ${a(col, 0.8)}${moving ? ';animation:kdvpulse 1.4s ease-in-out infinite' : ''}"></span><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(labels[st])}</span></span>
-      <span style="display:inline-flex;align-items:center;gap:4px;height:30px;padding:0 10px 0 8px;border-radius:15px;background:rgba(255,255,255,0.06);font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;color:${b < 20 && hasB ? C.red : '#f2f1ee'}"><span class="ms" style="font-size:17px;transform:rotate(90deg);color:${charging ? C.green : 'inherit'};font-variation-settings:'FILL' 1">${batIcon}</span>${hasB ? b : '–'} %</span>
-    </div>
-    <div data-on-click="openMore" style="position:relative;width:196px;height:196px;cursor:pointer">
-      ${moving ? `<span style="position:absolute;inset:22px;border-radius:50%;background:conic-gradient(from 0deg, ${a(col, 0)} 0deg, ${a(col, 0)} 250deg, ${a(col, 0.32)} 360deg);animation:kdvspin 2.6s linear infinite"></span>` : `<span style="position:absolute;inset:22px;border-radius:50%;background:radial-gradient(circle, ${a(ringC, 0.10)} 0%, rgba(0,0,0,0) 70%)"></span>`}
-      <svg viewBox="0 0 196 196" style="position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg)">
-        <circle cx="98" cy="98" r="86" fill="none" stroke="#2a2a2d" stroke-width="9"></circle>
-        <circle cx="98" cy="98" r="86" fill="none" stroke="${ringC}" stroke-width="9" stroke-linecap="round" stroke-dasharray="${(RL * ringV / 100).toFixed(1)} ${RL.toFixed(1)}" style="transition:stroke-dasharray 1s cubic-bezier(.2,.9,.3,1), stroke .4s;filter:drop-shadow(0 0 6px ${a(ringC, 0.55)})"></circle>
-      </svg>
-      ${robot}
-    </div>
-    <div style="display:flex;flex-direction:column;align-items:center;gap:5px;text-align:center;max-width:100%;min-width:0">
-      <div style="font-size:23px;font-weight:500;letter-spacing:-0.015em;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e(headline)}</div>
-      <div style="font-size:13px;color:${st === 'error' ? C.red : '#8e8d89'};max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e(subline)}</div>
-    </div>
-    ${st === 'cleaning' && prog != null ? `<div style="width:100%;height:6px;border-radius:3px;background:#2a2a2d;overflow:hidden"><div style="width:${KD.clamp(prog, 0, 100)}%;height:100%;border-radius:3px;background:${col};transition:width 1s"></div></div>` : ''}
-    <div style="width:100%;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-radius:20px;background:rgba(255,255,255,0.035);padding:10px 0">
-      ${heroStats.map(([l, v], i) => `<div style="min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;padding:0 6px;${i ? 'border-left:1px solid rgba(255,255,255,0.06)' : ''}"><span style="font-size:11px;color:#8e8d89;white-space:nowrap">${e(l)}</span><span style="font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">${e(v)}</span></div>`).join('')}
-    </div>
-  </section>`;
-
-      // handlinger
+      const suction = SUG.map(([k, l, vals]) => {
+        const val = fanList.find(f => vals.includes(f.toLowerCase())) || vals[0];
+        const on = vals.includes(fanNow);
+        return { label: l, val, style: { height: 38, borderRadius: 14, fontSize: 13, fontWeight: 500, background: on ? '#f4f3ef' : 'transparent', color: on ? '#1a1a1c' : '#a9a7a2' } };
+      });
+      const mopOn = E.mopp ? !['off', 'unknown', 'unavailable', ''].includes(this.v(E.mopp)) : false;
+      const mopSub = this.isOn(cf.vannmangel) ? 'Vanntanken er tom' : (this.st(cf.vanntank) && this.v(cf.vanntank) === 'off') ? 'Vanntanken er ikke satt i' : 'Mopper etter støvsuging';
+      const tm = id => { const v = this.v(id); return /^\d{1,2}:\d{2}/.test(v) ? v.slice(0, 5) : null; };
+      const qFrom = tm(E.stille_fra), qTo = tm(E.stille_til);
+      const toggleDefs = [];
+      if (E.mopp) toggleDefs.push(['water_drop', 'Mopp', mopSub, 'mop', mopOn]);
+      if (E.stille) toggleDefs.push(['do_not_disturb_on', 'Stille timer', qFrom && qTo ? `${qFrom}–${qTo}` : this.isOn(E.stille) ? 'På' : 'Av', 'quiet', this.isOn(E.stille)]);
+      const toggles = toggleDefs.map(([icon, title, sub, k, on], i) => ({ icon, title, sub, k, ...sw(on),
+        row: { display: 'flex', alignItems: 'center', gap: 12, padding: '12px 4px', width: '100%', borderTop: i ? '1px solid rgba(255,255,255,0.05)' : 'none' } }));
+      const hrs = this.hours(cf.tid_totalt);
+      const stats = [['Totalt', hrs == null ? '–' : `${Math.round(hrs).toLocaleString('nb-NO')} t`],
+        ['Areal', this.ok(cf.areal_totalt) ? `${Math.round(this.n(cf.areal_totalt)).toLocaleString('nb-NO')} m²` : '–'],
+        ['Turer', this.ok(E.turer) ? Math.round(this.n(E.turer)).toLocaleString('nb-NO') : '–']].map(([label, v]) => ({ label, v }));
+      const parts = this.parts().map((p, i) => {
+        const low = p.pct < 20;
+        return { ...p, low, val: `${p.pct} % · ${Math.round(p.left)} t`,
+          row: { display: 'flex', flexDirection: 'column', gap: 8, padding: '12px 4px', borderTop: i ? '1px solid rgba(255,255,255,0.05)' : 'none' },
+          valStyle: { fontSize: 12, color: low ? C.amber : '#8e8d89', fontVariantNumeric: 'tabular-nums' },
+          bar: { width: `${p.pct}%`, height: '100%', borderRadius: 3, background: low ? C.amber : C.green } };
+      });
+      const mapRooms = rooms.filter(r => Array.isArray(r.kart)).map(r => {
+        const [x, y, w, h] = r.kart, on = r.on;
+        return { ...r, style: { position: 'absolute', left: `${x}%`, top: `${y}%`, width: `${w}%`, height: `${h}%`, borderRadius: 10, display: 'grid', placeItems: 'center', background: on ? a(C.green, 0.3) : '#2a2a2d', boxShadow: on ? `inset 0 0 0 1.5px ${C.green}` : 'none', color: on ? '#f2f1ee' : '#a9a7a2', transition: 'background .2s' } };
+      });
+      const robot = { position: 'absolute', left: `calc(${moving ? rp[0] + rp[2] * (0.15 + 0.7 * ((t * 5) % 1)) : 9}% - 9px)`, top: `calc(${moving ? rp[1] + rp[3] * (0.2 + 0.6 * t) : 82}% - 9px)`, width: 18, height: 18, borderRadius: 9, background: '#f2f1ee', boxShadow: `0 0 0 4px ${a(col, 0.35)}`, transition: 'left .8s linear, top .8s linear' };
       const main = st === 'cleaning'
-        ? { icon: 'pause', label: 'Pause', bg: a(C.amber, 0.16), fg: '#f2f1ee', sh: `inset 0 0 0 1px ${a(C.amber, 0.45)}` }
-        : { icon: 'play_arrow', label: st === 'paused' ? 'Fortsett' : zone ? `Støvsug ${zone.navn.toLowerCase()}` : sel.length ? `Støvsug ${sel.length} rom` : 'Støvsug alt', bg: `linear-gradient(135deg, ${C.green}, oklch(0.88 0.09 160))`, fg: '#10231a', sh: `0 10px 26px ${a(C.green, 0.25)}, inset 0 1px 0 rgba(255,255,255,0.35)` };
-      const tile = (k, icon, label, on, c) => `<button class="kd-vac-ctl" data-on-click="ctl" data-arg="${k}" style="min-width:0;height:60px;border-radius:22px;display:flex;align-items:center;justify-content:center;gap:8px;padding:0 8px;background:${on ? a(c, 0.16) : '#1c1c1f'};box-shadow:${on ? `inset 0 0 0 1px ${a(c, 0.45)}` : 'inset 0 0 0 1px rgba(255,255,255,0.04)'};transition:transform .15s, background .2s">
-          <span style="width:34px;height:34px;border-radius:17px;flex:none;display:grid;place-items:center;background:${on ? a(c, 0.25) : '#2a2a2e'};color:${on ? c : '#e4e2dd'}"><span class="ms" style="font-size:19px;font-variation-settings:'FILL' 1">${icon}</span></span>
-          <span style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">${e(label)}</span></button>`;
-      const actions = `<section style="display:flex;flex-direction:column;gap:10px">
-    <button class="kd-vac-ctl" data-on-click="main" data-haptic="medium" style="height:62px;border-radius:31px;display:flex;align-items:center;justify-content:center;gap:10px;padding:0 20px;font-size:16px;font-weight:600;background:${main.bg};color:${main.fg};box-shadow:${main.sh};transition:transform .15s"><span class="ms" style="font-size:26px;font-variation-settings:'FILL' 1">${main.icon}</span><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(main.label)}</span></button>
-    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
-      ${tile('dock', 'home', st === 'returning' ? 'Kjører hjem' : 'Hjem', st === 'returning', C.blue)}${tile('locate', 'location_searching', 'Finn', false, C.blue)}${tile('empty', 'delete_sweep', 'Tøm', false, C.amber)}
-    </div>
-  </section>`;
+        ? { icon: 'pause', label: 'Pause', style: { height: 64, borderRadius: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontSize: 16, fontWeight: 600, background: a(C.amber, 0.16), color: '#f2f1ee', boxShadow: `inset 0 0 0 1px ${a(C.amber, 0.45)}` } }
+        : { icon: 'play_arrow', label: st === 'paused' ? 'Fortsett' : zone ? `Støvsug ${zone.navn.toLowerCase()}` : sel.length ? `Støvsug ${sel.length} rom` : 'Støvsug alt', style: { height: 64, borderRadius: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontSize: 16, fontWeight: 600, background: C.green, color: '#10231a' } };
+      const e = KD.e, S = KD.S;
 
-      const tabs = KD.segHTML('vac-tab', [['clean', 'Rom', 'grid_view'], ['control', 'Modus', 'tune'], ['info', 'Status', 'monitoring'], ['map', 'Kart', 'map']], s.tab, 'tab', { pink: true });
-      const lbl = (t, right = '') => `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 4px;min-height:22px"><div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;white-space:nowrap">${e(t)}</div>${right}</div>`;
-      let tabHTML = '';
-
-      if (s.tab === 'clean') {
-        const selMeta = zone ? `Sone: ${zone.navn}` : sel.length ? `${sel.length} valgt` : 'Ingen valgt · hele huset';
-        const tiles = rooms.filter(r => r.entity).map(r => {
-          const on = r.on;
-          return `<button data-on-click="toggleRoom" data-arg="${e(r.entity)}" style="position:relative;min-width:0;height:104px;border-radius:22px;padding:12px;box-sizing:border-box;display:flex;flex-direction:column;justify-content:space-between;align-items:flex-start;text-align:left;background:${on ? `linear-gradient(160deg, ${a(C.green, 0.24)}, ${a(C.green, 0.08)})` : '#1c1c1f'};box-shadow:${on ? `inset 0 0 0 1.5px ${a(C.green, 0.55)}` : 'inset 0 0 0 1px rgba(255,255,255,0.04)'};transition:background .25s, box-shadow .25s">
-            <span style="width:36px;height:36px;border-radius:18px;display:grid;place-items:center;background:${on ? a(C.green, 0.25) : '#2a2a2e'};color:${on ? C.green : '#c9c7c2'};transition:background .25s"><span class="ms" style="font-size:20px;font-variation-settings:'FILL' ${on ? 1 : 0}">${e(r.ikon)}</span></span>
-            <span style="position:absolute;right:10px;top:10px;width:22px;height:22px;border-radius:11px;display:grid;place-items:center;box-sizing:border-box;background:${on ? C.green : 'transparent'};box-shadow:${on ? 'none' : 'inset 0 0 0 1.5px rgba(255,255,255,0.18)'};color:#10231a;transition:background .2s"><span class="ms" style="font-size:16px;opacity:${on ? 1 : 0};transform:scale(${on ? 1 : 0.4});transition:all .25s cubic-bezier(.34,1.5,.64,1)">check</span></span>
-            <span style="display:flex;flex-direction:column;gap:1px;width:100%;min-width:0">
-              <span style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(r.navn)}</span>
-              <span style="font-size:11px;color:${on ? a(C.green, 0.9) : '#8e8d89'};white-space:nowrap">${e(r.areal != null ? `${r.areal} m²` : on ? 'Valgt' : 'Trykk for å velge')}</span>
-            </span></button>`;
-        }).join('');
-        const any = sel.length || zone;
-        tabHTML = `<section style="display:flex;flex-direction:column;gap:10px">
-    ${lbl('Rom', `<div style="display:flex;align-items:center;gap:8px;min-width:0"><span style="font-size:12px;color:#6d6c69;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(selMeta)}</span>${any ? `<button data-on-click="clearRooms" style="height:26px;padding:0 10px;border-radius:13px;background:rgba(255,255,255,0.07);font-size:11px;font-weight:600;color:#c9c7c2;white-space:nowrap">Nullstill</button>` : ''}</div>`)}
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px">${tiles}</div>
-    ${zones.length ? `<div style="display:flex;flex-direction:column;gap:8px;margin-top:6px">${lbl('Soner')}
-      <div data-hscroll="1" style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:0 var(--kd-kant,10px)">
-        ${zones.map(z => { const on = s.zone === z.entity; return `<button data-on-click="pickZone" data-arg="${e(z.entity)}" style="flex:none;height:40px;padding:0 14px 0 10px;border-radius:20px;display:flex;align-items:center;gap:7px;font-size:13px;font-weight:500;white-space:nowrap;background:${on ? a(C.green, 0.16) : '#1c1c1f'};color:${on ? '#f2f1ee' : '#c9c7c2'};box-shadow:${on ? `inset 0 0 0 1.5px ${a(C.green, 0.55)}` : 'inset 0 0 0 1px rgba(255,255,255,0.04)'}"><span class="ms" style="font-size:17px;color:${on ? C.green : 'inherit'};font-variation-settings:'FILL' ${on ? 1 : 0}">${e(z.ikon || 'table_restaurant')}</span><span>${e(z.navn)}</span></button>`; }).join('')}
-      </div></div>` : ''}
-    ${any ? `<button class="kd-vac-ctl" data-on-click="ctl" data-arg="start" data-haptic="medium" style="margin-top:4px;height:54px;border-radius:27px;display:flex;align-items:center;justify-content:center;gap:8px;font-size:15px;font-weight:600;background:${PINK};color:#2a1720;box-shadow:0 8px 22px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.35);transition:transform .15s"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">cleaning_services</span><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(zone ? `Rengjør ${zone.navn.toLowerCase()}` : `Rengjør valgte · ${sel.length} rom`)}</span></button>`
-      : `<div style="font-size:12px;color:#6d6c69;text-align:center;padding:2px 0">Velg ett eller flere rom, så kan du rengjøre bare dem</div>`}
-  </section>`;
-      }
-
-      if (s.tab === 'control') {
-        const mopOn = E.mopp ? !['off', 'unknown', 'unavailable', ''].includes(this.v(E.mopp)) : false;
-        const warn = this.isOn(cf.vannmangel) ? 'Vanntanken er tom' : (this.st(cf.vanntank) && this.v(cf.vanntank) === 'off') ? 'Vanntanken er ikke satt i' : '';
-        const selects = this.selects().map(x => `<section style="display:flex;flex-direction:column;gap:8px">
-      ${lbl(x.navn, x.id === E.mopp && warn ? `<span style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:${C.amber};white-space:nowrap"><span class="ms" style="font-size:15px;font-variation-settings:'FILL' 1">water_drop</span>${e(warn)}</span>` : x.id === E.mopp && mopOn ? `<span style="font-size:12px;color:#6d6c69">Mopper etter støvsuging</span>` : '')}
-      ${KD.segHTML('sel-' + x.id, x.opts.map(o => [x.id + '|' + o, OPT[String(o).toLowerCase()] || String(o).replace(/_/g, ' ').replace(/^./, c => c.toUpperCase())]), x.id + '|' + this.v(x.id), 'selOpt', { small: x.opts.length > 4 })}
-    </section>`).join('');
-        const tm = id => { const v = this.v(id); return /^\d{1,2}:\d{2}/.test(v) ? v.slice(0, 5) : null; };
-        const qFrom = tm(E.stille_fra), qTo = tm(E.stille_til), qOn = this.isOn(E.stille);
-        tabHTML = `<section style="display:flex;flex-direction:column;gap:8px">
-      ${lbl('Sugestyrke', `<span style="font-size:12px;color:#6d6c69">${e(fanLabel)}</span>`)}
-      ${KD.segHTML('vac-fan', suction.map(x => [x.val, x.l, FICON[x.k]]), fanCur, 'fan', {})}
-    </section>
-    ${selects}
-    ${E.stille ? `<section><button data-on-click="toggleOpt" data-arg="quiet" style="width:100%;display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:22px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);text-align:left">
-      <span style="width:38px;height:38px;border-radius:19px;flex:none;display:grid;place-items:center;background:${qOn ? a(C.blue, 0.2) : '#2a2a2e'};color:${qOn ? C.blue : '#c9c7c2'}"><span class="ms" style="font-size:20px;font-variation-settings:'FILL' 1">bedtime</span></span>
-      <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-size:14px;font-weight:600">Stille timer</span><span style="font-size:12px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(qFrom && qTo ? `Ikke forstyrr ${qFrom}–${qTo}` : qOn ? 'På' : 'Av')}</span></span>
-      ${this.sw(qOn)}</button></section>` : ''}`;
-      }
-
-      if (s.tab === 'info') {
-        const hrs = this.hours(cf.tid_totalt);
-        const last = [['event', 'Når', endOk ? `${this.dayWord(end).replace(/^./, c => c.toUpperCase())} ${KD.hm(end)}` : '–'], ['square_foot', 'Areal', area != null ? `${area} m²` : '–'], ['timer', 'Varighet', elMin != null ? `${Math.round(elMin)} min` : '–']];
-        const tot = [['Totalt', hrs == null ? '–' : `${Math.round(hrs).toLocaleString('nb-NO')} t`], ['Areal', this.ok(cf.areal_totalt) ? `${Math.round(this.n(cf.areal_totalt)).toLocaleString('nb-NO')} m²` : '–'], ['Turer', this.ok(E.turer) ? Math.round(this.n(E.turer)).toLocaleString('nb-NO') : '–']];
-        const PICON = { main_brush: 'cleaning_services', side_brush: 'mode_fan', filter: 'filter_alt', sensor: 'sensors' };
-        const parts = this.parts();
-        tabHTML = `<section style="display:flex;flex-direction:column;gap:8px">
-      ${lbl('Siste rengjøring')}
-      <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
-        ${last.map(([ic, l, v]) => `<div style="min-width:0;display:flex;flex-direction:column;gap:8px;padding:14px;border-radius:22px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)"><span class="ms" style="font-size:20px;color:#8e8d89">${ic}</span><span style="display:flex;flex-direction:column;gap:2px;min-width:0"><span style="font-size:11px;color:#8e8d89">${e(l)}</span><span style="font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(v)}</span></span></div>`).join('')}
-      </div>
-    </section>
-    <section style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-radius:22px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);padding:14px 0">
-      ${tot.map(([l, v], i) => `<div style="min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;padding:0 6px;${i ? 'border-left:1px solid rgba(255,255,255,0.06)' : ''}"><span style="font-size:11px;color:#8e8d89">${e(l)} totalt</span><span style="font-size:17px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap">${e(v)}</span></div>`).join('')}
-    </section>
-    ${parts.length ? `<section style="display:flex;flex-direction:column;gap:8px">
-      ${lbl('Slitedeler', parts.some(p => p.pct < 20) ? `<span style="font-size:12px;color:${C.amber}">${parts.filter(p => p.pct < 20).length} bør byttes</span>` : `<span style="font-size:12px;color:#6d6c69">Alt i orden</span>`)}
-      <div style="display:flex;flex-direction:column;border-radius:24px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);padding:4px 14px">
-      ${parts.map((p, i) => { const low = p.pct < 20, c = low ? C.amber : p.pct < 40 ? 'oklch(0.86 0.12 95)' : C.green; const k = ((cf.deler || [])[i] || {}).nokkel; return `<div style="display:flex;align-items:center;gap:12px;padding:12px 0;${i ? 'border-top:1px solid rgba(255,255,255,0.05)' : ''}">
-        <span style="width:38px;height:38px;border-radius:19px;flex:none;display:grid;place-items:center;background:${a(c, 0.14)};color:${c}"><span class="ms" style="font-size:20px">${PICON[k] || 'build'}</span></span>
-        <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:7px">
-          <span style="display:flex;justify-content:space-between;gap:8px;font-size:14px"><span style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(p.navn)}</span><span style="font-size:12px;color:${low ? C.amber : '#8e8d89'};font-variant-numeric:tabular-nums;white-space:nowrap">${Math.round(p.left)} t igjen · ${p.pct} %</span></span>
-          <span style="height:6px;border-radius:3px;background:#2a2a2d;overflow:hidden"><span style="display:block;width:${p.pct}%;height:100%;border-radius:3px;background:${c};transition:width 1s"></span></span>
-        </span>
-        ${low && p.reset ? `<button data-on-click="resetPart" data-arg="${e(p.reset)}" title="Merk som byttet" style="height:32px;padding:0 12px;border-radius:16px;flex:none;background:${C.amber};color:#161618;font-size:12px;font-weight:600;white-space:nowrap">Byttet</button>` : ''}
-      </div>`; }).join('')}
-      </div>
-    </section>` : ''}`;
-      }
-
-      if (s.tab === 'map') {
-        const maps = this.maps();
-        const cur = maps.find(m => m.id === s.map) || maps[0];
-        const rp = (sel.find(r => r.kart) || rooms.find(r => r.kart) || { kart: [4, 4, 44, 34] }).kart;
-        const t = (prog || 0) / 100, mv = st === 'cleaning' || st === 'paused';
-        const dot = `left:calc(${mv ? rp[0] + rp[2] * (0.15 + 0.7 * ((t * 5) % 1)) : 9}% - 9px);top:calc(${mv ? rp[1] + rp[3] * (0.2 + 0.6 * t) : 82}% - 9px)`;
-        tabHTML = `${cur ? `<section style="display:flex;flex-direction:column;gap:10px">
-      ${maps.length > 1 ? KD.segHTML('vac-map', maps.map(m => [m.id, m.navn, 'layers']), cur.id, 'pickMap', { small: true }) : ''}
-      <div data-on-click="openMap" data-arg="${e(cur.id)}" style="position:relative;border-radius:26px;overflow:hidden;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05);aspect-ratio:4 / 3;cursor:pointer">
-        <img src="${e(cur.src)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain">
-        <span style="position:absolute;left:12px;bottom:12px;height:28px;padding:0 10px;border-radius:14px;display:inline-flex;align-items:center;gap:6px;background:rgba(20,20,22,0.7);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);font-size:12px;font-weight:500"><span class="ms" style="font-size:15px">map</span>${e(cur.navn)}</span>
-      </div>
-    </section>` : ''}
-    ${rooms.some(r => Array.isArray(r.kart)) ? `<section style="display:flex;flex-direction:column;gap:8px">
-      ${lbl('Romvelger', `<span style="font-size:12px;color:#6d6c69">Trykk på et rom</span>`)}
-      <div style="position:relative;height:300px;border-radius:26px;background:#1c1c1f;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05)">
-        ${rooms.filter(r => Array.isArray(r.kart)).map(r => { const [x, y, w, h] = r.kart, on = r.on; return `<button data-on-click="toggleRoom" data-arg="${e(r.entity || '')}" style="position:absolute;left:${x}%;top:${y}%;width:${w}%;height:${h}%;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:${on ? a(C.green, 0.28) : '#262629'};box-shadow:${on ? `inset 0 0 0 1.5px ${C.green}` : 'inset 0 0 0 1px rgba(255,255,255,0.04)'};color:${on ? '#f2f1ee' : '#a9a7a2'};transition:background .2s"><span class="ms" style="font-size:16px;color:${on ? C.green : '#6d6c69'}">${e(r.ikon)}</span><span style="font-size:11px;font-weight:500">${e(r.navn)}</span></button>`; }).join('')}
-        <span style="position:absolute;left:8%;top:84%;width:18px;height:12px;border-radius:4px;background:#48474a"></span>
-        <span style="position:absolute;${dot};width:18px;height:18px;border-radius:9px;background:#f2f1ee;box-shadow:0 0 0 4px ${a(col, 0.35)}, 0 0 16px ${a(col, 0.6)};transition:left .8s linear, top .8s linear"></span>
-      </div>
-    </section>` : ''}`;
-      }
-
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:18px">
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:22px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89"><span>${e(cf.navn || 'Sir Sweeps')}</span></div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
   </header>
-  ${hero}
-  ${actions}
-  ${tabs}
-  ${tabHTML}
+
+  <section style="display:flex;flex-direction:column;align-items:center;gap:18px">
+    <div data-on-click="openMore" style="position:relative;width:240px;height:240px;cursor:pointer">
+      ${ring.map(r => `<div style="${S(r)}"></div>`).join('')}
+      <div style="position:absolute;inset:40px;border-radius:50%;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px">
+        <span class="ms" style="${S(coreIcon)}"><span>${e(coreIconName)}</span></span>
+        <div style="font-size:34px;font-weight:500;letter-spacing:-0.03em;line-height:1;font-variant-numeric:tabular-nums"><span>${hasB ? b : '–'}</span><span style="font-size:14px;color:#8e8d89;font-weight:400"> %</span></div>
+        <div style="font-size:12px;color:#8e8d89"><span>${e(labels[st])}</span></div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center">
+      <div style="font-size:24px;font-weight:500;letter-spacing:-0.015em"><span>${e(headline)}</span></div>
+      <div style="font-size:14px;color:#8e8d89"><span>${e(subline)}</span></div>
+    </div>
+  </section>
+
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:2px;padding:4px;border-radius:20px;background:#1c1c1f">
+    ${tabs.map(t => `<button data-on-click="tab" data-arg="${t.k}" style="${S(t.style)}"><span>${e(t.label)}</span></button>`).join('')}
+  </div>
+
+  ${s.tab === 'clean' ? `
+    <section style="display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;justify-content:space-between;padding:0 4px">
+        <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Rom</div>
+        <div style="font-size:12px;color:#6d6c69"><span>${e(selMeta)}</span></div>
+      </div>
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
+        ${roomCards.map(r => `
+          <button data-on-click="toggleRoom" data-arg="${e(r.entity)}" style="${S(r.style)}">
+            <span class="ms" style="${S(r.iconStyle)}"><span>${e(r.ikon)}</span></span>
+            <div style="display:flex;flex-direction:column;gap:2px;align-items:flex-start">
+              <span style="font-size:15px;font-weight:500"><span>${e(r.navn)}</span></span>
+              <span style="font-size:12px;color:#8e8d89"><span>${e(r.sub)}</span></span>
+            </div>
+            <span class="ms" style="${S(r.check)}">check_circle</span>
+          </button>`).join('')}
+      </div>
+    </section>
+    ${zoneBtns.length ? `<section style="display:flex;flex-direction:column;gap:8px">
+      <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:0 4px">Soner</div>
+      <div data-hscroll="1" style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:0 var(--kd-kant,10px)">
+        ${zoneBtns.map(z => `
+          <button data-on-click="pickZone" data-arg="${e(z.entity)}" style="${S(z.style)}"><span class="ms" style="font-size:17px"><span>${e(z.ikon || 'table_restaurant')}</span></span><span>${e(z.navn)}</span></button>`).join('')}
+      </div>
+    </section>` : ''}` : ''}
+
+  ${s.tab === 'control' ? `
+    <section style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+      ${controls.map(c => `
+        <button class="kd-vac-ctl" data-on-click="ctl" data-arg="${c.k}" style="height:76px;border-radius:20px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px">
+          <span class="ms" style="font-size:24px;font-variation-settings:'FILL' 1"><span>${e(c.icon)}</span></span>
+          <span style="font-size:12px;font-weight:500;white-space:nowrap"><span>${e(c.label)}</span></span>
+        </button>`).join('')}
+    </section>
+    <section style="display:flex;flex-direction:column;gap:8px">
+      <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:0 4px">Sugestyrke</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:2px;padding:4px;border-radius:18px;background:#1c1c1f">
+        ${suction.map(p => `<button data-on-click="fan" data-arg="${e(p.val)}" style="${S(p.style)}"><span>${e(p.label)}</span></button>`).join('')}
+      </div>
+    </section>
+    ${toggles.length ? `<section style="display:flex;flex-direction:column">
+      ${toggles.map(t => `
+        <button data-on-click="toggleOpt" data-arg="${t.k}" style="${S(t.row)}">
+          <span class="ms" style="font-size:22px;color:#a9a7a2;width:28px"><span>${e(t.icon)}</span></span>
+          <div style="flex:1;display:flex;flex-direction:column;gap:2px;text-align:left">
+            <span style="font-size:14px;font-weight:500"><span>${e(t.title)}</span></span>
+            <span style="font-size:12px;color:#8e8d89"><span>${e(t.sub)}</span></span>
+          </div>
+          <span style="${S(t.track)}"><span style="${S(t.knob)}"></span></span>
+        </button>`).join('')}
+    </section>` : ''}` : ''}
+
+  ${s.tab === 'info' ? `
+    <section style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+      ${stats.map(t => `
+        <div style="display:flex;flex-direction:column;gap:4px;padding:12px 14px;border-radius:18px;background:#1c1c1f">
+          <div style="font-size:11px;color:#8e8d89;white-space:nowrap"><span>${e(t.label)}</span></div>
+          <div style="font-size:17px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap"><span>${e(t.v)}</span></div>
+        </div>`).join('')}
+    </section>
+    ${parts.length ? `<section style="display:flex;flex-direction:column;gap:2px">
+      <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:0 4px 8px">Slitedeler</div>
+      ${parts.map(p => `
+        <div style="${S(p.row)}">
+          <div style="display:flex;justify-content:space-between;gap:10px;font-size:14px">
+            <span style="font-weight:500"><span>${e(p.navn)}</span></span>
+            <span style="${S(p.valStyle)}"><span>${e(p.val)}</span></span>
+          </div>
+          <div style="height:5px;border-radius:3px;background:#1f1f22;overflow:hidden"><div style="${S(p.bar)}"></div></div>
+          ${p.low && p.reset ? `<button data-on-click="resetPart" data-arg="${e(p.reset)}" style="align-self:flex-start;height:30px;padding:0 12px;border-radius:15px;background:oklch(0.82 0.12 75);color:#161618;font-size:12px;font-weight:600">Merk som byttet</button>` : ''}
+        </div>`).join('')}
+    </section>` : ''}` : ''}
+
+  ${s.tab === 'map' ? `
+    <section style="position:relative;height:300px;border-radius:24px;background:#1c1c1f;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
+      ${mapRooms.map(m => `
+        <button data-on-click="toggleRoom" data-arg="${e(m.entity || '')}" style="${S(m.style)}"><span style="font-size:11px;font-weight:500"><span>${e(m.navn)}</span></span></button>`).join('')}
+      <span style="position:absolute;left:8%;top:84%;width:18px;height:12px;border-radius:4px;background:#48474a"></span>
+      <span style="${S(robot)}"></span>
+    </section>
+    <div style="font-size:12px;color:#6d6c69;text-align:center">Trykk på et rom for å velge det</div>` : ''}
+
+  <button data-on-click="main" style="${S(main.style)}"><span class="ms" style="font-size:24px;font-variation-settings:'FILL' 1"><span>${e(main.icon)}</span></span><span>${e(main.label)}</span></button>
 </div>`;
     }
-    /** Bryter (spor + knott) */
-    sw(on) { return `<span style="position:relative;width:46px;height:28px;border-radius:14px;flex:none;background:${on ? 'oklch(0.72 0.14 150)' : '#3a3a3d'};transition:background .2s"><span style="position:absolute;top:3px;left:${on ? 21 : 3}px;width:22px;height:22px;border-radius:11px;background:#f4f3ef;box-shadow:0 2px 6px rgba(0,0,0,0.3);transition:left .25s cubic-bezier(.34,1.4,.64,1)"></span></span>`; }
     /** «i dag» / «i går» / «mandag» / «12.9.» */
     dayWord(d) {
       const t0 = new Date(); t0.setHours(0, 0, 0, 0);
@@ -6904,7 +6671,9 @@ try {
     <button data-on-click="${tv ? 'powerTv' : 'powerMusic'}" style="${S(powerBtn)}"><span class="ms" style="font-size:22px">power_settings_new</span></button>
   </section>
 
-  ${KD.segHTML('fane', [['tv', 'TV', 'tv'], ['music', 'Musikk', 'music_note']], s.tab, 'tab', { pink: true })}
+  <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:2px;padding:4px;border-radius:20px;background:#1c1c1f">
+    ${tabs.map(t => `<button data-on-click="tab" data-arg="${t.k}" style="${S(t.style)}"><span class="ms" style="font-size:18px"><span>${t.icon}</span></span><span>${e(t.label)}</span></button>`).join('')}
+  </div>
 
   ${tv ? `
     <section style="display:flex;justify-content:center">
@@ -7593,7 +7362,9 @@ try {
 
   ${canStart ? `<button data-on-click="startJob" style="height:56px;border-radius:28px;background:oklch(0.82 0.12 75);color:#1a1408;font-size:15px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:8px"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">print</span><span>${e(file ? `Skriv ut siste jobb · ${file}` : 'Skriv ut siste jobb')}</span></button>` : ''}
 
-  ${KD.segHTML('fane', [['simple', 'Enkel'], ['adv', 'Avansert']], s.tab, 'tab', { pink: true })}
+  <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:2px;padding:4px;border-radius:20px;background:#1c1c1f">
+    ${tabs.map(t => `<button data-on-click="tab" data-arg="${t.k}" style="${S(t.style)}"><span>${e(t.label)}</span></button>`).join('')}
+  </div>
 
   <section style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
     ${temps.map(t => `
@@ -8380,9 +8151,6 @@ try {
  *   hytter: []                           # sensor.<sted>_oversikt fra KI Hyttebesøk (tom = finnes selv)
  *
  * Hvilke kalendere som vises kan hver bruker velge i «Tilpass oppsett» (lagres i HA-brukerdata 'kd_kalender' = { kalendere: [id…] }).
- * Kildene (serier, filmer, plex_serier, plex_filmer, post, post_kalender, bursdager) kan også velges der
- * ('kd_kalender'.kilder = { serier: 'calendar.sonarr', post: '' (= ingen) … }); config er reserve.
- * Serier/filmer kan være en upcoming_media-sensor (attributtet data) eller en kalender (f.eks. Sonarr/Radarr-kalenderen).
  * Farger: kalendere som heter som en person (Rune, Cybele, Sebastian) eller «Familie» får designets farger.
  * Hytta leser KI Hyttebesøk (sensor.<sted>_oversikt: her_naa, dager, opphold, kommende, per_maaned …).
  * Pakker finnes i entitetsregisteret (Norwegian Parcel Tracker).
@@ -8410,16 +8178,6 @@ try {
   const cap = s => String(s).replace(/^./, c => c.toUpperCase());
   const hm = d => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
   const hash = s => { let h = 0; for (const ch of String(s)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h; };
-  /* Kilder som kan velges i «Tilpass oppsett»: [nøkkel, navn, ikon, mønster, domener] */
-  const SRC = [
-    ['serier', 'Serier', 'live_tv', /sonarr/i, ['sensor', 'calendar'], 'Sonarr – upcoming-sensor eller kalender'],
-    ['filmer', 'Filmer', 'movie', /radarr/i, ['sensor', 'calendar'], 'Radarr – upcoming-sensor eller kalender'],
-    ['plex_serier', 'Plex · serier', 'smart_display', /plex/i, ['sensor'], 'Nylig lagt til (serier)'],
-    ['plex_filmer', 'Plex · filmer', 'smart_display', /plex/i, ['sensor'], 'Nylig lagt til (filmer)'],
-    ['post', 'Posten · neste levering', 'mail', /posten|post_?nord|nar_kommer/i, ['sensor'], 'Sensor med neste leveringsdato'],
-    ['post_kalender', 'Posten · kalender', 'local_post_office', /posten|post/i, ['calendar'], 'Kalender med leveringsdager'],
-    ['bursdager', 'Bursdager', 'cake', /birthday|bursdag|f[oø]dsel/i, ['calendar'], 'Kalender med bursdager'],
-  ];
   const bdName = s => String(s || '').replace(/\(\s*\d{4}\s*\)/g, '').replace(/[_-]+/g, ' ').replace(/\b(bursdag|birthday|fodselsdag|fødselsdag)\b/gi, '').replace(/[’']\s*s\b/gi, '').replace(/\s{2,}/g, ' ').replace(/^[\s.,·-]+|[\s.,·-]+$/g, '').replace(/^./, c => c.toUpperCase());
 
   class KDKalenderCard extends KD.KDSheet {
@@ -8442,14 +8200,8 @@ try {
     /* ================= data ================= */
     /* Alle calendar.* med navn og farge. Standardutvalget (config kalendere + auto, minus ekskluder/hytta) får fargene først
        (samme som før), resten får farge etterpå, så fargene ikke hopper når brukeren slår kalendere av/på. */
-    /** Valgte kilder: brukerens valg ('kd_kalender'.kilder; '' = ingen) → config */
-    _src() {
-      const u = (KD.ud(this, 'kd_kalender') || {}).kilder || {}, c = this.config, out = {};
-      for (const [k] of SRC) out[k] = Object.prototype.hasOwnProperty.call(u, k) ? (u[k] || null) : (c[k] || null);
-      return out;
-    }
     _allCals() {
-      const c = this.config, src = this._src(), ex = new Set([...(c.ekskluder || []), ...['serier', 'filmer', 'post_kalender'].map(k => src[k]).filter(id => id && id.startsWith('calendar.'))]), hut = this._hutCalIds(), out = [];
+      const c = this.config, ex = new Set(c.ekskluder || []), hut = this._hutCalIds(), out = [];
       let fi = 0;
       const col = (navn, id) => { const w = WHO.find(x => x[0].test(navn + ' ' + id)); return w ? w[1] : PALETTE[fi++ % PALETTE.length]; };
       const cfg = new Map();
@@ -8493,15 +8245,9 @@ try {
     _pcol(name) { const p = PERSC.find(x => x[0].test(name)); if (p) return p[1]; this._pc = this._pc || {}; if (!this._pc[name]) this._pc[name] = PERS_FALL[Object.keys(this._pc).length % PERS_FALL.length]; return this._pc[name]; }
 
     _upcoming() {
-      const c = this._src();
+      const c = this.config;
       const read = (id, type) => {
         const st = this.st(id); if (!st) return [];
-        if (id.startsWith('calendar.')) { // Sonarr/Radarr-kalender: «Serie - 1x03 - Episode» / «Film (Kino)»
-          return this._events([{ id, navn: type, col: C.blue }], 60, day0(new Date()), 'src-' + type).map(ev => {
-            const m = String(ev.summary || '').match(/^(.+?)\s+-\s+(S?\d+[xE]\d+)\s+-\s+(.+)$/i), kino = /\(?(kino|cinema|theatrical)\)?/i.test(ev.summary || '');
-            return { type, src: id, title: (m ? m[1] : String(ev.summary || '').replace(/\s*\((kino|cinema|theatrical|physical|digital)[^)]*\)\s*$/i, '')).trim(), episode: m ? m[3] : '', number: m ? m[2].toUpperCase().replace(/^(\d+)X(\d+)$/, (x, a1, b1) => `S${pad(a1)}E${pad(b1)}`) : '', when: ev.start, studio: '', kino };
-          }).filter(x => x.title);
-        }
         let d = st.attributes.data; if (typeof d === 'string') { try { d = JSON.parse(d); } catch (x) { d = null; } }
         if (!Array.isArray(d)) return [];
         return d.filter(x => x && (x.airdate || x.aired) && x.title).map(x => ({ type, src: id, title: x.title, episode: x.episode && x.episode !== 'TBA' ? x.episode : '', number: x.number || '', when: new Date(x.airdate || x.aired), studio: x.studio || '', kino: !!x.flag }));
@@ -8512,7 +8258,7 @@ try {
       return [...read(c.serier, 'serie'), ...read(c.filmer, 'film')].filter(x => !isNaN(x.when) && x.when >= t0).map(x => ({ ...x, plex: plex.has(key(x)) })).sort((p, q) => p.when - q.when);
     }
     _bdays() {
-      const id = this._src().bursdager; if (!id || !this.st(id)) return [];
+      const id = this.config.bursdager; if (!id || !this.st(id)) return [];
       const t0 = day0(new Date());
       const raw = this.cached(`kd-kal-bd-${id}-${isoL(t0)}`, 30 * 60e3, () => this.calendar([id], 367), null) || [];
       const seen = new Set(), out = [];
@@ -8551,55 +8297,12 @@ try {
     kalAlle(ev, k) { this._setCals(k === 'alle' ? this._allCals().map(x => x.id) : k === 'ingen' ? [] : null); }
 
     /* ================= «Tilpass oppsett»: hvilke kalendere som vises ================= */
-    srcPick(ev, k) { this.setState(s => ({ srcOpen: s.srcOpen === k ? null : k, srcQ: '' })); this.haptic('selection'); }
-    srcQ(ev) { this.setState({ srcQ: ev.target.value }); }
-    srcSet(ev, arg) {
-      const i = arg.indexOf('|'), k = arg.slice(0, i), id = arg.slice(i + 1), u = KD.ud(this, 'kd_kalender') || {}, kil = { ...(u.kilder || {}) };
-      if (id === '*') delete kil[k]; else kil[k] = id;
-      this.haptic('selection'); this.setState({ srcOpen: null });
-      KD.udSave(this, 'kd_kalender', { ...u, kilder: kil });
-    }
-    _srcHTML() {
-      const s = this.state, src = this._src(), u = (KD.ud(this, 'kd_kalender') || {}).kilder || {}, ids = Object.keys((this._hass && this._hass.states) || {});
-      const name = id => String(this.fname(id) || id);
-      const rows = SRC.map(([k, label, icon, re, doms, hint]) => {
-        const cur = src[k], open = s.srcOpen === k, own = Object.prototype.hasOwnProperty.call(u, k), ok = cur && this.st(cur);
-        const sub = !cur ? 'Ingen valgt' : `${ok ? '' : 'Finnes ikke · '}${cur}`;
-        let list = '';
-        if (open) {
-          const q = String(s.srcQ || '').trim().toLowerCase();
-          const pool = ids.filter(id => doms.includes(id.split('.')[0]));
-          const hit = id => !q || id.toLowerCase().includes(q) || name(id).toLowerCase().includes(q);
-          const match = pool.filter(id => re.test(id) || re.test(name(id)));
-          let cand = q ? pool.filter(hit).sort((x, y) => (re.test(y) ? 1 : 0) - (re.test(x) ? 1 : 0)) : [...match, ...(doms.includes('calendar') ? pool.filter(id => id.startsWith('calendar.') && !match.includes(id)) : [])];
-          cand = cand.slice(0, 40);
-          const opt = (id, t1, t2, sel, ic) => `<button data-key="src-${e(k)}-${e(id)}" data-on-click="srcSet" data-arg="${e(k + '|' + id)}" style="min-height:44px;padding:6px 12px;border-radius:14px;display:flex;align-items:center;gap:10px;width:100%;min-width:0;text-align:left;background:${sel ? 'oklch(0.78 0.13 350 / 0.16)' : 'transparent'};box-shadow:${sel ? 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.6)' : 'none'}">
-            <span class="ms" style="font-size:18px;flex:none;color:${sel ? 'oklch(0.82 0.1 350)' : '#8e8d89'}">${ic}</span>
-            <span style="flex:1;min-width:0;display:flex;flex-direction:column"><span style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(t1)}</span>${t2 ? `<span style="font-size:11px;color:#6d6c69;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(t2)}</span>` : ''}</span>
-            ${sel ? `<span class="ms" style="font-size:18px;flex:none;color:oklch(0.82 0.1 350)">check</span>` : ''}</button>`;
-          list = `<div style="display:flex;flex-direction:column;gap:2px;padding:4px 0 6px;min-width:0">
-          <div style="display:flex;align-items:center;gap:8px;height:40px;margin:2px 4px 4px;padding:0 14px;border-radius:20px;background:#1c1c1f;min-width:0"><span class="ms" style="font-size:18px;color:#8e8d89">search</span><input data-on-input="srcQ" value="${e(s.srcQ || '')}" placeholder="Søk i ${doms.map(d => d + '.*').join(' og ')}" style="flex:1;min-width:0;border:0;outline:none;background:transparent;color:#f2f1ee;font:inherit;font-size:13px"></div>
-          ${this.config[k] ? opt('*', 'Standard', this.config[k], !own, 'restart_alt') : ''}
-          ${opt('', 'Ingen', 'Skjul denne delen', own && !u[k], 'block')}
-          ${cand.map(id => opt(id, name(id), id, own && u[k] === id, id.startsWith('calendar.') ? 'calendar_month' : 'sensors')).join('')}
-          ${!cand.length ? `<div style="padding:10px 12px;font-size:12px;color:#6d6c69">Fant ingen${q ? ` som matcher «${e(q)}»` : ` – søk etter ${doms.join('/')}`}</div>` : ''}
-        </div>`;
-        }
-        return `<div data-key="kd-src-${k}" style="display:flex;flex-direction:column;min-width:0;border-radius:18px;background:${open ? 'rgba(255,255,255,0.05)' : 'transparent'}">
-        <button data-on-click="srcPick" data-arg="${k}" style="min-height:52px;padding:4px 10px 4px 12px;border-radius:16px;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;width:100%;text-align:left">
-          <span style="width:32px;height:32px;border-radius:16px;display:grid;place-items:center;background:${cur ? 'oklch(0.78 0.13 350 / 0.16)' : 'rgba(255,255,255,0.06)'}"><span class="ms" style="font-size:18px;color:${cur ? 'oklch(0.82 0.1 350)' : '#8e8d89'}">${icon}</span></span>
-          <span style="min-width:0;display:flex;flex-direction:column;gap:1px"><span style="font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(label)}${own ? '' : ' <span style="font-size:11px;color:#6d6c69">· standard</span>'}</span><span style="font-size:11px;color:${cur && !ok ? 'oklch(0.72 0.15 25)' : '#8e8d89'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${e(hint)}">${e(open ? hint : sub)}</span></span>
-          <span class="ms" style="font-size:20px;color:#8e8d89">${open ? 'expand_less' : 'expand_more'}</span>
-        </button>${list}</div>`;
-      }).join('');
-      return `<div style="padding:10px 12px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">Kilder</div>${rows}`;
-    }
     tilpassHTML() {
-      const all = this._allCals(); if (!all.length) return this._srcHTML();
+      const all = this._allCals(); if (!all.length) return '';
       const on = new Set(this._cals().map(x => x.id)), user = !!this._userCals();
       const pill = (k, l, act) => `<button data-on-click="kalAlle" data-arg="${k}" style="height:30px;padding:0 12px;border-radius:15px;font-size:12px;font-weight:500;background:${act ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.06)'};color:${act ? '#f4f3ef' : '#a9a7a2'}">${l}</button>`;
       const allOn = all.every(x => on.has(x.id)), noneOn = !on.size;
-      return `${this._srcHTML()}<div style="padding:10px 12px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">Kalendere</div>
+      return `<div style="padding:10px 12px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">Kalendere</div>
     <div style="display:flex;align-items:center;gap:6px;padding:2px 8px 6px 12px">
       <span style="flex:1;font-size:12px;color:#8e8d89">${on.size} av ${all.length} vises${user ? '' : ' · standard'}</span>
       ${pill('alle', 'Alle', allOn)}${pill('ingen', 'Ingen', noneOn)}${user ? pill('std', 'Standard', false) : ''}
@@ -8733,7 +8436,7 @@ try {
     }
 
     body() {
-      const s = this.state, c = { ...this.config, ...this._src() }, TODAY = day0(new Date());
+      const s = this.state, c = this.config, TODAY = day0(new Date());
       const cals = this._cals(), places = this._places();
       const has = { cal: true, cabin: places.length > 0, up: !!(this.st(c.serier) || this.st(c.filmer)), bday: !!(c.bursdager && this.st(c.bursdager)), post: !!(this.st(c.post) || this.st(c.post_kalender)) };
       const tabDefs = [['cal', 'Kalender', 'event'], ['cabin', 'Hytta', 'cottage'], ['up', 'Framover', 'movie'], ['bday', 'Bursdager', 'cake'], ['post', 'Posten', 'mail']].filter(t => has[t[0]]);
@@ -8809,7 +8512,9 @@ try {
 ${isCalTab ? `
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 4px">
       <span style="font-size:15px;font-weight:500"><span>${e(CV.calHead)}</span></span>
-      <div style="width:210px;max-width:60%;flex:none">${KD.segHTML('kal-view', CV.calViews.map(v => [v.k, v.label, v.icon]), s.view, 'goView', { pink: true, small: true })}</div>
+      <div style="display:flex;gap:2px;padding:3px;border-radius:16px;background:#1c1c1f">
+        ${CV.calViews.map(v => `<button data-on-click="goView" data-arg="${v.k}" title="${e(v.label)}" style="${S(v.style)}"><span class="ms" style="font-size:18px">${e(v.icon)}</span><span>${e(v.label)}</span></button>`).join('')}
+      </div>
     </div>` : ''}
 ${isCal ? `
     <section style="display:flex;flex-direction:column">
@@ -8886,7 +8591,9 @@ ${H ? `
     </div>
 
     <div style="display:flex;align-items:center;justify-content:center;gap:8px">
-      <div style="flex:1;min-width:0">${KD.segHTML('kal-hsub', H.subs.map(t => [t.k, t.label]), s.hsub, 'goSub', { pink: true })}</div>
+      <div style="display:flex;gap:2px;padding:4px;border-radius:22px;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.12)">
+        ${H.subs.map(t => `<button data-on-click="goSub" data-arg="${t.k}" style="${S(t.style)}"><span>${e(t.label)}</span></button>`).join('')}
+      </div>
       <button data-on-click="toggleSearch" style="${S(H.searchBtn)}"><span class="ms" style="font-size:20px">search</span></button>
     </div>
     ${H.searching ? `<input data-on-input="setQ" value="${e(H.q)}" placeholder="Søk etter person eller sted" style="height:46px;border-radius:23px;border:0;outline:none;padding:0 18px;background:#1c1c1f;color:#f2f1ee;font:inherit;font-size:14px">` : ''}
@@ -8935,7 +8642,9 @@ ${H ? `
           <span style="display:flex;flex-direction:column;align-items:flex-end"><span style="font-size:24px;font-weight:300;letter-spacing:-0.02em"><span>${e(p.nights)}</span></span><span style="font-size:11px;color:#8e8d89">netter</span></span>
         </section>`).join('')}` : ''}` : ''}
 ${up ? `
-    ${KD.segHTML('kal-upf', up.filters.map(f => [f.k, f.label]), s.filter, 'goFilter', { small: true })}
+    <div style="display:flex;gap:6px">
+      ${up.filters.map(f => `<button data-on-click="goFilter" data-arg="${f.k}" style="${S(f.style)}"><span>${e(f.label)}</span></button>`).join('')}
+    </div>
     ${up.featured ? `<section style="${S(up.featured.card)}">
         <div style="${S(up.featured.poster)}"><span style="font-size:22px;font-weight:600;letter-spacing:-0.02em;text-align:center;line-height:1"><span>${e(up.featured.initials)}</span></span></div>
         <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px">
@@ -9124,7 +8833,7 @@ try {
       const subline = `${inList.length} oppgaver · ${done} fullført`;
       const progress = { width: `${inList.length ? done / inList.length * 100 : 0}%`, height: '100%', borderRadius: 3, background: GREEN, transition: 'width .4s' };
       const tabs = lists.map(l => { const act = cur === l.id, n = data[l.id].filter(x => !x.done).length; return { k: l.id, label: l.navn, count: n,
-        style: { height: 40, borderRadius: 20, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 13, fontWeight: 500, background: act ? PINK : '#1c1c1f', color: act ? '#2a1720' : '#a9a7a2' },
+        style: { height: 40, borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 13, fontWeight: 500, background: act ? PINK : 'transparent', color: act ? '#2a1720' : '#a9a7a2' },
         countStyle: { minWidth: 20, height: 20, borderRadius: 10, display: 'grid', placeItems: 'center', fontSize: 11, fontWeight: 600, background: act ? 'rgba(42,23,32,0.14)' : '#2a2a2d' } }; });
       const draftPrio = { label: PR[s.prio][0], style: { ...tag(s.prio), height: 32, padding: '0 12px', borderRadius: 16, fontSize: 12 } };
       const filters = [['open', 'Åpne'], ['high', 'Høy'], ['done', 'Fullført'], ['all', 'Alle']].map(([k, label]) => ({ k, label, style: { height: 32, padding: '0 13px', borderRadius: 16, fontSize: 12, fontWeight: 500, background: s.filter === k ? '#f4f3ef' : '#1c1c1f', color: s.filter === k ? '#1a1a1c' : '#c9c7c2' } }));
@@ -9146,10 +8855,9 @@ try {
     <div style="height:6px;border-radius:3px;background:#1f1f22;overflow:hidden;margin-top:8px"><div style="${S(progress)}"></div></div>
   </section>
 
-  ${tabs.length <= 3 && tabs.every(t => String(t.label).length <= (tabs.length > 2 ? 11 : 17)) ? KD.segHTML('lister', tabs.map(t => [t.k, t.count ? `${t.label} · ${t.count}` : t.label]), cur, 'goTab', { pink: true, h: 40 })
-    : `<div data-key="tabs-rull" style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:0 var(--kd-kant,10px)">
-    ${tabs.map(t => `<button data-key="tab-${e(t.k)}" data-on-click="goTab" data-arg="${e(t.k)}" style="${S({ ...t.style, flex: 'none', maxWidth: 200, padding: '0 8px 0 16px', whiteSpace: 'nowrap' })}"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis">${e(t.label)}</span><span style="${S({ ...t.countStyle, flex: 'none' })}"><span>${e(t.count)}</span></span></button>`).join('')}
-  </div>`}
+  <div style="display:grid;grid-template-columns:repeat(${Math.max(1, tabs.length)},1fr);gap:2px;padding:4px;border-radius:20px;background:#1c1c1f">
+    ${tabs.map(t => `<button data-on-click="goTab" data-arg="${e(t.k)}" style="${S(t.style)}"><span>${e(t.label)}</span><span style="${S(t.countStyle)}"><span>${e(t.count)}</span></span></button>`).join('')}
+  </div>
 
   <form style="display:flex;align-items:center;gap:10px;height:52px;padding:0 8px 0 16px;border-radius:26px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05)">
     <span class="ms" style="font-size:20px;color:#6d6c69">add</span>
@@ -9685,6 +9393,23 @@ try {
    * ==================================================================== */
   const Y = H.Y, G = 'oklch(0.72 0.14 150)', PINK = KD.PINK, a = KD.a;
   const STARS = [[8, 14], [18, 30], [30, 10], [40, 24], [52, 8], [60, 34], [70, 16], [84, 28], [92, 12], [24, 46], [46, 44], [78, 42]];
+  /** Designets natt-scene (Scene({ on })) som HTML */
+  const scene = (on) => `<div style="position:absolute;inset:0;pointer-events:none">`
+    + STARS.map(([x, y], i) => `<span style="${S({ position: 'absolute', left: x + '%', top: y + '%', width: i % 3 ? 2 : 3, height: i % 3 ? 2 : 3, borderRadius: 2, background: '#fff', animation: 'tw ' + (2 + i % 3) + 's ease-in-out ' + (i * 0.3) + 's infinite' })}"></span>`).join('')
+    + `<span style="${S({ position: 'absolute', left: '24%', right: '-10%', top: '46%', height: 180, borderRadius: '50%', border: '1.5px dashed rgba(255,255,255,0.18)' })}"></span>`
+    + `<span style="${S({ position: 'absolute', right: '26%', top: '28%', width: 18, height: 18, borderRadius: '50%', boxShadow: 'inset -5px -2px 0 0 #f1ecd9', transform: 'rotate(-20deg)', filter: 'drop-shadow(0 0 8px rgba(241,236,217,0.6))' })}"></span>`
+    + `<span style="${S({ position: 'absolute', left: 0, right: 0, bottom: 0, height: 44, background: '#0f1612' })}"></span>`
+    + `<span style="${S({ position: 'absolute', right: 18, bottom: 44, width: 0, height: 0, borderLeft: '9px solid transparent', borderRight: '9px solid transparent', borderBottom: '24px solid #0b120f' })}"></span>`
+    + `<span style="${S({ position: 'absolute', right: 80, bottom: 44, width: 0, height: 0, borderLeft: '8px solid transparent', borderRight: '8px solid transparent', borderBottom: '20px solid #0b120f' })}"></span>`
+    + `<span style="${S({ position: 'absolute', right: 30, bottom: 44, width: 58, height: 30, background: '#1e2433' })}"></span>`
+    + `<span style="${S({ position: 'absolute', right: 24, bottom: 74, width: 0, height: 0, borderLeft: '35px solid transparent', borderRight: '35px solid transparent', borderBottom: '20px solid #262d3d' })}"></span>`
+    + [40, 64].map(r => `<span style="${S({ position: 'absolute', right: r, bottom: 58, width: 9, height: 7, borderRadius: 1, background: on ? '#f3c96b' : '#2d3446', boxShadow: on ? '0 0 8px #f3c96b' : 'none', transition: 'background .6s, box-shadow .6s' })}"></span>`).join('')
+    + [96, 22].map(r => `<span style="${S({ position: 'absolute', right: r, bottom: 44 })}">`
+      + `<span style="${S({ position: 'absolute', left: -1, bottom: 0, width: 2, height: 14, background: '#3a4150' })}"></span>`
+      + `<span style="${S({ position: 'absolute', left: -3, bottom: 14, width: 6, height: 6, borderRadius: 3, background: on ? '#ffe3a0' : '#3a4150', boxShadow: on ? '0 0 10px 3px rgba(255,210,120,0.8)' : 'none', transition: 'all .6s', animation: on ? 'glow 3s ease-in-out infinite' : 'none' })}"></span>`
+      + `<span style="${S({ position: 'absolute', left: -18, bottom: -4, width: 36, height: 10, borderRadius: '50%', background: 'radial-gradient(closest-side, rgba(255,210,120,0.55), transparent)', opacity: on ? 1 : 0, transition: 'opacity .6s' })}"></span></span>`).join('')
+    + `</div>`;
+
   /* Designets scener → ki_rom-scener (button.<rom>_lys_<id>) og nivå for reserve-dimming */
   const SC = [['max', 'Maks', 'light_mode', 100, 'maks'], ['kveld', 'Kveld', 'weekend', 45, 'komfort'], ['dim', 'Dempet', 'brightness_4', 20, 'mindre'], ['natt', 'Natt', 'bedtime', 5, 'natt'], ['av', 'Alt av', 'dark_mode', 0, 'av']];
   /* Kjente KI Utelys-innstillinger med designets tekster */
@@ -9822,6 +9547,8 @@ a:hover{color:oklch(0.86 0.12 95)}`;
     body() {
       const s = this.state, c = this.config, h = this.hass;
       const tab = s.tab || c.fane || 'out';
+      const tabDef = (k, l) => ({ k, label: l, style: { height: 38, padding: '0 14px', borderRadius: 19, fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', background: tab === k ? PINK : 'transparent', color: tab === k ? '#2a1720' : '#c9c7c2', transition: 'background .2s' } });
+      const tabs = [tabDef('out', 'Utelys'), tabDef('f1', 'Første etg'), tabDef('f2', 'Andre etg'), tabDef('on', 'Lys på')];
       const fl = this._fl = this._floors();
 
       let inner = '';
@@ -9836,7 +9563,11 @@ a:hover{color:oklch(0.86 0.12 95)}`;
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
   </header>
 
-  ${KD.segHTML('lysfane', [['out', 'Utelys', 'deck'], ['f1', '1. etg'], ['f2', '2. etg'], ['on', 'Lys på']], tab, 'tab', { pink: true })}
+  <div style="display:flex;justify-content:center">
+    <div style="display:flex;gap:2px;padding:4px;border-radius:22px;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.12)">
+      ${tabs.map(t => `<button data-on-click="tab" data-arg="${t.k}" style="${S(t.style)}">${E(t.label)}</button>`).join('')}
+    </div>
+  </div>
 ${inner}
 </div>`;
     }
@@ -9848,47 +9579,34 @@ ${inner}
       const nPaa = this._pick('neste_paa', /^sensor\.(ki_)?utelys.*neste_(paa|på|on)$/), nAv = this._pick('neste_av', /^sensor\.(ki_)?utelys.*neste_(av|off)$/);
       const wPaa = H.when(nPaa && this.v(nPaa)), wAv = H.when(nAv && this.v(nAv));
       const sol = this._has(c.sol) ? c.sol : 'sun.sun';
-      const rise = H.when(this.at(sol, 'next_rising')), set = H.when(this.at(sol, 'next_setting')), dusk = H.when(this.at(sol, 'next_dusk')), dawn = H.when(this.at(sol, 'next_dawn'));
-      const kl = w => w ? w.kl : '–';
-      const dag = w => w && w.dag ? ' ' + w.dag : '';
-      const mod = w => w && w.d ? w.d.getHours() * 60 + w.d.getMinutes() : null;
-      const now = new Date(), nowM = now.getHours() * 60 + now.getMinutes();
-      const rM = mod(rise), sM = mod(set);
-      const day = this._has(sol) ? this.v(sol) === 'above_horizon' : (rM != null && sM != null ? nowM >= rM && nowM < sM : false);
-      // sola/månen langs buen: andel av dagen (sol opp → ned) eller natta (ned → opp)
-      let f = 0.5;
-      if (rM != null && sM != null) {
-        const dl = ((sM - rM) + 1440) % 1440 || 720, nl = 1440 - dl;
-        f = day ? (((nowM - rM) + 1440) % 1440) / dl : (((nowM - sM) + 1440) % 1440) / nl;
-        f = KD.clamp(f, 0.02, 0.98);
-      }
+      const rise = H.when(this.at(sol, 'next_rising')), set = H.when(this.at(sol, 'next_setting')), dusk = H.when(this.at(sol, 'next_dusk'));
+      const outPill = { height: 28, padding: '0 10px', borderRadius: 14, display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, background: out ? 'rgba(243,201,107,0.22)' : 'rgba(255,255,255,0.1)', color: out ? '#f3d58f' : '#c3c8d6' };
       const nw = out ? wAv : wPaa;
-      const nextLabel = (out ? 'Slukkes' : 'Tennes') + dag(nw);
+      const nextLabel = (out ? 'slukkes' : 'tennes') + (nw && nw.dag ? ' ' + nw.dag : '');
+      const nextTime = nw ? nw.kl : '–';
+      const kl = w => w ? w.kl : '–';
+      const times = [['emoji_objects', 'Tennes' + (wPaa && wPaa.dag ? ' ' + wPaa.dag : ''), kl(wPaa)], ['light_off', 'Slukkes' + (wAv && wAv.dag ? ' ' + wAv.dag : ''), kl(wAv)]];
       const sw = on => ({ track: { position: 'relative', width: 46, height: 28, borderRadius: 14, flex: 'none', background: on ? G : '#3a3a3d', transition: 'background .2s' }, knob: { position: 'absolute', top: 3, left: on ? 21 : 3, width: 22, height: 22, borderRadius: 11, background: '#1c1c1f', transition: 'left .2s' } });
-      const autoId = this._pick('auto', /^switch\.(ki_)?utelys.*_(auto|automatikk)$/);
-      const autoOn = autoId ? this.isOn(autoId) : true;
+      const autoPill = { display: 'flex', alignItems: 'center', gap: 14, height: 64, padding: '0 16px 0 5px', borderRadius: 32, background: '#1c1c1f', width: '100%', boxSizing: 'border-box' };
+      const autoIcon = { width: 54, height: 54, borderRadius: 27, flex: 'none', display: 'grid', placeItems: 'center', background: '#262629' };
       const autos = [
-        [autoId, 'smart_toy', 'Automatikk', autoOn ? 'Styrer utelyset etter sola og lysnivå' : 'Av – utelyset styres manuelt', true],
-        [this._pick('kveld', /^switch\.(ki_)?utelys.*_kveld$/), 'wb_twilight', 'Kveld', 'Tenn i skumringen', false],
-        [this._pick('morgen', /^switch\.(ki_)?utelys.*_morgen$/), 'wb_sunny', 'Morgen', 'Tenn før det lysner', false],
+        [this._pick('auto', /^switch\.(ki_)?utelys.*_(auto|automatikk)$/), 'smart_toy', 'Automatikk', out ? 'Utelyset er på' : 'Utelyset er av'],
+        [this._pick('kveld', /^switch\.(ki_)?utelys.*_kveld$/), 'wb_twilight', 'Kveld', 'Tenn i skumringen'],
+        [this._pick('morgen', /^switch\.(ki_)?utelys.*_morgen$/), 'sunny', 'Morgen', 'Tenn før det lysner'],
       ].filter(x => x[0]);
       const lamps = [].concat(c.utelamper || []).filter(id => this._has(id));
       const lampList = lamps.length ? lamps : ids.filter(id => id !== c.utelys);
-      const lampsOn = lampList.filter(id => H.shown(this, id).v > 0).length;
       // dagslengde
       let dagl = '–';
       if (rise && set && rise.d && set.d) {
         let ms = set.d - rise.d; if (ms < 0) ms += 86400e3; if (ms > 86400e3) ms -= 86400e3;
         const m = Math.round(ms / 60000); dagl = `${Math.floor(m / 60)} t ${m % 60} min`;
       }
-      // hvor lenge utelyset står på (tennes → slukkes)
-      let onDur = null;
-      if (wPaa && wAv && wPaa.d && wAv.d) { let m = Math.round((wAv.d - wPaa.d) / 60000); if (m < 0) m += 1440; if (m > 1440) m -= 1440; onDur = `${Math.floor(m / 60)} t ${m % 60} min`; }
       const st = this.state.fold || {};
       const foldDef = (k, icon, title, meta, rows) => {
         const open = !!st[k];
         return { k, icon, title, meta, open, chev: { fontSize: 22, color: '#a9a7a2', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .25s' },
-          rows: rows.map(([k2, v, id, ic], i) => ({ k: k2, v, id, ic, row: { display: 'flex', alignItems: 'center', gap: 12, minHeight: 44, borderTop: i ? '1px solid rgba(255,255,255,0.05)' : 'none', cursor: id ? 'pointer' : 'default' } })) };
+          rows: rows.map(([k2, v, id], i) => ({ k: k2, v, id, row: { display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderTop: i ? '1px solid rgba(255,255,255,0.05)' : 'none' } })) };
       };
       // innstillinger: config eller alle KI Utelys-tall/tider
       let instIds = [].concat(c.innstillinger || []).filter(id => this._has(id));
@@ -9903,113 +9621,47 @@ ${inner}
         if (stt && !isNaN(parseFloat(v)) && /^(number|input_number)\./.test(id)) { const n = parseFloat(v); v = (n < 0 ? '−' : '') + KD.nf(Math.abs(n), Number.isInteger(n) ? 0 : 1) + (this.unit(id) ? ' ' + this.unit(id) : ''); }
         else if (stt && /^time\./.test(id)) v = String(v).slice(0, 5);
         else if (!stt || KD.BAD.has(v)) v = '–';
-        const ic = /terskel_(paa|på|on)$/.test(id) ? 'brightness_low' : /terskel_(av|off)$/.test(id) ? 'brightness_high' : /morke|mørke/.test(id) ? 'dark_mode' : /^time|input_datetime/.test(id) ? 'schedule' : 'tune';
-        return [label, v, id, ic];
+        return [label, v, id];
       });
-      const elev = parseFloat(this.at(sol, 'elevation'));
-      const folds = [foldDef('sol', 'light_mode', 'Sola', `↑ ${kl(rise)}  ↓ ${kl(set)}`, [['Daggry', kl(dawn), null, 'wb_twilight'], ['Soloppgang', kl(rise), null, 'wb_sunny'], ['Solnedgang', kl(set), null, 'wb_twilight'], ['Borgerlig skumring', kl(dusk), null, 'nights_stay'], ['Dagslengde', dagl, null, 'hourglass_empty'], ...(isNaN(elev) ? [] : [['Solhøyde nå', `${KD.nf(elev, 1)}°`, null, 'explore']])])];
+      const folds = [foldDef('sol', 'light_mode', 'Sola', `↑ ${kl(rise)} ↓ ${kl(set)}`, [['Soloppgang', kl(rise)], ['Solnedgang', kl(set)], ['Borgerlig skumring', kl(dusk)], ['Dagslengde', dagl]])];
       if (instRows.length) folds.push(foldDef('inst', 'tune', 'Innstillinger', 'terskler og mørketid', instRows));
 
-      /* ---- tidslinje kl. 12 → 12 (natta i midten) ---- */
-      const P = m => ((((m - 720) % 1440) + 1440) % 1440) / 1440 * 100;
-      const seg = (a1, b1, css) => { if (a1 == null || b1 == null) return ''; const x = P(a1), y = P(b1); const parts = y >= x ? [[x, y]] : [[x, 100], [0, y]]; return parts.map(([l, r]) => `<span style="position:absolute;top:0;bottom:0;left:${l.toFixed(2)}%;width:${Math.max(0, r - l).toFixed(2)}%;${css}"></span>`).join(''); };
-      const dM = mod(dawn), kM = mod(dusk), onM = mod(wPaa), offM = mod(wAv);
-      const tl = `<div style="position:relative;height:10px;border-radius:5px;overflow:hidden;background:linear-gradient(90deg,oklch(0.82 0.12 75 / 0.55),oklch(0.86 0.12 95 / 0.35))">
-          ${seg(sM, rM, 'background:#262d58')}
-          ${seg(sM, kM, `background:linear-gradient(90deg,${a('oklch(0.82 0.12 75)', 0.45)},#262d58)`)}
-          ${seg(dM, rM, `background:linear-gradient(90deg,#262d58,${a('oklch(0.82 0.12 75)', 0.45)})`)}
-        </div>
-        <div style="position:relative;height:4px;margin-top:4px;border-radius:2px;background:rgba(255,255,255,0.06);overflow:hidden">${seg(onM, offM, `background:${Y};box-shadow:0 0 8px ${Y}`)}</div>
-        <span style="position:absolute;top:-5px;height:30px;left:calc(${P(nowM).toFixed(2)}% - 1px);width:2px;border-radius:1px;background:#fff;box-shadow:0 0 6px rgba(255,255,255,0.7)"></span>
-        <span style="position:absolute;top:-22px;left:${P(nowM).toFixed(2)}%;transform:translateX(-50%);font-size:10px;font-weight:600;color:#fff;letter-spacing:.04em">NÅ</span>`;
-      const ticks = ['12', '18', '00', '06', '12'];
-
-      /* ---- himmelen med sol/måne langs buen ---- */
-      const HOR = 132, ARC = 84;
-      const bx = 50 - 42 * Math.cos(Math.PI * f), by = HOR - ARC * Math.sin(Math.PI * f);
-      const sky = day ? 'linear-gradient(180deg,#1b3a5e 0%,#2c5a80 62%,#3a6a7e 100%)' : 'linear-gradient(180deg,#0b1030 0%,#1a1f3d 70%,#232a45 100%)';
-      const orb = day
-        ? `<span style="position:absolute;left:calc(${bx.toFixed(2)}% - 13px);top:${(by - 13).toFixed(1)}px;width:26px;height:26px;border-radius:13px;background:radial-gradient(circle at 40% 40%,#fff6d6,${Y} 60%);box-shadow:0 0 22px 6px ${a(Y, 0.55)}"></span>`
-        : `<span style="position:absolute;left:calc(${bx.toFixed(2)}% - 10px);top:${(by - 10).toFixed(1)}px;width:20px;height:20px;border-radius:50%;box-shadow:inset -6px -2px 0 0 #f1ecd9;transform:rotate(-20deg);filter:drop-shadow(0 0 8px rgba(241,236,217,0.6))"></span>`;
-      const lampGlow = (x) => `<span style="position:absolute;left:${x}%;bottom:44px">
-          <span style="position:absolute;left:-1px;bottom:0;width:2px;height:16px;background:#3a4150"></span>
-          <span style="position:absolute;left:-3px;bottom:16px;width:6px;height:6px;border-radius:3px;background:${out ? '#ffe3a0' : '#3a4150'};box-shadow:${out ? '0 0 10px 3px rgba(255,210,120,0.8)' : 'none'};transition:all .6s;animation:${out ? 'glow 3s ease-in-out infinite' : 'none'}"></span>
-          <span style="position:absolute;left:-22px;bottom:-5px;width:44px;height:12px;border-radius:50%;background:radial-gradient(closest-side,rgba(255,210,120,0.55),transparent);opacity:${out ? 1 : 0};transition:opacity .6s"></span></span>`;
-      const heroScene = `<div style="position:absolute;inset:0;pointer-events:none">
-          ${day ? '' : STARS.map(([x, y], i) => `<span style="${S({ position: 'absolute', left: x + '%', top: (y * 0.8) + '%', width: i % 3 ? 2 : 3, height: i % 3 ? 2 : 3, borderRadius: 2, background: '#fff', animation: 'tw ' + (2 + i % 3) + 's ease-in-out ' + (i * 0.3) + 's infinite' })}"></span>`).join('')}
-          <svg viewBox="0 0 100 ${HOR + 4}" preserveAspectRatio="none" style="position:absolute;left:0;top:0;width:100%;height:${HOR + 4}px;overflow:visible"><path d="M 8 ${HOR} A 42 ${ARC} 0 0 1 92 ${HOR}" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="1.5" stroke-dasharray="3 5" vector-effect="non-scaling-stroke"/></svg>
-          ${orb}
-          <span style="position:absolute;left:0;right:0;top:${HOR}px;bottom:0;background:${day ? '#18261e' : '#0f1612'}"></span>
-          <span style="position:absolute;right:26px;bottom:44px;width:58px;height:30px;background:${day ? '#2a3348' : '#1e2433'}"></span>
-          <span style="position:absolute;right:20px;bottom:74px;width:0;height:0;border-left:35px solid transparent;border-right:35px solid transparent;border-bottom:20px solid ${day ? '#333d55' : '#262d3d'}"></span>
-          ${[36, 60].map(r => `<span style="position:absolute;right:${r}px;bottom:58px;width:9px;height:7px;border-radius:1px;background:${out ? '#f3c96b' : '#2d3446'};box-shadow:${out ? '0 0 8px #f3c96b' : 'none'};transition:background .6s,box-shadow .6s"></span>`).join('')}
-          ${lampGlow(72)}${lampGlow(95)}
-        </div>`;
-      const heroH = HOR + 44;
-      const pwr = { width: 52, height: 52, borderRadius: 26, flex: 'none', display: 'grid', placeItems: 'center', background: out ? Y : 'rgba(255,255,255,0.12)', color: out ? '#141416' : '#e6e4df', boxShadow: out ? `0 0 0 6px ${a(Y, 0.18)}, 0 8px 24px ${a(Y, 0.35)}` : 'inset 0 1px 0 rgba(255,255,255,0.12)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', transition: 'background .3s, box-shadow .3s' };
-      const statusTxt = out ? (lampsOn ? `På · ${lampsOn} av ${lampList.length || ids.length} lamper` : 'På') : 'Av';
-      const cardS = 'border-radius:28px;background:#1c1c1f';
-      const lbl = 'font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89';
-
       return `
-    <section data-lay="utelys-hero" data-lay-navn="Utelys og sola" style="position:relative;overflow:hidden;border-radius:28px;background:${sky};transition:background .6s">
-      <div style="position:relative;height:${heroH}px">
-        ${heroScene}
-        <div style="position:absolute;left:18px;right:14px;top:16px;display:flex;align-items:flex-start;gap:12px">
-          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
-            <span style="font-size:13px;font-weight:500;color:#dfe3ee">Utelys</span>
-            <span style="font-size:12px;color:${out ? '#f3d58f' : '#c3c8d6'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(statusTxt)}${autoId ? ` · ${autoOn ? 'auto' : 'manuell'}` : ''}</span>
-          </div>
-          <button class="kdl-a96" data-on-click="toggleOut" title="${out ? 'Slå av utelys' : 'Slå på utelys'}" style="${S(pwr)}"><span class="ms" style="font-size:26px;font-variation-settings:'FILL' 1">${out ? 'light' : 'power_settings_new'}</span></button>
-        </div>
-        <div style="position:absolute;left:18px;bottom:12px;display:flex;flex-direction:column;gap:0;text-shadow:0 1px 8px rgba(0,0,0,0.4)">
-          <span style="font-size:12px;color:#c3c8d6">${E(nextLabel)}</span>
-          <span style="font-size:34px;font-weight:300;letter-spacing:-0.03em;line-height:1.05;font-variant-numeric:tabular-nums">${E(nw ? nw.kl : '–')}</span>
-        </div>
+    <section style="position:relative;overflow:hidden;height:176px;border-radius:28px;background:linear-gradient(180deg,#0e1330 0%,#1a1f3d 70%,#131a1a 100%)">
+      ${scene(out)}
+      <div style="position:absolute;left:18px;top:18px;display:flex;flex-direction:column;gap:8px;align-items:flex-start">
+        <span style="font-size:13px;font-weight:500;color:#dfe3ee">Utelys</span>
+        <button data-on-click="toggleOut" style="${S(outPill)}"><span class="ms" style="font-size:15px;font-variation-settings:'FILL' 1">${out ? 'wb_twilight' : 'dark_mode'}</span><span>${out ? 'På' : 'Av'}</span></button>
       </div>
-      <div style="position:relative;padding:26px 18px 14px;background:rgba(10,12,20,0.55);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
-        <div style="position:relative">${tl}</div>
-        <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:10px;color:#8e8d89;font-variant-numeric:tabular-nums">${ticks.map(t => `<span style="width:0;display:flex;justify-content:center">${t}</span>`).join('')}</div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:12px;font-size:11px;color:#a9a7a2">
-          <span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:3px;background:${a('oklch(0.82 0.12 75)', 0.6)}"></span>Dagslys ${E(kl(rise))}–${E(kl(set))}</span>
-          <span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:4px;border-radius:2px;background:${Y};box-shadow:0 0 6px ${Y}"></span>Utelys ${E(kl(wPaa))}–${E(kl(wAv))}</span>
-        </div>
+      <div style="position:absolute;left:18px;bottom:16px;display:flex;flex-direction:column;gap:6px">
+        <span style="display:flex;align-items:baseline;gap:8px"><span style="font-size:13px;color:#c3c8d6">${E(nextLabel)}</span><span style="font-size:28px;font-weight:300;letter-spacing:-0.02em;font-variant-numeric:tabular-nums">${E(nextTime)}</span></span>
+        <span style="font-size:12px;color:#c3c8d6">Sol opp ${E(kl(rise))} · ned ${E(kl(set))}</span>
       </div>
     </section>
 
-    <section data-lay="utelys-plan" data-lay-navn="Tidsplan" style="${cardS};padding:16px 18px;display:flex;flex-direction:column;gap:12px">
-      <div style="display:flex;align-items:center;gap:8px"><span style="flex:1;${lbl}">Tidsplan</span>${onDur ? `<span style="font-size:12px;color:#a9a7a2">på i ${E(onDur)}</span>` : ''}</div>
-      <div style="display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:10px">
-        ${[[nPaa, 'emoji_objects', 'Tennes' + dag(wPaa), kl(wPaa), !out], null, [nAv, 'light_off', 'Slukkes' + dag(wAv), kl(wAv), out]].map(x => !x ? `<span class="ms" style="font-size:20px;color:#6d6c69">arrow_forward</span>`
-          : `<button data-on-click="rowMore" data-arg="${E(x[0] || '')}" style="min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:12px 14px;border-radius:20px;background:${x[4] ? a(Y, 0.12) : '#232326'};box-shadow:${x[4] ? `inset 0 0 0 1px ${a(Y, 0.35)}` : 'none'};text-align:left">
-              <span style="display:flex;align-items:center;gap:6px;min-width:0;max-width:100%;font-size:12px;color:${x[4] ? Y : '#a9a7a2'}"><span class="ms" style="font-size:16px;flex:none">${x[1]}</span><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(x[2])}</span></span>
-              <span style="font-size:28px;font-weight:300;letter-spacing:-0.03em;line-height:1;font-variant-numeric:tabular-nums">${E(x[3])}</span>
-            </button>`).join('')}
-      </div>
+    <section style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
+      ${times.map(([icon, k, v], i) => `<div data-on-click="rowMore" data-arg="${E((i ? nAv : nPaa) || '')}" style="display:flex;flex-direction:column;gap:6px;padding:12px 16px 16px 12px;border-radius:28px;background:#1c1c1f">
+          <span style="width:50px;height:50px;border-radius:25px;background:#262629;display:grid;place-items:center;margin-bottom:22px"><span class="ms" style="font-size:24px">${icon}</span></span>
+          <span style="font-size:13px;color:#c9c7c2;padding-left:4px">${E(k)}</span>
+          <span style="font-size:32px;font-weight:300;letter-spacing:-0.03em;line-height:1;padding-left:4px;font-variant-numeric:tabular-nums">${E(v)}</span>
+        </div>`).join('')}
     </section>
 
-    ${lampList.length ? `<section data-lay="utelys-lamper" data-lay-navn="Utelamper" style="display:flex;flex-direction:column;gap:8px">
-      <div style="display:flex;align-items:center;gap:10px;padding:4px 6px 0">
-        <span class="ms" style="font-size:18px;color:#a9a7a2">deck</span>
-        <span style="flex:1;font-size:15px;font-weight:500">Utelamper</span>
-        <span style="font-size:12px;color:#8e8d89;white-space:nowrap">${lampsOn ? `${lampsOn} på` : 'alle av'}</span>
-        <button data-on-click="toggleOut" style="${S({ height: 30, padding: '0 12px', borderRadius: 15, fontSize: 12, fontWeight: 600, background: lampsOn ? '#262629' : a(Y, 0.18), color: lampsOn ? '#c9c7c2' : Y })}">${lampsOn ? 'Av' : 'På'}</button>
-      </div>
-      <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
-        ${lampList.map(id => H.pill(this, id, H.strip(this.fname(id), ['ute']), false)).join('')}
-      </div>
-    </section>` : ''}
-
-    ${autos.length ? `<section data-lay="utelys-auto" data-lay-navn="Automatikk" style="${cardS};padding:6px 6px 6px;display:flex;flex-direction:column">
-      <div style="padding:10px 12px 6px;${lbl}">Automatikk</div>
-      ${autos.map(([id, icon, k, sub, main], i) => { const on = this.isOn(id), w = sw(on), dim = !main && !autoOn; return `<button data-key="auto-${E(id)}" data-on-click="autoTog" data-arg="${E(id)}" data-hold="rowMore" style="display:flex;align-items:center;gap:12px;min-height:64px;padding:8px 12px 8px 8px;border-radius:22px;text-align:left;opacity:${dim ? 0.5 : 1};${i ? 'border-top:1px solid rgba(255,255,255,0.05);border-radius:0 0 22px 22px;' : ''}${main && autos.length > 1 ? 'margin-bottom:2px;' : ''}">
-          <span style="width:44px;height:44px;border-radius:22px;flex:none;display:grid;place-items:center;background:${on ? a(main ? G : Y, 0.16) : '#262629'};color:${on ? (main ? G : Y) : '#a9a7a2'};transition:background .25s,color .25s"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' ${on ? 1 : 0}">${icon}</span></span>
-          <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px"><span style="font-size:15px;font-weight:500">${E(k)}</span><span style="font-size:12px;color:#a9a7a2">${E(sub)}</span></span>
+    ${autos.length ? `<section style="display:flex;flex-direction:column;gap:8px">
+      ${autos.map(([id, icon, k, sub]) => { const w = sw(this.isOn(id)); return `<button data-on-click="autoTog" data-arg="${E(id)}" style="${S(autoPill)}">
+          <span style="${S(autoIcon)}"><span class="ms" style="font-size:24px">${icon}</span></span>
+          <span style="flex:1;min-width:0;display:flex;flex-direction:column;text-align:left"><span style="font-size:15px;font-weight:500">${E(k)}</span><span style="font-size:12px;color:#a9a7a2">${E(sub)}</span></span>
           <span style="${S(w.track)}"><span style="${S(w.knob)}"></span></span>
         </button>`; }).join('')}
     </section>` : ''}
 
-    ${folds.map(d => `<section data-lay="utelys-${d.k}" style="display:flex;flex-direction:column;${cardS};overflow:hidden">
+    ${lampList.length ? `<section style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
+      ${lampList.map(id => { const lit = this.v(id) === 'on'; const name = H.strip(this.fname(id), ['ute']);
+        const st2 = { height: 72, padding: '0 20px', borderRadius: 36, display: 'flex', alignItems: 'center', gap: 14, background: lit ? Y : '#1c1c1f', color: lit ? '#1a1a1c' : '#c9c7c2', boxShadow: lit ? '0 8px 24px oklch(0.86 0.12 95 / 0.25)' : 'none', transition: 'background .3s, box-shadow .3s' };
+        return `<button class="kdl-a97" data-on-click="lampTog" data-arg="${E(id)}" data-hold="rowMore" style="${S(st2)}"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">${/veranda/i.test(name + id) ? 'light' : 'lightbulb'}</span><span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(name)}</span></button>`; }).join('')}
+    </section>` : ''}
+
+    ${folds.map(d => `<section style="display:flex;flex-direction:column;border-radius:28px;background:#1c1c1f;overflow:hidden">
         <button data-on-click="fold" data-arg="${d.k}" style="display:flex;align-items:center;gap:12px;height:58px;padding:0 18px;text-align:left">
           <span class="ms" style="font-size:22px">${d.icon}</span>
           <span style="flex:1;font-size:15px;font-weight:500">${E(d.title)}</span>
@@ -10017,7 +9669,7 @@ ${inner}
           <span class="ms" style="${S(d.chev)}">expand_more</span>
         </button>
         ${d.open ? `<div style="display:flex;flex-direction:column;padding:0 18px 10px">
-            ${d.rows.map(r => `<div ${r.id ? `data-on-click="rowMore" data-arg="${E(r.id)}" ` : ''}style="${S(r.row)}">${r.ic ? `<span class="ms" style="font-size:18px;color:#8e8d89">${r.ic}</span>` : ''}<span style="flex:1;min-width:0;font-size:13px">${E(r.k)}</span><span style="font-size:12px;font-weight:600;padding:6px 11px;border-radius:12px;background:#262629;font-variant-numeric:tabular-nums;white-space:nowrap">${E(r.v)}</span></div>`).join('')}
+            ${d.rows.map(r => `<div ${r.id ? `data-on-click="rowMore" data-arg="${E(r.id)}" ` : ''}style="${S(r.row)}"><span style="flex:1;font-size:13px">${E(r.k)}</span><span style="font-size:12px;font-weight:600;padding:6px 11px;border-radius:12px;background:#262629;font-variant-numeric:tabular-nums">${E(r.v)}</span></div>`).join('')}
           </div>` : ''}
       </section>`).join('')}`;
     }
@@ -10487,25 +10139,13 @@ try {
         subStyle: { fontSize: 12, color: actv ? '#e6e4df' : '#8e8d89', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } });
       const presOn = sensors.some(z => z.pres && z.hot);
       const tStrom = () => tile('strom', 'bolt', 'Strøm', `${watt} W nå`, C.amber, watt > 0, 'moreInfo', o.effekt[0] || '');
-      const presS = sensors.find(z => z.pres);
-      const TF = { // alle mulige fliser (nøkkel → bygger)
-        lys: () => tile('lys', 'lightbulb', 'Lys', on ? `${on} av ${o.lys.length} på` : 'Alle av', C.yellow, on > 0, 'lightsAll', ''),
-        gardin: cover ? () => tile('gardin', 'curtains', 'Gardiner', cv ? `${cv} % åpen` : 'Lukket', C.pink, cv > 0, 'curtain', cover, cv) : null,
-        media: m0 ? () => tile('media', m0.tv ? 'tv' : 'speaker', 'Media', m0.playing ? 'Spiller' : 'Pauset', C.green, m0.playing, 'mediaTog', m0.id) : null,
-        tilstede: presS || !m0 ? () => tile('tilstede', 'sensor_occupied', 'Tilstede', presOn ? 'Noen her' : 'Tomt', C.blue, act > 0, 'moreInfo', (presS || {}).id || '') : null,
-        strom: tStrom,
-        fukt: () => tile('fukt', 'water_drop', 'Fukt', `${hum != null ? nf(hum, 0) : '–'} %`, C.blue, false, 'moreInfo', L.humId || ''),
-        klima: k ? () => tile('klima', 'heat', 'Klima', `${Number.isInteger(k.set) ? k.set : nf(k.set, 1)}° · ${k.heating ? 'varmer' : 'holder'}`, C.red, !!k.heating, 'moreInfo', k.power || k.id) : null,
-      };
-      const U = KD.userRoom(this, r.id), UF = U.fliser || {}, US = U.scener || {};
-      const tDef = ['lys', cover ? 'gardin' : 'strom', m0 ? 'media' : 'tilstede', cover ? 'strom' : 'fukt'];
-      const tAll = [...tDef, ...Object.keys(TF).filter(x => !tDef.includes(x))].filter(x => TF[x]);
-      const ordered = (all, rek) => [...(rek || []).filter(x => all.includes(x)), ...all.filter(x => !(rek || []).includes(x))].filter((x, i, arr) => arr.indexOf(x) === i);
-      const tOrder = this._tileOrder = ordered(tAll, UF.rekkefolge);
-      const tHid = x => (UF.skjul || []).includes(x) || (!tDef.includes(x) && !(UF.vis || []).includes(x));
-      this._tileHid = tHid;
-      const tilesAll = tOrder.map(x => { const t = TF[x](); t.def = t.label; if (UF.navn && UF.navn[x]) t.label = UF.navn[x]; t.hid = tHid(x); return t; });
-      const tiles = s.edit ? tilesAll : tilesAll.filter(t => !t.hid);
+      const tiles = [
+        tile('lys', 'lightbulb', 'Lys', on ? `${on} av ${o.lys.length} på` : 'Alle av', C.yellow, on > 0, 'lightsAll', ''),
+        cover ? tile('gardin', 'curtains', 'Gardiner', cv ? `${cv} % åpen` : 'Lukket', C.pink, cv > 0, 'curtain', cover, cv) : tStrom(),
+        m0 ? tile('media', m0.tv ? 'tv' : 'speaker', 'Media', m0.playing ? 'Spiller' : 'Pauset', C.green, m0.playing, 'mediaTog', m0.id)
+          : tile('tilstede', 'sensor_occupied', 'Tilstede', presOn ? 'Noen her' : 'Tomt', C.blue, act > 0, 'moreInfo', (sensors.find(z => z.pres) || {}).id || ''),
+        cover ? tStrom() : tile('fukt', 'water_drop', 'Fukt', `${hum != null ? nf(hum, 0) : '–'} %`, C.blue, false, 'moreInfo', L.humId || ''),
+      ];
 
       // scener
       const lo = H.lysOv(this, r.id);
@@ -10514,12 +10154,7 @@ try {
       else for (const id of Object.keys(KI_SC)) { const b = `button.${r.id}_lys_${id}`; if (this._has(b)) scenes.push({ key: b, ent: b, label: KI_SC[id][0], icon: KI_SC[id][1] }); }
       for (const id of [...o.skript, ...o.scener]) scenes.push({ key: id, ent: id, label: H.strip(this.fname(id), words), icon: id.startsWith('script.') ? 'play_circle' : 'palette' });
       if (!scenes.length && o.lys.length) scenes = SCENES.map(([key, label, icon]) => ({ key: 'fb:' + key, fb: key, label, icon }));
-      for (const id of [].concat(US.ekstra || [])) if (this._has(id) && !scenes.some(x => x.key === id)) scenes.push({ key: id, ent: id, label: H.strip(this.fname(id), words), icon: id.startsWith('script.') ? 'play_circle' : 'palette', extra: true });
-      const sHid = x => (US.skjul || []).includes(x);
-      const sOrder = this._sceneOrder = ordered(scenes.map(x => x.key), US.rekkefolge);
-      scenes = sOrder.map(key => { const x = scenes.find(y => y.key === key); return { ...x, def: x.label, label: (US.navn && US.navn[key]) || x.label, hid: sHid(key) }; });
       this._scenes = scenes;
-      const scShown = s.edit ? scenes : scenes.filter(x => !x.hid);
 
       const humBar = { display: 'block', width: `${hum != null ? KD.clamp(hum, 0, 100) : 0}%`, height: '100%', borderRadius: 3, background: hum > 60 ? C.amber : C.blue };
       const headIcon = { width: 40, height: 40, borderRadius: 20, flex: 'none', display: 'grid', placeItems: 'center', background: col, color: '#141416' };
@@ -10550,28 +10185,24 @@ try {
   </section>
 
   <section style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
-    ${tiles.map(t => `<button class="kdr-a97" data-key="${t.key}" data-on-click="${s.edit ? 'tileTog' : t.go}" data-arg="${E(s.edit ? t.key : t.arg)}" ${s.edit ? '' : 'data-hold="moreInfo" '}style="${S({ ...t.style, ...(s.edit ? { opacity: t.hid ? 0.38 : 1, boxShadow: t.hid ? 'inset 0 0 0 1px rgba(255,255,255,0.12)' : 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.55)' } : {}) })}">
+    ${tiles.map(t => `<button class="kdr-a97" data-key="${t.key}" data-on-click="${t.go}" data-arg="${E(t.arg)}" data-hold="moreInfo" style="${S(t.style)}">
         <span style="${S(t.fill)}"></span>
         <span style="${S(t.iconWrap)}"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">${t.icon}</span></span>
         <span style="position:relative;display:flex;flex-direction:column;gap:1px;min-width:0;text-align:left">
           <span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(t.label)}</span>
           <span style="${S(t.subStyle)}">${E(t.sub)}</span>
         </span>
-        ${s.edit ? `<span class="ms" style="position:relative;margin-left:auto;font-size:18px;color:${t.hid ? '#f2f1ee' : 'oklch(0.82 0.1 350)'}">${t.hid ? 'visibility_off' : 'visibility'}</span>` : ''}
       </button>`).join('')}
   </section>
-  ${s.edit ? this._edPanel('fliser', 'Fliser', 'grid_view', tilesAll.map(t => ({ key: t.key, icon: t.icon, label: t.label, def: t.def, hid: t.hid })), UF.navn) : ''}
 
-  ${scShown.length ? `<section data-hscroll="1" style="display:flex;gap:14px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:2px var(--kd-kant,10px)">
-    ${scShown.map(x => { const act = s.scene === x.key && !s.edit;
+  ${scenes.length ? `<section data-hscroll="1" style="display:flex;gap:14px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:2px var(--kd-kant,10px)">
+    ${scenes.map(x => { const act = s.scene === x.key;
       const bubble = { width: 58, height: 58, borderRadius: 29, display: 'grid', placeItems: 'center', background: act ? PINK : '#1c1c1f', color: act ? '#2a1720' : '#c9c7c2', boxShadow: act ? '0 6px 18px rgba(240,140,190,0.3)' : 'inset 0 0 0 1px rgba(255,255,255,0.05)', transform: act ? 'scale(1.06)' : 'scale(1)', transition: 'transform .35s cubic-bezier(.34,1.8,.64,1), background .25s' };
-      if (s.edit) Object.assign(bubble, { opacity: x.hid ? 0.38 : 1, boxShadow: x.hid ? 'inset 0 0 0 1px rgba(255,255,255,0.12)' : 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.55)' });
-      return `<button data-key="${E(x.key)}" data-on-click="${s.edit ? 'sceneHide' : 'sceneGo'}" data-arg="${E(x.key)}" style="flex:none;display:flex;flex-direction:column;align-items:center;gap:6px;width:62px">
+      return `<button data-key="${E(x.key)}" data-on-click="sceneGo" data-arg="${E(x.key)}" style="flex:none;display:flex;flex-direction:column;align-items:center;gap:6px;width:62px">
         <span style="${S(bubble)}"><span class="ms" style="${S({ fontSize: 24, fontVariationSettings: `'FILL' ${act ? 1 : 0}` })}">${E(x.icon)}</span></span>
-        <span style="${S({ fontSize: 11, fontWeight: 500, color: act ? '#f2f1ee' : '#8e8d89', whiteSpace: 'nowrap', maxWidth: 66, overflow: 'hidden', textOverflow: 'ellipsis', opacity: s.edit && x.hid ? 0.5 : 1 })}">${E(x.label)}</span>
+        <span style="${S({ fontSize: 11, fontWeight: 500, color: act ? '#f2f1ee' : '#8e8d89', whiteSpace: 'nowrap' })}">${E(x.label)}</span>
       </button>`; }).join('')}
   </section>` : ''}
-  ${s.edit ? this._edPanel('scener', 'Scener', 'auto_awesome', scenes.map(x => ({ key: x.key, icon: x.icon, label: x.label, def: x.def, hid: x.hid, extra: x.extra })), US.navn) : ''}
 
   ${lightRows.length ? `<section style="display:flex;flex-direction:column;gap:8px">
     <div style="display:flex;justify-content:space-between;padding:0 6px"><span style="font-size:15px;font-weight:500">Lys</span><span style="font-size:12px;color:#8e8d89">${on} på · dra for å dimme</span></div>

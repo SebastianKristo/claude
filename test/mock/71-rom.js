@@ -37,6 +37,7 @@
     } },
     'sensor.stue_meter_pro_temperature': { state: '22.8', attributes: { friendly_name: 'Stue Meter Pro Temperatur', unit_of_measurement: '°C', device_class: 'temperature' } },
     'sensor.stue_meter_pro_humidity': { state: '50', attributes: { friendly_name: 'Stue Meter Pro Fuktighet', unit_of_measurement: '%', device_class: 'humidity' } },
+    'scene.stue_filmkveld': { state: 'unknown', attributes: { friendly_name: 'Stue filmkveld', icon: 'mdi:movie' } }, 'scene.god_natt': { state: 'unknown', attributes: { friendly_name: 'God natt' } },
     'switch.stikkontakt_spisebord': { state: 'on', attributes: { friendly_name: 'Spisebord' } },
     'switch.stikkontakt_piano': { state: 'on', attributes: { friendly_name: 'Piano' } },
     'switch.stue_server_rack': { state: 'on', attributes: { friendly_name: 'Stue Server rack' } },
