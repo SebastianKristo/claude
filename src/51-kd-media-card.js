@@ -6,6 +6,10 @@
  *   hoyttalere: [{ entity: media_player.squeezebox_radio, navn: Sonos }, …]
  *   apper: [{ navn: Netflix, kilde: Netflix, ikon: movie, farge: 'oklch(…)' }, …]   # select_source på TV-en
  *   radio: [{ entity: button.squeezebox_radio_preset_1, navn: NRK P1 }, …]           # finnes også automatisk
+ *   volum: media_player.rn602_stue       # volumknappene: entitet, 'fjernkontroll' eller 'skript' (standard: automatisk)
+ *   volum_opp: script.volum_opp          # med volum: skript
+ *   volum_ned: script.volum_ned
+ * TV, volum, høyttalere og synlige apper kan også velges per bruker i «Tilpass oppsett» (brukerdata 'kd_media').
  * Albumbilder vises fra entity_picture. Kildene til musikkspilleren (source_list) vises som valg.
  */
 (() => {
@@ -46,10 +50,30 @@
 
     /* ----- data ----- */
     on(id) { return !!id && this.ok(id) && !OFF.includes(this.v(id)); }
+    /** per bruker («Tilpass oppsett»): { tv, hoyttalere: [id…], skjul_apper: [navn…], volum, volum_opp, volum_ned } */
+    U() { return KD.ud(this, 'kd_media') || {}; }
+    uSave(patch) { const v = { ...this.U(), ...patch }; for (const k of Object.keys(v)) if (v[k] == null) delete v[k]; this.haptic('selection'); KD.udSave(this, 'kd_media', v); }
+    tvId() { const u = this.U().tv; return u && this.st(u) ? u : this.config.tv; }
+    cfgSpeakers() { return (Array.isArray(this.config.hoyttalere) ? this.config.hoyttalere : []).map(x => typeof x === 'string' ? { entity: x } : x); }
     speakers() {
-      const list = (Array.isArray(this.config.hoyttalere) ? this.config.hoyttalere : []).map(x => typeof x === 'string' ? { entity: x } : x);
+      const cfg = this.cfgSpeakers(), u = this.U().hoyttalere;
+      const list = Array.isArray(u) ? u.map(id => cfg.find(x => x.entity === id) || { entity: id }) : cfg;
       return list.filter(x => this.st(x.entity)).map(x => ({ ...x, navn: x.navn || this.fname(x.entity) }));
     }
+    /** apper med indeks i config.apper (indeksen brukes av app()), uten de brukeren har skjult */
+    appList() { const hid = new Set(this.U().skjul_apper || []); return (this.config.apper || []).map((x, i) => ({ ...x, i })).filter(x => !hid.has(x.navn)); }
+    /** volumknappene: 'auto' | 'fjernkontroll' | 'skript' | media_player.* */
+    volMode() {
+      const u = this.U(), c = this.config, v = u.volum || c.volum;
+      if (v === 'fjernkontroll' || v === 'skript' || v === 'auto') return v;
+      if (v && /^media_player\./.test(v) && this.st(v)) return v;
+      if (!v && (c.volum_opp || c.volum_ned)) return 'skript';
+      return 'auto';
+    }
+    volScripts() { const u = this.U(), c = this.config; return { opp: u.volum_opp || c.volum_opp || null, ned: u.volum_ned || c.volum_ned || null }; }
+    /** entiteten som volumlinjen viser */
+    volTarget() { const m = this.volMode(); return /^media_player\./.test(m) ? m : this.tvId(); }
+    hasVol(id) { return (Number(this.at(id, 'supported_features', 0)) & (4 | 8 | 1024)) !== 0 || this.at(id, 'volume_level') != null; }
     /** musikkspilleren: den første som spiller, ellers config.musikk */
     player() {
       const sp = this.speakers();
@@ -80,10 +104,10 @@
     flash(k) { this.setState({ press: k }); clearTimeout(this._pt); this._pt = setTimeout(() => this.setState({ press: null }), 160); }
     /** fjernkontrollen: config → remote.<tv> → en remote med samme navn som TV-en */
     remoteId() {
-      const c = this.config, tv = String(c.tv || '').split('.')[1] || '';
-      if (c.fjernkontroll && this.st(c.fjernkontroll)) return c.fjernkontroll;
+      const c = this.config, tvE = this.tvId(), tv = String(tvE || '').split('.')[1] || '';
+      if (c.fjernkontroll && this.st(c.fjernkontroll) && tvE === c.tv) return c.fjernkontroll;
       if (tv && this.st('remote.' + tv)) return 'remote.' + tv;
-      const nm = low(this.fname(c.tv));
+      const nm = low(this.fname(tvE));
       return this.find(/^remote\./).find(id => nm && low(this.fname(id)) === nm) || this.find(/^remote\./).find(id => tv && id.includes(tv.split('_')[0])) || null;
     }
     send(cmd) {
@@ -124,32 +148,48 @@
       pad.addEventListener('pointercancel', end);
     }
     pad(e, k) { this.flash(k); this.send(k === 'ok' ? 'select' : k); }
-    powerTv() { const id = this.config.tv; this.call('media_player', this.on(id) ? 'turn_off' : 'turn_on', { entity_id: id }); }
+    powerTv() { const id = this.tvId(); this.call('media_player', this.on(id) ? 'turn_off' : 'turn_on', { entity_id: id }); }
     key(e, k) {
       if (k === 'power') return this.powerTv();
       if (k === 'back') { this.flash('back'); return this.send('menu'); }
       if (k === 'home') return this.send('home');
       if (k === 'mic') return this.send('siri');
-      if (k === 'playpause') return this.call('media_player', 'media_play_pause', { entity_id: this.config.tv });
+      if (k === 'playpause') return this.call('media_player', 'media_play_pause', { entity_id: this.tvId() });
     }
     canSet(id) { return (Number(this.at(id, 'supported_features', 0)) & 4) === 4 && this.at(id, 'volume_level') != null; }
-    vol(e, dir) {
-      const id = this.config.tv;
+    volStep(id, dir) {
       if (this.canSet(id)) {
         const v = KD.clamp(Math.round(this.at(id, 'volume_level', 0) * 100) + (dir === 'up' ? 2 : -2), 0, 100);
         return this.call('media_player', 'volume_set', { entity_id: id, volume_level: v / 100 });
       }
-      if (this.config.fjernkontroll && this.st(this.config.fjernkontroll)) return this.send(dir === 'up' ? 'volume_up' : 'volume_down');
+      return this.call('media_player', dir === 'up' ? 'volume_up' : 'volume_down', { entity_id: id });
+    }
+    vol(e, dir) {
+      const m = this.volMode(), id = this.tvId();
+      if (m === 'fjernkontroll') return this.send(dir === 'up' ? 'volume_up' : 'volume_down');
+      if (m === 'skript') {
+        const sc = this.volScripts()[dir === 'up' ? 'opp' : 'ned'];
+        if (!sc) { this.toast('Velg skript for volum ' + (dir === 'up' ? 'opp' : 'ned') + ' i «Tilpass oppsett»'); return; }
+        return this.call('script', 'turn_on', { entity_id: sc });
+      }
+      if (m !== 'auto') return this.volStep(m, dir);
+      if (this.canSet(id)) return this.volStep(id, dir);
+      if (this.config.fjernkontroll && this.st(this.config.fjernkontroll) && id === this.config.tv) return this.send(dir === 'up' ? 'volume_up' : 'volume_down');
       this.call('media_player', dir === 'up' ? 'volume_up' : 'volume_down', { entity_id: id });
     }
-    mute() { const id = this.config.tv; this.call('media_player', 'volume_mute', { entity_id: id, is_volume_muted: !this.at(id, 'is_volume_muted', false) }); }
+    mute() {
+      const m = this.volMode();
+      if (m === 'fjernkontroll') return this.send('mute');
+      const id = this.volTarget();
+      this.call('media_player', 'volume_mute', { entity_id: id, is_volume_muted: !this.at(id, 'is_volume_muted', false) });
+    }
     app(e, i) {
       const x = (this.config.apper || [])[+i]; if (!x) return;
       if (x.skript) return this.call('script', 'turn_on', { entity_id: x.skript });
-      const list = this.at(this.config.tv, 'source_list', []) || [];
+      const list = this.at(this.tvId(), 'source_list', []) || [];
       const want = x.kilde || x.navn;
       const src = list.find(s => low(s) === low(want)) || want;
-      this.call('media_player', 'select_source', { entity_id: this.config.tv, source: src });
+      this.call('media_player', 'select_source', { entity_id: this.tvId(), source: src });
     }
     powerMusic() { const id = this.player(); this.call('media_player', this.v(id) === 'playing' ? 'media_pause' : this.on(id) ? 'turn_off' : 'turn_on', { entity_id: id }); }
     playPause() { this.call('media_player', 'media_play_pause', { entity_id: this.player() }); }
@@ -174,6 +214,65 @@
     source(e, src) { this.call('media_player', 'select_source', { entity_id: this.player(), source: src }); }
     openMore(e, id) { this.more(id); }
 
+    /* ----- «Tilpass oppsett»: TV, volumknapper, høyttalere og apper (per bruker, 'kd_media') ----- */
+    mdSet(e, arg) {
+      const i = String(arg).indexOf('|'), k = String(arg).slice(0, i), v = String(arg).slice(i + 1);
+      const cur = k === 'tv' ? this.tvId() : k === 'volum' ? this.volMode() : k === 'volum_opp' ? this.volScripts().opp : k === 'volum_ned' ? this.volScripts().ned : null;
+      if (k === 'tv') return this.uSave({ tv: v === this.config.tv ? null : v });
+      if (k === 'volum') return this.uSave({ volum: v });
+      if (k === 'volum_opp' || k === 'volum_ned') return this.uSave({ [k]: cur === v ? null : v });
+    }
+    mdTog(e, arg) {
+      const i = String(arg).indexOf('|'), k = String(arg).slice(0, i), v = String(arg).slice(i + 1);
+      if (k === 'app') {
+        const hid = new Set(this.U().skjul_apper || []);
+        hid.has(v) ? hid.delete(v) : hid.add(v);
+        return this.uSave({ skjul_apper: hid.size ? [...hid] : null });
+      }
+      if (k === 'spk') {
+        const cur = this.speakers().map(x => x.entity);
+        const nxt = cur.includes(v) ? cur.filter(x => x !== v) : [...cur, v];
+        const def = this.cfgSpeakers().map(x => x.entity).filter(x => this.st(x));
+        return this.uSave({ hoyttalere: nxt.join() === def.join() ? null : nxt });
+      }
+    }
+    mdReset() { this.haptic('selection'); KD.udSave(this, 'kd_media', {}); }
+    tilpassHTML() {
+      const e = KD.e, S = KD.S, P = 'oklch(0.78 0.13 350';
+      const head = (t) => `<div style="padding:10px 12px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">${e(t)}</div>`;
+      const chip = (fn, arg, label, on, icon) => `<button data-on-click="${fn}" data-arg="${e(arg)}" style="${S({ flex: 'none', height: 34, padding: icon ? '0 14px 0 10px' : '0 14px', borderRadius: 17, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, whiteSpace: 'nowrap', color: on ? '#f4f3ef' : '#c9c7c2', background: on ? `${P} / 0.2)` : 'rgba(255,255,255,0.06)', boxShadow: on ? `inset 0 0 0 1.5px ${P} / 0.7)` : 'none' })}">${icon ? `<span class="ms" style="font-size:17px">${icon}</span>` : ''}<span>${e(label)}</span></button>`;
+      const chips = (items) => `<div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 8px 8px">${items.join('')}</div>`;
+      const tog = (on) => `<span style="position:relative;flex:none;width:44px;height:26px;border-radius:13px;background:${on ? `${P})` : '#3a3a3d'};transition:background .2s"><span style="position:absolute;top:3px;left:${on ? 21 : 3}px;width:20px;height:20px;border-radius:10px;background:#f4f3ef;transition:left .2s"></span></span>`;
+      const row = (arg, label, sub, on) => `<button data-on-click="mdTog" data-arg="${e(arg)}" style="width:100%;min-height:44px;padding:0 12px;border-radius:14px;display:flex;align-items:center;gap:10px;text-align:left">
+        <span style="flex:1;min-width:0;display:flex;flex-direction:column"><span style="font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(label)}</span>${sub ? `<span style="font-size:11px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(sub)}</span>` : ''}</span>${tog(on)}</button>`;
+      const mps = this.find(/^media_player\./).filter(id => this.st(id));
+      const isTv = (id) => this.at(id, 'device_class') === 'tv';
+      const tvId = this.tvId();
+      // TV-er: device_class tv først, så resten (valgt/standard alltid med)
+      const tvs = [...mps.filter(isTv), ...mps.filter(id => !isTv(id))];
+      const vm = this.volMode(), sc = this.volScripts();
+      const volOpts = mps.filter(id => id !== tvId && this.hasVol(id));
+      const scripts = this.find(/^script\./).filter(id => this.st(id));
+      const spkOn = new Set(this.speakers().map(x => x.entity));
+      const cfgSp = this.cfgSpeakers();
+      const spkAll = [...cfgSp.map(x => x.entity).filter(id => this.st(id)), ...mps.filter(id => !isTv(id) && id !== tvId && !cfgSp.some(x => x.entity === id))];
+      const spkName = (id) => (cfgSp.find(x => x.entity === id) || {}).navn || this.fname(id);
+      const hidApps = new Set(this.U().skjul_apper || []);
+      const scriptPick = (k, label, cur) => `<div style="padding:6px 12px 0;font-size:12px;color:#a9a7a2">${e(label)}</div>
+        <div data-hscroll="1" style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:4px 8px 8px">${scripts.length ? scripts.map(id => chip('mdSet', k + '|' + id, this.fname(id), cur === id)).join('') : '<span style="font-size:12px;color:#6d6c69;padding:8px 4px">Fant ingen skript</span>'}</div>`;
+      return `<div data-key="kd-md-tilpass" style="display:flex;flex-direction:column">
+        ${head('TV-fanen styrer')}
+        ${chips(tvs.map(id => chip('mdSet', 'tv|' + id, this.fname(id), id === tvId, isTv(id) ? 'tv' : 'speaker')))}
+        ${head('Volumknapper på fjernkontrollen')}
+        ${chips([chip('mdSet', 'volum|auto', 'Automatisk', vm === 'auto', 'auto_mode'), chip('mdSet', 'volum|fjernkontroll', 'Fjernkontroll', vm === 'fjernkontroll', 'settings_remote'),
+          ...volOpts.map(id => chip('mdSet', 'volum|' + id, this.fname(id), vm === id, 'speaker')), chip('mdSet', 'volum|skript', 'Skript', vm === 'skript', 'description')])}
+        ${vm === 'skript' ? scriptPick('volum_opp', 'Volum opp', sc.opp) + scriptPick('volum_ned', 'Volum ned', sc.ned) : ''}
+        ${spkAll.length ? head('Høyttalere i Musikk') + spkAll.map(id => row('spk|' + id, spkName(id), id, spkOn.has(id))).join('') : ''}
+        ${(this.config.apper || []).length ? head('App-snarveier') + this.config.apper.map(x => row('app|' + x.navn, x.navn, x.kilde && x.kilde !== x.navn ? x.kilde : x.skript || '', !hidApps.has(x.navn))).join('') : ''}
+        ${Object.keys(this.U()).length ? `<div style="display:flex;justify-content:flex-end;padding:4px 8px 6px"><button data-on-click="mdReset" style="height:34px;padding:0 12px;border-radius:17px;font-size:12px;color:#a9a7a2;background:rgba(255,255,255,0.06)">Tilbakestill media</button></div>` : ''}
+      </div>`;
+    }
+
     afterRender() {
       this._padInit();
       // oppdater avspillingstiden hvert sekund mens noe spilles
@@ -183,7 +282,7 @@
 
     body() {
       const s = this.state, cf = this.config, e = KD.e, S = KD.S;
-      const tvId = cf.tv, tvA = (this.st(tvId) || {}).attributes || {};
+      const tvId = this.tvId(), tvA = (this.st(tvId) || {}).attributes || {};
       const tvOn = this.on(tvId);
       const pl = this.player(), plA = (this.st(pl) || {}).attributes || {};
       const playing = this.v(pl) === 'playing';
@@ -203,7 +302,7 @@
           : verb && tvPos ? `${verb} · ${tm(tvPos[0])} av ${tm(tvPos[1])}`
             : verb ? [verb, tvA.media_title ? (app ? app.navn : tvA.app_name) : ''].filter(Boolean).join(' · ')
               : app || tvA.app_name ? (app ? app.navn : tvA.app_name) : 'Velg en app';
-        now = { device: cf.tv_navn || this.fname(tvId), title, sub, icon: app ? app.ikon || 'smart_display' : 'tv', pic: tvOn ? tvA.entity_picture : null };
+        now = { device: (tvId === cf.tv && cf.tv_navn) || this.fname(tvId), title, sub, icon: app ? app.ikon || 'smart_display' : 'tv', pic: tvOn ? tvA.entity_picture : null };
       } else {
         const on = playing || this.v(pl) === 'paused';
         const artist = [plA.media_artist, plA.media_album_name].filter(Boolean).join(' · ');
@@ -222,11 +321,12 @@
       const pad = [padBtn('up', 'keyboard_arrow_up', { left: 93, top: 6 }), padBtn('down', 'keyboard_arrow_down', { left: 93, bottom: 6 }), padBtn('left', 'keyboard_arrow_left', { left: 6, top: 93 }), padBtn('right', 'keyboard_arrow_right', { right: 6, top: 93 })];
       const ok = { position: 'absolute', inset: 75, borderRadius: '50%', background: s.press === 'ok' ? '#333336' : '#232326', boxShadow: '0 0 0 1px rgba(255,255,255,0.06), 0 8px 20px rgba(0,0,0,0.3)', fontSize: 15, fontWeight: 600, color: '#c9c7c2', transition: 'background .15s' };
       const keys = [['power_settings_new', 'power', C.red], ['undo', 'back'], ['home', 'home'], ['mic', 'mic'], ['play_pause', 'playpause']].map(([icon, k, col]) => ({ icon, k, iconStyle: { fontSize: 24, color: col || '#f2f1ee' } }));
-      const muted = !!tvA.is_volume_muted;
-      const volN = tvA.volume_level != null ? Math.round(tvA.volume_level * 100) : null;
+      const vA = (this.st(this.volTarget()) || {}).attributes || {};
+      const muted = !!vA.is_volume_muted;
+      const volN = vA.volume_level != null ? Math.round(vA.volume_level * 100) : null;
       const muteIcon = muted ? 'volume_off' : 'volume_mute', volLabel = muted ? 'Dempet' : volN == null ? '–' : `${volN}`;
       const volBar = { width: `${muted || volN == null ? 0 : volN}%`, height: '100%', borderRadius: 2, background: '#f2f1ee', transition: 'width .2s' };
-      const apps = (cf.apper || []).map((x, i) => ({ i, name: x.navn, icon: x.ikon || 'smart_display',
+      const apps = this.appList().map(x => ({ i: x.i, name: x.navn, icon: x.ikon || 'smart_display',
         style: { height: 76, borderRadius: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, background: x.farge || '#2a2a2d', boxShadow: app && app.navn === x.navn ? 'inset 0 0 0 2px #f2f1ee' : 'none', color: '#f2f1ee' } }));
       const playIcon = playing ? 'pause' : 'play_arrow';
       const speakerMeta = `${act.length} av ${speakers.length} i gruppen`;
