@@ -209,16 +209,24 @@ input,select,textarea{font:inherit;color:inherit}
       fn.call(this, ev, el.getAttribute('data-arg'), el);
     }
     _holdStart(ev) {
-      const el = ev.target && ev.target.closest ? ev.target.closest('[data-hold]') : null;
+      const t = ev.target && ev.target.closest ? ev.target : null;
       clearTimeout(this._holdT); this._holdFired = false;
-      if (!el) return;
+      if (!t) return;
+      // 1) eksplisitt data-hold  2) data-more="entity"  3) knapper med en entitet som data-arg → mer info (hold = more-info overalt)
+      let el = t.closest('[data-hold]'), run = null;
+      if (el) { const fn = this[el.getAttribute('data-hold')]; if (typeof fn === 'function') run = () => fn.call(this, ev, el.getAttribute('data-arg'), el); }
+      else if (!t.closest('[data-no-hold],[data-seg],input,textarea')) {
+        const m = t.closest('[data-more]'), a = m ? null : t.closest('[data-arg]');
+        const id = m ? m.getAttribute('data-more') : a ? a.getAttribute('data-arg') : null;
+        if (id && /^[a-z_]+\.[a-z0-9_]+$/.test(id) && this.st(id)) { el = m || a; run = () => this.more(id); }
+      }
+      if (!run) return;
       const x = ev.clientX, y = ev.clientY;
       const move = e => { if (Math.abs(e.clientX - x) > 10 || Math.abs(e.clientY - y) > 10) { clearTimeout(this._holdT); this.shadowRoot.removeEventListener('pointermove', move, true); } };
       this.shadowRoot.addEventListener('pointermove', move, true);
       this._holdT = setTimeout(() => {
         this.shadowRoot.removeEventListener('pointermove', move, true);
-        const fn = this[el.getAttribute('data-hold')];
-        if (typeof fn === 'function') { this._holdFired = true; this.haptic('heavy'); fn.call(this, ev, el.getAttribute('data-arg'), el); }
+        this._holdFired = true; this.haptic('heavy'); run();
       }, 500);
     }
 
@@ -354,11 +362,30 @@ input,select,textarea{font:inherit;color:inherit}
   ${items.map(([k, label, icon], j) => `<button data-on-click="${KD.e(method)}" data-arg="${KD.e(k)}" data-seg-b="${j}" style="position:relative;z-index:1;height:${h}px;min-width:0;border-radius:${Math.max(4, r - P)}px;display:flex;flex-direction:${o.stack ? 'column' : 'row'};align-items:center;justify-content:center;gap:${o.stack ? 3 : 6}px;padding:0 ${o.stack ? 2 : 6}px;font-size:${o.stack ? 10 : o.small ? 12 : 13}px;font-weight:${j === i ? 600 : 500};white-space:nowrap;color:${j === i ? on : off};transition:color .25s">${icon ? `<span class="ms" style="font-size:${o.stack ? 20 : o.small ? 15 : 17}px;font-variation-settings:'FILL' ${j === i ? 1 : 0}">${KD.e(icon)}</span>` : ''}<span style="min-width:0;overflow:hidden;text-overflow:ellipsis">${KD.e(label)}</span></button>`).join('')}
 </div>`;
   };
+  /** Valg for fanestørrelse (brukes i Tilpass oppsett og Tilpass Hjem) */
+  KD.faneValgHTML = (F, fn) => {
+    const chip = (on, arg, label) => `<button data-on-click="${fn}" data-arg="${arg}" style="${KD.S({ height: 32, padding: '0 12px', borderRadius: 16, fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap', background: on ? 'oklch(0.78 0.13 350 / 0.2)' : 'rgba(255,255,255,0.06)', boxShadow: on ? 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.7)' : 'none', color: on ? '#f2f1ee' : '#a9a7a2' })}">${label}</button>`;
+    return `<div style="padding:10px 12px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">Faner</div>
+    <div style="display:flex;flex-direction:column;gap:8px;padding:2px 10px 8px">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="width:52px;font-size:12px;color:#8e8d89">Bredde</span>${[['', 'Standard'], ['kompakt', 'Kompakt'], ['full', 'Full bredde']].map(([v, l]) => chip((F.bredde || '') === v, 'bredde|' + v, l)).join('')}</div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="width:52px;font-size:12px;color:#8e8d89">Høyde</span>${[['', 'Standard'], ['30', 'Lav'], ['38', 'Middels'], ['46', 'Høy'], ['56', 'Ekstra høy']].map(([v, l]) => chip(String(F.hoyde || '') === v, 'hoyde|' + v, l)).join('')}</div>
+    </div>`;
+  };
   /** Kobler dra-støtte og strekk-animasjon til alle [data-seg] i kortet (kalles etter hver rendring) */
   KD.segInit = (card) => {
     const root = card.shadowRoot; if (!root) return;
+    const F = typeof card.faneOpts === 'function' ? card.faneOpts() || {} : {};
+    card._hasSeg = !!root.querySelector('[data-seg]');
     for (const el of root.querySelectorAll('[data-seg]')) {
       const i = +el.getAttribute('data-seg-i'), th = el.querySelector('[data-seg-thumb]');
+      // fanestørrelse fra Tilpass oppsett: bredde standard|kompakt|full, høyde i px
+      if (F.bredde || F.hoyde) {
+        const bs = [...el.querySelectorAll('[data-seg-b]')], n = bs.length;
+        if (F.bredde === 'kompakt') { el.style.alignSelf = 'flex-start'; el.style.width = 'auto'; el.style.maxWidth = '100%'; el.style.gridTemplateColumns = `repeat(${n}, auto)`; bs.forEach(b => { b.style.padding = '0 16px'; }); }
+        else if (F.bredde === 'full') { el.style.alignSelf = 'stretch'; el.style.width = '100%'; el.style.maxWidth = 'none'; el.style.gridTemplateColumns = `repeat(${n}, minmax(0,1fr))`; }
+        if (F.hoyde) { bs.forEach(b => { b.style.height = F.hoyde + 'px'; b.style.borderRadius = (F.hoyde / 2) + 'px'; }); el.style.borderRadius = (F.hoyde / 2 + 4) + 'px'; if (th) th.style.borderRadius = (F.hoyde / 2) + 'px'; }
+        if (F.bredde === 'kompakt' && th && bs[i]) { th.style.left = bs[i].offsetLeft + 'px'; th.style.width = bs[i].offsetWidth + 'px'; }
+      }
       // strekk («flytende glass») når valget endres
       if (el._segI != null && el._segI !== i && th && th.animate && !el._segDragged) {
         const d = Math.min(3, Math.abs(i - el._segI));
@@ -473,6 +500,12 @@ input,select,textarea{font:inherit;color:inherit}
        Seksjonene er barna til arkets rot-div. De flyttes med CSS order og skjules med display:none (DOM-en røres ikke,
        så morph fungerer som før). Et kort kan legge til egne innstillinger i panelet med tilpassHTML(). */
     layKey() { return this.localName; }
+    faneOpts() { return this._layData().fane || this.config.fane_stil || {}; }
+    faneSet(ev, arg) {
+      const [k, v] = String(arg).split('|'), D = { ...this._layData() }, F = { ...(D.fane || {}) };
+      if (!v) delete F[k]; else F[k] = k === 'hoyde' ? +v : v;
+      D.fane = F; this._laySave(D);
+    }
     _layData() { return (KD.ud(this, 'kd_ark') || {})[this.layKey()] || {}; }
     _laySave(v) { const all = { ...KD.ud(this, 'kd_ark') }; if (v) all[this.layKey()] = v; else delete all[this.layKey()]; this.haptic('selection'); KD.udSave(this, 'kd_ark', all); }
     layTog() { this.setState({ lay: !this.state.lay }); }
@@ -528,8 +561,13 @@ input,select,textarea{font:inherit;color:inherit}
     _layHTML() {
       if (this.constructor.noLayout || this.config.tilpass === false) return '';
       const s = this.state, e = KD.e, SS = KD.S;
-      if (!s.lay) return `<div data-key="kd-lay-btn" data-lay-skip="1" style="display:flex;justify-content:center;padding:4px var(--kd-kant,10px) calc(28px + env(safe-area-inset-bottom))">
-        <button data-on-click="layTog" style="display:flex;align-items:center;gap:8px;height:40px;padding:0 16px;border-radius:20px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05);color:#8e8d89;font-size:12px;font-weight:500"><span class="ms" style="font-size:17px">dashboard_customize</span>Tilpass oppsett</button></div>`;
+      if (!s.lay) {
+        // kortets egen tilpass-knapp (f.eks. «Tilpass rommet») står ved siden av «Tilpass oppsett»
+        const egen = typeof this.tilpassKnapp === 'function' ? this.tilpassKnapp() : '';
+        const bs = 'flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:8px;height:44px;padding:0 14px;border-radius:22px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05);color:#a9a7a2;font-size:13px;font-weight:500;white-space:nowrap';
+        return `<div data-key="kd-lay-btn" data-lay-skip="1" style="display:flex;justify-content:center;gap:8px;padding:4px var(--kd-kant,10px) calc(28px + env(safe-area-inset-bottom))">
+        ${egen ? egen.replace('%STIL%', bs) : ''}<button data-on-click="layTog" style="${egen ? bs : bs.replace('flex:1;', 'flex:none;')}"><span class="ms" style="font-size:18px">dashboard_customize</span>Tilpass oppsett</button></div>`;
+      }
       const secs = this._secs || [];
       const ib = (arg, icon, title, col, dis) => `<button data-on-click="layOp" data-arg="${e(arg)}" title="${title}" style="${SS({ width: 34, height: 34, borderRadius: 17, flex: 'none', display: 'grid', placeItems: 'center', color: col || '#8e8d89', opacity: dis ? 0.25 : 1, pointerEvents: dis ? 'none' : null })}"><span class="ms" style="font-size:20px">${icon}</span></button>`;
       const extra = typeof this.tilpassHTML === 'function' ? this.tilpassHTML() : '';
@@ -540,6 +578,7 @@ input,select,textarea{font:inherit;color:inherit}
       <button data-on-click="layReset" style="height:34px;padding:0 12px;border-radius:17px;font-size:12px;color:#a9a7a2;background:rgba(255,255,255,0.06)">Nullstill</button>
       <button data-on-click="layTog" style="height:34px;padding:0 14px;margin-right:8px;border-radius:17px;font-size:13px;font-weight:600;background:linear-gradient(135deg, oklch(0.78 0.13 350), oklch(0.9 0.05 20));color:#2a1720">Ferdig</button></div>
     ${extra}
+    ${this._hasSeg ? KD.faneValgHTML(this.faneOpts(), 'faneSet') : ''}
     ${this._entHTML()}
     ${secs.length ? `<div style="padding:10px 12px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">Seksjoner</div>` : ''}
     ${secs.map((x, i) => `<div data-key="kd-lay-${e(x.sig)}" style="min-height:44px;padding:0 4px 0 12px;border-radius:14px;display:flex;align-items:center;gap:8px;opacity:${x.hid ? 0.45 : 1}">

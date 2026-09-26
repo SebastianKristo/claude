@@ -454,6 +454,12 @@
       this.haptic('selection'); KD.udSave(this, 'kd_hjem', HU);
     }
     hjemHilsen(ev, arg, el) { const HU = { ...KD.ud(this, 'kd_hjem') }; const v = String(el.value || '').trim(); if (v) HU.hilsen = v; else delete HU.hilsen; KD.udSave(this, 'kd_hjem', HU); }
+    faneOpts() { return KD.ud(this, 'kd_hjem').fane || this.config.fane_stil || {}; }
+    hjemFane(ev, arg) {
+      const [k, v] = String(arg).split('|'), HU = { ...KD.ud(this, 'kd_hjem') }, F = { ...(HU.fane || {}) };
+      if (!v) delete F[k]; else F[k] = k === 'hoyde' ? +v : v;
+      HU.fane = F; this.haptic('selection'); KD.udSave(this, 'kd_hjem', HU);
+    }
     hjemPers(ev, arg) {
       const [id, op] = String(arg).split('|'), HU = { ...KD.ud(this, 'kd_hjem') };
       const list = this.persons.map(p => p.id), i = list.indexOf(id);
@@ -732,7 +738,7 @@
         const cards = list.map(r => {
           const iconWrap = { position: 'absolute', right: 6, top: 6, width: 58, height: 58, borderRadius: 29, display: 'grid', placeItems: 'center', background: r.lightsOn ? r.farge : '#2a2a2d', color: r.lightsOn ? '#141416' : '#8e8d89', transition: 'background .25s' };
           const hasSet = r.set != null;
-          return `<div data-key="${e(r.id)}" data-on-click="openRoom" data-arg="${e(r.id)}" style="position:relative;cursor:pointer;flex:none;width:100%;height:${RK[0]}px;box-sizing:border-box;scroll-snap-align:start;border-radius:28px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
+          return `<div data-key="${e(r.id)}" data-on-click="openRoom" data-arg="${e(r.id)}"${r.tempId ? ` data-more="${e(r.tempId)}"` : ''} style="position:relative;cursor:pointer;flex:none;width:100%;height:${RK[0]}px;box-sizing:border-box;scroll-snap-align:start;border-radius:28px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
                 <div style="position:absolute;left:18px;top:18px;right:70px;font-size:15px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(r.navn)}</div>
                 <button data-on-click="roomToggle" data-arg="${e(r.id)}" title="Lys" style="${S(iconWrap)}"><span class="ms" style="font-size:24px;font-variation-settings:'FILL' 1">${e(r.ikon)}</span></button>
                 <div style="position:absolute;left:18px;bottom:16px;display:flex;align-items:baseline;gap:4px;white-space:nowrap">
@@ -764,7 +770,7 @@
         iconStyle: { fontSize: 24, color: pink ? '#2a1720' : col || '#f2f1ee', fontVariationSettings: "'FILL' 1" },
         subStyle: { fontSize: 12, color: pink ? 'rgba(42,23,32,0.7)' : '#8e8d89', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
       });
-      const tileHTML = t => `<button data-on-click="${t.tap}" style="${S(t.style)}">
+      const tileHTML = t => `<button data-on-click="${t.tap}"${t.more ? ` data-more="${e(t.more)}"` : ''} style="${S(t.style)}">
             <span style="${S(t.iconWrap)}"><span class="ms" style="${S(t.iconStyle)}">${e(t.icon)}</span></span>
             <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;text-align:left">
               <span style="font-size:15px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(t.title)}</span>
@@ -782,6 +788,7 @@
       const alarmTile = tileV('shield', armed ? 'Armert' : 'Av', 'Alarm', 'openSik', null, armed);
       const camTile = tileV('videocam', 'Kamera', motion ? 'Bevegelse nå' : 'Ingen bevegelse', 'openCam', motion ? C.blue : null);
       const todoTile = tileV('handyman', `${nTodo} gjøremål`, `${nDone} ferdige`, 'openTodo', null);
+      lockTile.more = c.las; alarmTile.more = c.alarm || c.alarm_gammel; camTile.more = (c.bevegelse || [])[0]; todoTile.more = c.gjoremal;
 
       /* ----- strømgraf ----- */
       const NOW_H = new Date().getHours();
@@ -919,6 +926,7 @@
         <button data-on-click="hjemEditClose" style="height:34px;padding:0 14px;border-radius:17px;font-size:13px;font-weight:600;background:linear-gradient(135deg, oklch(0.78 0.13 350), oklch(0.9 0.05 20));color:#2a1720">Ferdig</button></div>
       ${head('Topp-oppsett')}<div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 10px 6px">${[['standard', 'Standard', 'view_agenda'], ['familie', 'Familie', 'family_restroom']].map(([v, l, ic]) => chipH((HU.topp || c.topp || 'standard') === v, 'topp|' + v, 'hjemSet', l, ic)).join('')}</div>
       ${(HU.topp || c.topp) === 'familie' ? `<div style="display:flex;flex-direction:column;gap:4px;padding:2px 10px 8px"><input data-key="he-hilsen" data-keep="1" data-on-change="hjemHilsen" value="${e(HU.hilsen || c.hilsen || '👋 {navn}!')}" placeholder="👋 {navn}!" autocomplete="off" style="height:38px;padding:0 14px;border-radius:19px;border:none;outline:none;background:#262629;color:#f2f1ee;font:inherit;font-size:13px"><span style="font-size:11px;color:#6d6c69;padding-left:6px">{navn} = ditt fornavn, {server} = servernavnet</span></div>` : ''}
+      ${KD.faneValgHTML(HU.fane || {}, 'hjemFane')}
       ${head('Tittel øverst')}<div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 10px 6px">${[['server', 'Servernavn', 'dns'], ['person', 'Mitt navn', 'person']].map(([v, l, ic]) => chipH(((HU.tittel || c.tittel || 'server') === v), 'tittel|' + v, 'hjemSet', l, ic)).join('')}</div>
       ${head('Seksjoner')}${rows('sek', norm(HU.seksjoner, SEK_KEYS), HLABEL.sek, 'sek')}
       ${head('Personer på toppen')}<div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 10px 6px">
@@ -1045,7 +1053,7 @@
 
       /* ----- Tilpass Hjem: rekkefølge/synlighet (per bruker, 'kd_hjem') ----- */
       const HU = KD.ud(this, 'kd_hjem'), HSKJUL = new Set(HU.skjul || []);
-      const P_UTE = `<button data-on-click="openWeather" style="display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 11px;border-radius:16px;background:#232326;font-weight:500;vertical-align:middle;white-space:nowrap"><span class="ms" style="font-size:18px;color:#bdbbb6">${W.icon}</span>${W.t != null ? nf(W.t, 1) : '–'}°</button>`, P_PRIS = `<button data-on-click="goPower" style="${S(pricePill)}"><span style="${S(priceDot)}"></span><span>${pNow != null ? nf(pNow) : '–'}</span> kr</button>`, P_WATT = `<span style="display:inline-flex;align-items:center;height:32px;padding:0 11px;border-radius:16px;background:#232326;font-weight:500;vertical-align:middle;white-space:nowrap;font-variant-numeric:tabular-nums"><span>${watt}</span> W</span>`, P_LYS = `<button data-on-click="showLights" style="display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 11px;border-radius:16px;background:oklch(0.86 0.12 95 / 0.16);box-shadow:inset 0 0 0 1px oklch(0.86 0.12 95 / 0.4);font-weight:500;vertical-align:middle;white-space:nowrap"><span class="ms" style="font-size:18px;color:oklch(0.86 0.12 95);font-variation-settings:'FILL' 1">lightbulb</span><span>${lightsOn}</span> lys</button>`, P_CAL = `<button data-on-click="openCal" style="display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 11px;border-radius:16px;background:#232326;font-weight:500;vertical-align:middle;white-space:nowrap"><span class="ms" style="font-size:18px;color:oklch(0.8 0.12 250)">event</span>${nEv == null ? '–' : nEv} ${nEv === 1 ? 'hendelse' : 'hendelser'}</button>`;
+      const P_UTE = `<button data-on-click="openWeather" data-more="${e(c.vaer || '')}" style="display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 11px;border-radius:16px;background:#232326;font-weight:500;vertical-align:middle;white-space:nowrap"><span class="ms" style="font-size:18px;color:#bdbbb6">${W.icon}</span>${W.t != null ? nf(W.t, 1) : '–'}°</button>`, P_PRIS = `<button data-on-click="goPower" data-more="${e(this.sp().pris || '')}" style="${S(pricePill)}"><span style="${S(priceDot)}"></span><span>${pNow != null ? nf(pNow) : '–'}</span> kr</button>`, P_WATT = `<span style="display:inline-flex;align-items:center;height:32px;padding:0 11px;border-radius:16px;background:#232326;font-weight:500;vertical-align:middle;white-space:nowrap;font-variant-numeric:tabular-nums"><span>${watt}</span> W</span>`, P_LYS = `<button data-on-click="showLights" data-more="${e(c.lys_totalt || '')}" style="display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 11px;border-radius:16px;background:oklch(0.86 0.12 95 / 0.16);box-shadow:inset 0 0 0 1px oklch(0.86 0.12 95 / 0.4);font-weight:500;vertical-align:middle;white-space:nowrap"><span class="ms" style="font-size:18px;color:oklch(0.86 0.12 95);font-variation-settings:'FILL' 1">lightbulb</span><span>${lightsOn}</span> lys</button>`, P_CAL = `<button data-on-click="openCal" data-more="${e(c.kalender_sensor || '')}" style="display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 11px;border-radius:16px;background:#232326;font-weight:500;vertical-align:middle;white-space:nowrap"><span class="ms" style="font-size:18px;color:oklch(0.8 0.12 250)">event</span>${nEv == null ? '–' : nEv} ${nEv === 1 ? 'hendelse' : 'hendelser'}</button>`;
       const PROSA_DEL = { ute: () => `Ute er det ${P_UTE}.`, strom: () => `Strømmen koster ${P_PRIS}.`, effekt: () => `Vi bruker ${P_WATT}.`, lys: () => `Det er ${P_LYS} på.`, hendelser: () => `Vi har ${P_CAL} i dag.` };
       const PR = norm(HU.prosa, PROSA_KEYS), prVis = PR.filter(k => !HSKJUL.has('prosa:' + k));
       const prosaTxt = prVis.join() === PROSA_KEYS.join() ? `Ute er det ${P_UTE}. Strømmen koster ${P_PRIS} og vi bruker ${P_WATT} med ${P_LYS} på. Vi har ${P_CAL} i dag.` : prVis.map(k => PROSA_DEL[k]()).join(' ');

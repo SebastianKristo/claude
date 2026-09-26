@@ -144,6 +144,8 @@
     moreInfo(ev, id) { if (this.state.edit && id && id.includes('.')) return this.hideTog(ev, id); this.more(id); }
     devTog(ev, id) { if (this.state.edit) return this.hideTog(ev, id); this.toggle(id); }
     /* ----- tilpass rommet (skjul/vis i UI) ----- */
+    /** «Tilpass rommet» ved siden av «Tilpass oppsett» (base setter inn stilen) */
+    tilpassKnapp() { return this.state.edit ? '' : `<button class="kdr-a97" data-key="kd-edit-btn" data-on-click="editTog" style="%STIL%"><span class="ms" style="font-size:18px">tune</span>Tilpass rommet</button>`; }
     editTog() { this.setState({ edit: !this.state.edit }); }
     hideTog(ev, id) {
       if (!id) return;
@@ -606,7 +608,7 @@
     </svg>
   </section>
   ${s.edit ? this._sensorPicker(r, L) : ''}
-  ${s.edit ? '' : `<button class="kdr-a97" data-key="kd-edit-btn" data-on-click="editTog" style="display:flex;align-items:center;justify-content:center;gap:8px;height:48px;border-radius:24px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);color:#a9a7a2;font-size:13px;font-weight:500"><span class="ms" style="font-size:18px">tune</span>Tilpass rommet</button>`}
+
 </div>`;
     }
   }
