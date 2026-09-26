@@ -225,7 +225,7 @@
             }
           }
         }
-        out = out.filter(x => x.title && (!x.when || (!isNaN(x.when) && x.when >= t0)));
+        out = out.filter(x => x.title && (!x.when || (!isNaN(x.when) && (!meta || x.when >= t0)))); // Plex (meta=false) er nylig lagt til – bakover i tid
         if (meta) info.push({ id, type, kind, n: out.length, loading });
         return out;
       };
@@ -562,7 +562,7 @@
           featured: F ? { title: F.title, sub: subOf(F), when: whenOf(F), tag: s.filter === 'plex' ? 'Plex' : F.type === 'serie' ? 'Sonarr' : 'Radarr', initials: ini(F.title),
             card: { display: 'flex', gap: 14, alignItems: 'center', padding: 14, borderRadius: 24, background: `linear-gradient(120deg, ${col(F)}, #1c1c1f 85%)` },
             poster: { width: 84, height: 120, borderRadius: 12, flex: 'none', display: 'grid', placeItems: 'center', padding: 8, boxSizing: 'border-box', background: `linear-gradient(160deg, ${col(F)}, #111)`, boxShadow: '0 8px 20px rgba(0,0,0,0.4)' } } : null,
-          list: ups.slice(1, 40).map((u, i) => ({ title: u.title, sub: subOf(u), day: u.when ? dayS(u.when) : 'Snart', time: !u.when ? '' : u.allDay ? (u.rel || 'hele dagen') : hm(u.when), initials: ini(u.title),
+          list: ups.slice(1, 40).map((u, i) => ({ title: u.title, sub: subOf(u), day: u.when ? dayS(u.when) : 'Snart', time: !u.when || u.allDay ? '' : hm(u.when), initials: ini(u.title),
             row: { display: 'flex', alignItems: 'center', gap: 12, padding: '10px 4px', borderTop: i ? '1px solid rgba(255,255,255,0.05)' : 'none' },
             poster: { width: 40, height: 56, borderRadius: 8, flex: 'none', display: 'grid', placeItems: 'center', background: `linear-gradient(160deg, ${col(u)}, #111)` },
             okStyle: { fontSize: 15, color: C.green, fontVariationSettings: "'FILL' 1", display: u.plex ? 'inline' : 'none' } })) };

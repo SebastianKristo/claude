@@ -394,7 +394,7 @@
             <span style="flex:1;min-width:0;display:flex;flex-direction:column"><span style="font-size:14px;font-weight:500">${e(label)}</span><span style="font-size:11px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(this.kbDesc(k))}</span></span>
             <button data-on-click="kbTest" data-arg="${k}" title="Test knappen" style="flex:none;height:30px;padding:0 10px;border-radius:15px;font-size:12px;color:#a9a7a2;background:rgba(255,255,255,0.06);display:flex;align-items:center;gap:4px"><span class="ms" style="font-size:15px">play_arrow</span>Test</button>
           </div>
-          ${hrow(KB_T.map(([t, l, ic]) => chip('kbType', k + '|' + t, l, b.type === t, ic)))}
+          <div style="display:flex;flex-wrap:wrap;gap:6px;min-width:0">${KB_T.map(([t, l, ic]) => chip('kbType', k + '|' + t, l, b.type === t, ic)).join('')}</div>
           ${det}
         </div>`;
       }).join('');
