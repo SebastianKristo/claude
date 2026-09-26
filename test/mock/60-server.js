@@ -48,22 +48,52 @@
     'switch.d_day_darling_container_plex': 'on', 'switch.d_day_darling_container_binhex_sonarr': 'on', 'switch.d_day_darling_container_binhex_radarr': 'on', 'switch.d_day_darling_container_binhex_qbittorrentvpn': 'on', 'switch.d_day_darling_container_nextcloud': 'off',
     'switch.d_day_darling_vm_home_assistant': 'on', 'button.d_day_darling_check_container_updates': 'unknown',
     'switch.qbittorrent_alternative_speed': 'off', 'sensor.qbittorrent_download_speed': { state: '2.1', attributes: { unit_of_measurement: 'MB/s' } }, 'sensor.qbittorrent_upload_speed': { state: '310', attributes: { unit_of_measurement: 'kB/s' } },
+    // Proxmox – mer nodedata og en ekstra node
+    'sensor.1_node_pve_load_average_5m': '0.51', 'sensor.1_node_pve_load_average_15m': '0.47', 'sensor.1_node_pve_io_wait': pct(0.4), 'sensor.1_node_pve_node_updates': '6', 'sensor.1_node_pve_status': 'online',
+    'button.1_node_pve_reboot': 'unknown', 'button.1_node_pve_shutdown': 'unknown', 'button.1_node_pve_start_all': 'unknown', 'button.1_node_pve_stop_all': 'unknown',
+    'binary_sensor.1_node_pve_cpu_stressed': 'off',
+    'sensor.2_node_pve2_cpu_usage': pct(88), 'sensor.2_node_pve2_memory_usage': pct(92), 'sensor.2_node_pve2_memory_used': GB(29.4), 'sensor.2_node_pve2_memory_total': GB(32),
+    'sensor.2_node_pve2_uptime': ts(4.3), 'sensor.2_node_pve2_pve_version': '8.4.1', 'sensor.2_node_pve2_root_filesystem_usage': pct(58), 'sensor.2_node_pve2_load_average_1m': '3.9', 'sensor.2_node_pve2_status': 'online',
+    'button.2_node_pve2_reboot': 'unknown', 'button.2_node_pve2_shutdown': 'unknown',
+    // Unraid – array, paritet, disker, UPS
+    'sensor.d_day_darling_array_state': 'Started', 'sensor.d_day_darling_array_used': { state: '31.2', attributes: { unit_of_measurement: 'TB' } }, 'sensor.d_day_darling_array_total': { state: '42', attributes: { unit_of_measurement: 'TB' } },
+    'sensor.d_day_darling_ram_used': GB(30.7), 'sensor.d_day_darling_ram_total': GB(64), 'sensor.d_day_darling_motherboard_temperature': { state: '34', attributes: { unit_of_measurement: '°C' } },
+    'sensor.d_day_darling_last_parity_check': ago(12), 'sensor.d_day_darling_parity_check_errors': '0', 'sensor.d_day_darling_parity_check_duration': { state: '68400', attributes: { unit_of_measurement: 's' } }, 'sensor.d_day_darling_next_parity_check': new Date(Date.now() + 18 * 86400e3).toISOString(),
+    'switch.d_day_darling_parity_check': 'off', 'button.d_day_darling_start_mover': 'unknown',
+    'sensor.d_day_darling_disk_3_usage': { state: '12', attributes: { unit_of_measurement: '%', total_size: '14 TB', used_space: '1.7 TB', filesystem: 'xfs' } }, 'sensor.d_day_darling_disk_3_temperature': 'unavailable',
+    'sensor.d_day_darling_ups_battery': pct(100), 'sensor.d_day_darling_ups_runtime': { state: '42', attributes: { unit_of_measurement: 'min' } }, 'sensor.d_day_darling_ups_load': pct(18), 'sensor.d_day_darling_ups_status': 'Online', 'sensor.d_day_darling_ups_power': { state: '96', attributes: { unit_of_measurement: 'W' } },
+    'update.d_day_darling_container_plex_update': { state: 'on', attributes: { friendly_name: 'Plex update', installed_version: '1.41.3', latest_version: '1.41.5', in_progress: false } },
+    'button.d_day_darling_container_plex_restart': 'unknown', 'button.d_day_darling_container_binhex_sonarr_restart': 'unknown',
+    'sensor.d_day_darling_container_plex_cpu_usage': pct(7.4), 'sensor.d_day_darling_container_plex_memory_usage': pct(6.1), 'sensor.d_day_darling_container_binhex_sonarr_cpu_usage': pct(0.8), 'sensor.d_day_darling_container_binhex_sonarr_memory_usage': pct(2.3),
+    'switch.d_day_darling_container_immich': 'on', 'switch.d_day_darling_vm_windows_11': 'off',
+    // UniFi – omstart, temp, frakoblet AP, Wi-Fi-nett
+    'button.stromstad_dream_machine_pro_restart': 'unknown', 'button.usw_pro_24_poe_restart': 'unknown', 'button.u7_pro_1_etg_restart': 'unknown', 'button.u6_mesh_hage_restart': 'unknown',
+    'sensor.stromstad_dream_machine_pro_cpu_temperature_2': { state: '62', attributes: { unit_of_measurement: '°C' } }, 'sensor.u7_pro_1_etg_memory_utilisation': pct(38),
+    'device_tracker.u6_lr_garasje': { state: 'not_home', attributes: { friendly_name: 'U6 LR · Garasje', mac: 'aa:04' } },
+    'sensor.u6_lr_garasje_uptime': 'unavailable', 'sensor.u6_lr_garasje_cpu_utilisation': 'unavailable', 'sensor.u6_lr_garasje_clients': 'unavailable',
+    'switch.usw_pro_24_poe_port_1_poe': { state: 'on', attributes: { friendly_name: 'Port 1 · U7 Pro PoE' } }, 'switch.usw_pro_24_poe_port_2_poe': { state: 'on', attributes: { friendly_name: 'Port 2 · U6 Mesh PoE' } }, 'switch.usw_pro_24_poe_port_5_poe': { state: 'off', attributes: { friendly_name: 'Port 5 · Dørklokke PoE' } },
+    'sensor.usw_pro_24_poe_port_1_poe_power': { state: '9.8', attributes: { unit_of_measurement: 'W' } }, 'sensor.usw_pro_24_poe_port_4_poe_power': { state: '5.1', attributes: { unit_of_measurement: 'W' } },
+    'switch.hjemme_wifi': { state: 'on', attributes: { friendly_name: 'Hjemme' } }, 'switch.gjest_wifi': { state: 'off', attributes: { friendly_name: 'Gjest' } }, 'image.gjest_wifi_qr_code': 'unknown', 'sensor.hjemme_wifi_clients': '31',
+    'sensor.stromstad_dream_machine_pro_wan_ip': '84.212.10.44',
   };
   // Proxmox-gjester (designets eksempel)
   const G = [['4_vm', 'home_assistant_os', '100', 'Home Assistant OS', true, 6, 4, 14], ['3_ct', 'frigate', '101', 'Frigate', true, 22, 3, 14], ['3_ct', 'plex', '102', 'Plex', true, 9, 4, 14], ['3_ct', 'arr_stack', '103', 'Arr-stack', true, 3, 2, 9],
-    ['3_ct', 'zigbee2mqtt', '104', 'Zigbee2MQTT', true, 1, 0.512, 14], ['4_vm', 'nextcloud', '105', 'Nextcloud', false, 0, 4, 0], ['3_ct', 'vaultwarden', '106', 'Vaultwarden', true, 0, 0.256, 14]];
+    ['3_ct', 'zigbee2mqtt', '104', 'Zigbee2MQTT', true, 1, 0.512, 14], ['4_vm', 'nextcloud', '105', 'Nextcloud', false, 0, 4, 0], ['3_ct', 'vaultwarden', '106', 'Vaultwarden', true, 0, 0.256, 14], ['4_vm', 'windows_11', '107', 'Windows 11', 'paused', 0, 8, 0]];
   for (const [p, k, id, name, on, cpu, ram, up] of G) {
     const b = `${p}_${k}_${id}_`;
-    E[`sensor.${b}status`] = { state: on ? 'running' : 'stopped', attributes: { friendly_name: `${name} Status` } };
+    E[`sensor.${b}status`] = { state: on === 'paused' ? 'paused' : on ? 'running' : 'stopped', attributes: { friendly_name: `${name} Status` } };
+    const tot = p === '4_vm' ? 8 : 4; E[`sensor.${b}ram_total`] = GB(tot);
+    if (p === '3_ct') E[`sensor.${b}disk_usage`] = pct(k === 'frigate' ? 91 : 34);
     E[`sensor.${b}cpu_usage`] = pct(cpu);
     E[`sensor.${b}ram_used`] = ram >= 1 ? GB(ram) : MB(ram * 1000);
     if (on) E[`sensor.${b}uptime`] = ts(up + 0.1);
-    E[`button.${b}start_${k}`] = 'unknown'; E[`button.${b}shutdown_${k}`] = 'unknown';
+    for (const x of ['start', 'shutdown', 'stop', 'reboot']) E[`button.${b}${x}_${k}`] = 'unknown';
+    if (p === '4_vm') { E[`button.${b}suspend_${k}`] = 'unknown'; E[`button.${b}resume_${k}`] = 'unknown'; }
   }
   MOCK.add(E);
   // entitetsregister for UniFi-oppdagelse
   const REG = {};
-  for (const id of Object.keys(E)) if (/dream_machine|usw_pro|u7_pro|u6_mesh|iphone|ps5|gjest_iphone/.test(id)) REG[id] = { entity_id: id, platform: 'unifi', device_id: /usw_pro_24_poe_port/.test(id) ? 'dev-usw' : null };
+  for (const id of Object.keys(E)) if (/dream_machine|usw_pro|u7_pro|u6_mesh|u6_lr|iphone|ps5|gjest_iphone|_wifi/.test(id)) REG[id] = { entity_id: id, platform: 'unifi', device_id: /usw_pro_24_poe_port/.test(id) ? 'dev-usw' : /gjest_wifi/.test(id) ? 'dev-wlan-gjest' : /hjemme_wifi/.test(id) ? 'dev-wlan-hjemme' : null };
   const DEV = { 'dev-usw': { id: 'dev-usw', name: 'USW Pro 24 PoE' } };
   const prev = MOCK.make;
   MOCK.make = function () { const h = prev.apply(this, arguments); h.entities = Object.assign({}, h.entities || {}, REG); h.devices = Object.assign({}, h.devices || {}, DEV); return h; };
