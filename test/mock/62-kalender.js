@@ -46,10 +46,44 @@
   const STAYS = [['r', 'o', 25, 1], ['s', 'o', 25, 1], ['c', 'o', 25, 1], ['c', 'o', 24, 1], ['s', 'o', 24, 1], ['r', 'o', 24, 2], ['c', 's', 24, 2], ['r', 'o', 23, 2], ['c', 'o', 23, 2], ['r', 'o', 22, 2], ['c', 't', 18, 3], ['r', 's', 12, 3], ['c', 's', 7, 5], ['s', 's', 1, 6]];
   const opp = p => STAYS.filter(x => x[1] === p).map(([w, , D, n]) => ({ person: P[w], start: dayOf(D), slutt: dayOf(D + n), netter: n, tittel: '' }));
   const MONTHS = [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 62, 0], [0, 49, 0], [64, 52, 21], [0, 0, 0], [0, 0, 0], [0, 0, 0]];
-  const pm = i => MONTHS.map((r, k) => ({ maaned: k + 1, netter: r[i] }));
+  const MN = ['januar', 'februar', 'mars', 'april', 'mai', 'juni', 'juli', 'august', 'september', 'oktober', 'november', 'desember'];
+  const pm = i => MONTHS.map((r, k) => ({ maaned: k + 1, navn: MN[k], netter: r[i], personer: {} }));
   const lest = dAt(0, 22, 0).toISOString();
-  const hut = (sted, rolle, i, p, nights, visits, her, siste) => ({ state: her.join(', ') || 'Tomt', attributes: { integrasjon: 'ki_hyttebesok', type: 'oversikt', friendly_name: `${sted} Oversikt`, sted, rolle, kalender: 'calendar.hytta',
-    her_naa: her.map(n => ({ navn: n })), kjente_personer: ['Cybele', 'Rune', 'Sebastian'], netter_i_aar: nights, besok_i_aar: visits, dager: dager[p], opphold: opp(p), kommende: [], per_maaned: pm(i), siste, sist_lest: lest } });
+  // KI Hyttebesøk (custom_components/ki_hyttebesok): has_entity_name, enhet «KI Hyttebesøk <Sted>» → sensor.ki_hyttebesok_<sted>_oversikt,
+  // attributtene fra HytteMotor.oversikt() + integrasjon/ki_type.
+  const KOMMENDE = { s: [{ person: 'Cybele', start: dayOf(32), slutt: dayOf(34), tittel: 'Strömstad – Cybele' }, { person: 'Rune', start: dayOf(32), slutt: dayOf(34), tittel: 'Strömstad – Rune' }], o: [], t: [] };
+  const hut = (sted, rolle, i, p, nights, visits, her, siste, skriver) => { const op = opp(p); return { state: her.join(', ') || 'Tomt', attributes: { integrasjon: 'ki_hyttebesok', ki_type: 'oversikt', friendly_name: `KI Hyttebesøk ${sted} Oversikt`, icon: 'mdi:home-heart',
+    sted, rolle, skriver, kalender: 'calendar.hytta', hjemme_kilde: rolle === 'hjem' ? 'auto' : '', lest_hendelser: 57, titler: [],
+    kjente_personer: ['Cybele', 'Rune', 'Sebastian'], her_naa: her.map(n => ({ navn: n, farge: 'var(--green)', siden: dayOf(24) })),
+    personer: ['Cybele', 'Rune', 'Sebastian'].map(n => { const mine = op.filter(o => o.person === n); return { navn: n, farge: 'var(--green)', entity: skriver ? `switch.${n.toLowerCase()}_posisjon_hjemme_borte` : '', her: her.includes(n), siden: her.includes(n) ? dayOf(24) : null,
+      netter_i_aar: Math.round(nights * (n === 'Cybele' ? 0.45 : n === 'Rune' ? 0.35 : 0.2)), besok_i_aar: Math.round(visits * (n === 'Cybele' ? 0.45 : n === 'Rune' ? 0.35 : 0.2)), siste: mine[0] || null }; }),
+    netter_i_aar: nights, besok_i_aar: visits, siste, kommende: KOMMENDE[p], opphold: op, per_maaned: pm(i), dager: dager[p], feil: null, sist_lest: lest } }; };
+  const HUTS = [['oslo', 'Oslo', 'o'], ['stromstad', 'Strömstad', 's'], ['toten', 'Toten', 't']];
+  const HREG = {};
+  const sib = {};
+  for (const [slug, sted, p] of HUTS) {
+    const pre = `ki_hyttebesok_${slug}`, dev = `dev_hytte_${slug}`, A = (t, x) => ({ integrasjon: 'ki_hyttebesok', ki_type: t, ...x });
+    const op = opp(p);
+    Object.assign(sib, {
+      [`sensor.${pre}_netter_i_ar`]: { state: '0', attributes: A('netter', { friendly_name: `KI Hyttebesøk ${sted} Netter i år`, unit_of_measurement: 'netter', besok: 0, per_maaned: [] }) },
+      [`sensor.${pre}_siste_besok`]: { state: op[0] ? `${op[0].person} ${op[0].start}` : '—', attributes: A('siste', { friendly_name: `KI Hyttebesøk ${sted} Siste besøk`, ...(op[0] || {}), opphold: op }) },
+      [`sensor.${pre}_neste_besok`]: { state: KOMMENDE[p][0] ? `${KOMMENDE[p][0].person} ${KOMMENDE[p][0].start}` : '—', attributes: A('neste', { friendly_name: `KI Hyttebesøk ${sted} Neste besøk`, kommende: KOMMENDE[p] }) },
+      [`sensor.${pre}_her_na`]: { state: '0', attributes: A('her', { friendly_name: `KI Hyttebesøk ${sted} Her nå`, personer: [] }) },
+      [`binary_sensor.${pre}_noen_pa_stedet`]: { state: 'off', attributes: A('noen_her', { friendly_name: `KI Hyttebesøk ${sted} Noen på stedet`, device_class: 'presence', personer: [] }) },
+      [`button.${pre}_synk_kalenderen_na`]: { state: lest, attributes: A('synk', { friendly_name: `KI Hyttebesøk ${sted} Synk kalenderen nå`, sist_lest: lest, feil: null }) },
+      [`button.${pre}_lagre_pagaende_opphold`]: { state: 'unknown', attributes: A('lagre_naa', { friendly_name: `KI Hyttebesøk ${sted} Lagre pågående opphold`, paagaar: [] }) },
+    });
+    for (const id of [`sensor.${pre}_oversikt`, ...Object.keys(sib).filter(x => x.includes(pre))]) HREG[id] = { entity_id: id, platform: 'ki_hyttebesok', device_id: dev };
+  }
+  // helgeoversikten (bare på hjemme-oppføringen)
+  const helger = Array.from({ length: 8 }, (_, i) => { const l = new Date(T0); l.setDate(l.getDate() - ((l.getDay() + 1) % 7) - 7 * i); const so = new Date(l); so.setDate(so.getDate() + 1);
+    const wk = (() => { const d = new Date(l); d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7); const w1 = new Date(d.getFullYear(), 0, 4); return 1 + Math.round(((d - w1) / 864e5 - 3 + (w1.getDay() + 6) % 7) / 7); })();
+    const st = i % 3 === 0 ? { 'Strömstad': ['Cybele'], Oslo: ['Rune', 'Sebastian'] } : i % 3 === 1 ? { 'Strömstad': ['Cybele', 'Rune', 'Sebastian'] } : { Oslo: ['Rune'], Toten: ['Cybele'], 'Strömstad → Oslo': ['Sebastian'] };
+    const pers = {}; for (const [k, v] of Object.entries(st)) for (const n of v) pers[n] = k;
+    return { uke: wk, aar: l.getFullYear(), lordag: ymd(l), sondag: ymd(so), personer: pers, steder: st, sammen: Object.keys(st).length === 1, hovedsted: Object.keys(st)[0] }; });
+  sib['sensor.ki_hyttebesok_oslo_helger'] = { state: helger[0].hovedsted, attributes: { integrasjon: 'ki_hyttebesok', ki_type: 'helger', friendly_name: 'KI Hyttebesøk Oslo Helger', helger, hvor_er_vi_naa: { Cybele: 'Strömstad', Rune: 'Oslo', Sebastian: 'Oslo' }, steder: HUTS.map(([, sted], i) => ({ sted, rolle: i ? 'hytte' : 'hjem' })), personer: ['Cybele', 'Rune', 'Sebastian'] } };
+  HREG['sensor.ki_hyttebesok_oslo_helger'] = { entity_id: 'sensor.ki_hyttebesok_oslo_helger', platform: 'ki_hyttebesok', device_id: 'dev_hytte_oslo' };
+  MOCK.add(sib);
   MOCK.add({
     'calendar.rune': { state: 'on', attributes: { friendly_name: 'Rune' } },
     'calendar.cybele': { state: 'on', attributes: { friendly_name: 'Cybele' } },
@@ -58,9 +92,10 @@
     'calendar.oslomet_timeplan': { state: 'off', attributes: { friendly_name: 'OsloMet timeplan' } },
     'calendar.birthdays': { state: 'off', attributes: { friendly_name: 'Bursdager' } },
     'calendar.posten_calendar': { state: 'off', attributes: { friendly_name: 'Posten' } },
-    'sensor.oslo_oversikt': hut('Oslo', 'hjem', 0, 'o', 64, 38, ['Rune'], { person: 'Rune', start: dayOf(25), netter: 1 }),
-    'sensor.stromstad_oversikt': hut('Strømstad', 'hytte', 1, 's', 163, 58, ['Cybele'], { person: 'Cybele', start: dayOf(24), netter: 1 }),
-    'sensor.toten_oversikt': hut('Toten', 'hytte', 2, 't', 21, 8, [], { person: 'Cybele', start: dayOf(18), netter: 3 }),
+    'calendar.hytta': { state: 'off', attributes: { friendly_name: 'Hytta' } },
+    'sensor.ki_hyttebesok_oslo_oversikt': hut('Oslo', 'hjem', 0, 'o', 64, 38, ['Rune'], { person: 'Rune', start: dayOf(25), slutt: dayOf(25), netter: 1, tittel: '' }, true),
+    'sensor.ki_hyttebesok_stromstad_oversikt': hut('Strömstad', 'hytte', 1, 's', 163, 58, ['Cybele'], { person: 'Cybele', start: dayOf(24), slutt: dayOf(25), netter: 1, tittel: '' }, false),
+    'sensor.ki_hyttebesok_toten_oversikt': hut('Toten', 'hytte', 2, 't', 21, 8, [], { person: 'Cybele', start: dayOf(18), slutt: dayOf(20), netter: 3, tittel: '' }, false),
     'sensor.nar_kommer_posten_posten_sensor_next': { state: ymd(dAt(3)), attributes: { postal_code: '1670', city: 'Strømstad' } },
     'sensor.nar_kommer_posten_posten_sensor_next_relative': 'om 3 dager',
     'sensor.zalando_status': { state: 'Klar til henting', attributes: { friendly_name: 'Zalando Status', pickup_point: 'Coop Extra', estimated_delivery: ymd(dAt(0)) } },
@@ -69,14 +104,37 @@
   });
   // Sonarr / Radarr / Plex
   const air = (off, h) => dAt(off, h).toISOString();
+  // Radarr (HA core): calendar.radarr – én heldagshendelse per utgivelse, summary = filmtittel, description = handling
+  CAL['calendar.radarr'] = [
+    allDay(4, 'Spider-Man: Brand New Day', { description: 'Peter Parker må velge mellom …' }),
+    allDay(4, 'Coyote vs. Acme (Cinemas)', { description: 'Wile E. Coyote saksøker Acme.' }),
+    allDay(5, 'Digger', { description: 'Et hemmelig prosjekt.' }),
+    allDay(12, 'The Running Man (Digital)', { description: 'Ben Richards stiller opp.' }),
+    allDay(40, 'Utenfor rekkevidde'),
+  ];
+  // Sonarr (community-kalender): «Serie - 1x03 - Episode»
+  CAL['calendar.sonarr'] = [
+    timed(3, '03:00', '04:00', 'American Hostage - 1x03 - Magic Ticket Sweepstakes'),
+    timed(3, '03:00', '04:00', 'Lanterns - S01E07 - The Jordan Boy\'s Legacy'),
+    timed(4, '04:00', '05:00', 'Line of Fire - 1x02 - A Bigger Picture'),
+    timed(5, '02:00', '03:00', 'Best Medicine - 2x02 - Breakin\' in Is Hard to Do'),
+  ];
   MOCK.add({
-    'sensor.sonarr_sonarr_upcoming_media': { state: '5', attributes: { data: [{ title_default: '$title', line1_default: '$episode' },
+    'calendar.radarr': { state: 'off', attributes: { friendly_name: 'Radarr', message: 'Spider-Man: Brand New Day', all_day: true, start_time: ymd(dAt(4)) + ' 00:00:00' } },
+    'calendar.sonarr': { state: 'off', attributes: { friendly_name: 'Sonarr' } },
+    // Sonarr (HA core): state = antall, attributtene «Serie SxxEyy» → sendetid (nyere) eller «Serie» → «SxxEyy» (eldre)
+    'sensor.sonarr_upcoming': { state: '4', attributes: { friendly_name: 'Sonarr Upcoming', unit_of_measurement: 'episodes', icon: 'mdi:television',
+      'American Hostage S01E03': air(3, 3), 'Lanterns S01E07': air(3, 3), 'Line of Fire S01E02': air(4, 4), 'The Last of Us': 'S03E01' } },
+    'sensor.radarr_movies': { state: '412', attributes: { friendly_name: 'Radarr Movies', unit_of_measurement: 'movies' } },
+  });
+  MOCK.add({
+    'sensor.sonarr_sonarr_upcoming_media_old': { state: '5', attributes: { data: [{ title_default: '$title', line1_default: '$episode' },
       { title: 'American Hostage', episode: 'Magic Ticket Sweepstakes', number: 'S01E03', studio: 'MGM+', airdate: air(3, 3) },
       { title: 'Lanterns', episode: "The Jordan Boy's Legacy", number: 'S01E07', studio: 'HBO', airdate: air(3, 3) },
       { title: 'Line of Fire', episode: 'A Bigger Picture', number: 'S01E02', studio: 'NBC', airdate: air(4, 4) },
       { title: 'Best Medicine', episode: "Breakin' in Is Hard to Do", number: 'S02E02', studio: 'FOX', airdate: air(5, 2) },
       { title: 'The Last of Us', episode: 'TBA', number: 'S03E01', studio: 'HBO', airdate: air(7, 3) }] } },
-    'sensor.radarr_radarr_upcoming_media': { state: '3', attributes: { data: [{ title_default: '$title' },
+    'sensor.radarr_radarr_upcoming_media_old': { state: '3', attributes: { data: [{ title_default: '$title' },
       { title: 'Spider-Man: Brand New Day', studio: 'Marvel Studios', airdate: air(4, 2) },
       { title: 'Coyote vs. Acme', studio: 'Ketchup Entertainment', airdate: air(4, 2), flag: true },
       { title: 'Digger', studio: 'Warner Bros. Pictures', airdate: air(5, 2) }] } },
@@ -86,12 +144,12 @@
   // alternative kilder å velge mellom i «Tilpass oppsett»
   MOCK.add({
     'sensor.sonarr_queue': { state: '2', attributes: { friendly_name: 'Sonarr Queue', unit_of_measurement: 'episodes' } },
-    'sensor.radarr_movies': { state: '412', attributes: { friendly_name: 'Radarr Movies' } },
     'sensor.plex_d_day_darling': { state: '0', attributes: { friendly_name: 'Plex (D-Day Darling)' } },
     'sensor.posten_neste_levering': { state: ymd(dAt(5)), attributes: { friendly_name: 'Posten neste levering' } },
   });
   const REG = {};
   for (const id of ['sensor.zalando_status', 'sensor.komplett_usb_hub_status', 'sensor.apotek_1_status']) REG[id] = { entity_id: id, platform: 'norwegian_parcel_tracker' };
+  Object.assign(REG, HREG);
   const prev = MOCK.make;
   MOCK.make = function () { const h = prev.apply(this, arguments); h.entities = Object.assign({}, h.entities || {}, REG); return h; };
 })();

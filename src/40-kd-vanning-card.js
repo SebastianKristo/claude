@@ -12,8 +12,13 @@
  * spenning: 24                        # ventilspenning (V) for å regne strømtrekk (mA) om til watt
  * historikk_dager: 120                # hvor langt tilbake kalenderen henter statistikk
  *
- * Tjenester: ki_vanning.kjor / stopp / kjor_program / hopp_over / sett_regnpause / nullstill_regnpause / sett_anlegg / lag_program,
- * med OpenSprinkler (opensprinkler.run_station / stop / run_program / set_rain_delay) som reserve uten KI Vanning.
+ * Tjenester (se ki_vanning/services.yaml):
+ *  – KI Vanning med egne ventiler (modus «ventiler»): ki_vanning.stopp / sett_regnpause {timer} / nullstill_regnpause / sett_anlegg {pa} /
+ *    kjor {sone, minutter} / kjor_program {program} / lag_program – knappene button.ki_vanning_stopp_alt / regnpause_24_t / nullstill_regnpause som reserve.
+ *  – KI Vanning med OpenSprinkler (modus «opensprinkler»): bare ki_vanning.kjor virker; stopp, regnpause og program går rett til
+ *    opensprinkler.stop / set_rain_delay {rain_delay} / run_program / run_station med entity_id = switch.<prefiks>_enabled (eller sone-/programbryteren).
+ * Neste vanning: oversiktens «neste» / sensor.ki_vanning_neste_vanning, pluss «programmer» (kalender, planlegger eller /jp-bitmaske).
+ * Regnpause: oversiktens regnpause/regnpause_til eller number.ki_vanning_regnpause; ellers binary_sensor.<p>_rain_delay_active + sensor.<p>_rain_delay_stop_time.
  */
 (() => {
   const KD = window.KD;
@@ -110,42 +115,63 @@
       const zoneOf = s => zones.find(z => (s.entity && z.bryter === s.entity) || (s.nr != null && Number(z.nr) === Number(s.nr) && !z.hs) || String(z.name).toLowerCase() === String(s.navn || '').toLowerCase());
       const osRe = p ? new RegExp('^switch\\.' + p + '_(.+)_program_enabled$') : null;
       const os = osRe ? Object.keys(S0).map(id => { const m = id.match(osRe); return m ? { id, slug: m[1], navn: String(S0[id].attributes.friendly_name || m[1]).replace(/\s*Program Enabled$/i, '').trim() } : null; }).filter(Boolean) : [];
+      // KI Vanning i OpenSprinkler-modus: { navn, slug, bryter, gaar, start: 'time.<p>_<slug>_start_time', soner, dager: bitmaske (man = bit 0) | null }
+      // med egne ventiler: { navn, tid, dager: ['man', …], intervall, start_dato, soner: [{entity, min}], samtidig, aktiv }
+      const days = d => Array.isArray(d) ? d : (typeof d === 'number' && d > 0 && d < 128) ? DKEY.filter((_, i) => (d >> i) & 1) : [];
+      const tidOf = (pr, slug) => { if (pr && toMin(pr.tid) != null) return pr.tid; const tid = pr && typeof pr.start === 'string' && pr.start.startsWith('time.') ? pr.start : slug && p ? `time.${p}_${slug}_start_time` : null; const v = tid ? this.v(tid) : ''; return toMin(v) != null ? v.slice(0, 5) : ''; };
       for (const pr of (ki && ki.program_historikk) || []) {
-        const o = os.find(x => x.navn.toLowerCase() === String(pr.navn).toLowerCase());
-        out.push({ navn: pr.navn, tid: pr.tid, dager: pr.dager || [], intervall: pr.intervall || 0, start_dato: pr.start_dato, samtidig: !!pr.samtidig,
-          on: o ? this.v(o.id) === 'on' : pr.aktiv !== false, sw: o ? o.id : null, raw: pr, zones: (pr.soner || []).map(s => ({ z: zoneOf(s), min: Number(s.min) || 0, navn: s.navn })).filter(x => x.z) });
+        const o = os.find(x => (pr.bryter && x.id === pr.bryter) || (pr.slug && x.slug === pr.slug) || x.navn.toLowerCase() === String(pr.navn).toLowerCase());
+        const iv = o ? this.n(`number.${p}_${o.slug}_interval_days`) : null;
+        out.push({ navn: pr.navn, tid: tidOf(pr, (o && o.slug) || pr.slug), dager: days(pr.dager), intervall: pr.intervall || (iv && iv > 1 ? iv : 0), start_dato: pr.start_dato, samtidig: !!pr.samtidig,
+          on: o ? this.v(o.id) === 'on' : pr.aktiv !== false, sw: o ? o.id : (pr.bryter && this.st(pr.bryter) ? pr.bryter : null), raw: pr, zones: (pr.soner || []).map(s => ({ z: zoneOf(s), min: Number(s.min) || 0, navn: s.navn })).filter(x => x.z) });
       }
       for (const o of os) {
         if (out.some(x => x.sw === o.id)) continue;
-        const tid = this.v(`time.${p}_${o.slug}_start_time`).slice(0, 5);
         const iv = this.n(`number.${p}_${o.slug}_interval_days`);
-        out.push({ navn: o.navn, tid, dager: [], intervall: iv && iv > 1 ? iv : 0, on: this.v(o.id) === 'on', sw: o.id, zones: [], os: true });
+        out.push({ navn: o.navn, tid: tidOf(null, o.slug), dager: [], intervall: iv && iv > 1 ? iv : 0, on: this.v(o.id) === 'on', sw: o.id, zones: [], os: true });
       }
       return out;
     }
 
-    /* Kommende kjøringer: { 'YYYY-MM-DD': [{ time, min: minutter fra midnatt, z, mins, liters, prog, start: Date }] } */
-    schedule(ki, zones, progs) {
-      const out = {}, now = Date.now();
-      const zoneOf = s => zones.find(z => (s.nr != null && Number(z.nr) === Number(s.nr) && !z.hs) || String(z.name).toLowerCase() === String(s.navn || '').toLowerCase() || (s.entity && z.bryter === s.entity));
-      const addRun = (start, navn, list, samtidig) => {
-        const k = iso(start); let t = start.getHours() * 60 + start.getMinutes();
+    /* Kommende kjøringer: { 'YYYY-MM-DD': [{ time, min: minutter fra midnatt, z, mins, liters, prog, start: Date }] }
+     * Kilder, i rekkefølge: KI Vannings «programmer» (planlagt), «neste», og programmenes ukedager/intervall. */
+    schedule(ki, zones, progs, neste) {
+      const out = {}, now = Date.now(), cfg = this.config;
+      const zoneOf = s => zones.find(z => (s.nr != null && Number(s.nr) > 0 && Number(z.nr) === Number(s.nr) && !z.hs) || String(z.name).toLowerCase() === String(s.navn || '').toLowerCase() || (s.entity && z.bryter === s.entity));
+      // Program uten kjente soner (typisk fra OpenSprinkler-kalenderen): vis hele programmet som én rad
+      const whole = r => { const mins = Number(r.total_min) || 0, L = Number(r.estimat_liter) || 0;
+        return { id: 'P:' + r.navn, code: '', name: r.navn, type: 'annet', metode: 'Program', rate: mins && L ? L / mins : Number(cfg.rate) || 8, min: mins, k: {}, whole: true }; };
+      const addRun = (start, navn, list, samtidig, r) => {
+        const k = iso(start); let t = start.getHours() * 60 + start.getMinutes(), n = 0;
         for (const s of list) {
           const z = s.z || zoneOf(s); if (!z) continue;
           const mins = Number(s.min) || z.min;
           (out[k] = out[k] || []).push({ time: hmm(t), t, z, mins, liters: mins * z.rate, prog: navn, start: new Date(+start + (t - start.getHours() * 60 - start.getMinutes()) * 60e3) });
-          if (!samtidig) t += mins;
+          n++; if (!samtidig) t += mins;
         }
+        if (!n && r) { const z = whole(r); (out[k] = out[k] || []).push({ time: hmm(t), t, z, mins: z.min, liters: Number(r.estimat_liter) || z.min * z.rate, prog: navn, start: new Date(+start) }); }
       };
       let horizon = null; const seen = new Set();
+      const rows = [];
       for (const r of (ki && ki.programmer) || []) {
+        if (r.start) { rows.push(r); continue; }
+        // OpenSprinkler /jp: { tid, start_min, dager: bitmaske, soner } uten dato – legg ut den neste uken
+        const tm = r.start_min != null ? Number(r.start_min) : toMin(r.tid);
+        if (tm == null || tm < 0 || tm >= 1440 || typeof r.dager !== 'number') continue;
+        for (let i = 0; i < 8; i++) { const d = new Date(); d.setDate(d.getDate() + i); d.setHours(Math.floor(tm / 60), tm % 60, 0, 0);
+          if ((r.dager >> ((d.getDay() + 6) % 7)) & 1 && +d > now) rows.push({ ...r, start: d.toISOString() }); }
+      }
+      if (neste && neste.start) rows.push({ ...neste, _neste: true });
+      for (const r of rows) {
         const start = r.start ? new Date(r.start) : null;
-        if (!start || isNaN(start) || (r.minutter_til != null && r.minutter_til < 0)) continue;
+        if (!start || isNaN(start) || (r.minutter_til != null && r.minutter_til < 0) || +start < now - 6 * 3600e3) continue;
+        const key = r.navn + '|' + iso(start);
+        if (seen.has(key)) continue;
         const pr = progs.find(x => String(x.navn).toLowerCase() === String(r.navn).toLowerCase());
-        const list = (r.soner && r.soner.length) ? r.soner : pr ? pr.zones.map(x => ({ z: x.z, min: x.min })) : [];
-        addRun(start, r.navn, list, pr && pr.samtidig);
-        seen.add(r.navn + '|' + iso(start));
-        if (!horizon || start > horizon) horizon = start;
+        const list = (r.soner && r.soner.length && r.soner.some(s => zoneOf(s))) ? r.soner : pr && pr.zones.length ? pr.zones.map(x => ({ z: x.z, min: x.min })) : [];
+        addRun(start, r.navn, list, (pr && pr.samtidig) || r.samtidig, r);
+        seen.add(key);
+        if (!r._neste && (!horizon || start > horizon)) horizon = start;
       }
       // fram i tid etter det integrasjonen har planlagt: ukedagene (eller intervallet) til programmene som står på
       const from = horizon ? new Date(horizon) : new Date(); from.setHours(0, 0, 0, 0); if (horizon) from.setDate(from.getDate() + 1);
@@ -185,61 +211,99 @@
       return { id, days };
     }
 
-    /* ---------- handlinger ---------- */
+    /* ---------- handlinger ----------
+     * KI Vanning har to moduser. Med egne ventiler (modus «ventiler») finnes planleggeren, og
+     * ki_vanning.stopp / sett_regnpause / nullstill_regnpause / sett_anlegg / kjor_program virker.
+     * Med OpenSprinkler (modus «opensprinkler») er de samme tjenestene registrert, men gjør ingenting
+     * (motor.plan er None) – da må kortet snakke med OpenSprinkler-integrasjonen direkte:
+     * opensprinkler.stop / set_rain_delay / run_program med kontrollerbryteren switch.<prefiks>_enabled.
+     * ki_vanning.kjor virker i begge (i OpenSprinkler-modus åpner den hovedventilen og kaller run_station). */
     ctx() { const ki = this.ki(), p = this.prefix(ki); return { ki, p, zones: this.zones(ki, p) }; }
+    kiPlan(ki) { return !!(ki && (ki.modus === 'ventiler' || ki.planlegger)); }
+    svc(domain, name) { const s = this.hass && this.hass.services; if (!s) return true; return !!(s[domain] && s[domain][name]); }
+    kiBtn(type, pred) { const S0 = this.all(); return Object.keys(S0).find(id => id.startsWith('button.') && S0[id].attributes.integrasjon === 'ki_vanning' && S0[id].attributes.ki_type === type && (!pred || pred(S0[id].attributes))) || null; }
+    osCtrl(p) {
+      if (!p) return null;
+      for (const id of [`switch.${p}_enabled`, `switch.${p}_opensprinkler_enabled`, `switch.${p}_controller_enabled`]) if (this.st(id)) return id;
+      return this.find(new RegExp('^switch\\.' + p + '_(?!.*_(station|program)_enabled$).*enabled$'))[0] || null;
+    }
+    rainId(p) { if (!p) return null; const id = `binary_sensor.${p}_rain_delay_active`; return this.st(id) ? id : this.find(new RegExp('^binary_sensor\\.' + p + '.*rain_delay_active$'))[0] || null; }
+    osCall(service, data, what) {
+      const { p } = this.ctx(), ctrl = this.osCtrl(p);
+      if (!ctrl) return this.toast(`Fant ikke OpenSprinkler-kontrolleren (switch.${p || '<prefiks>'}_enabled) – ${what} er ikke sendt`);
+      if (!this.svc('opensprinkler', service)) return this.toast(`Tjenesten opensprinkler.${service} finnes ikke – ${what} er ikke sendt`);
+      return this.call('opensprinkler', service, { entity_id: ctrl, ...data });
+    }
+    kiCall(service, data, btn, what) {
+      if (this.svc('ki_vanning', service)) return this.call('ki_vanning', service, data);
+      if (btn) return this.press(btn);
+      return this.toast(`Tjenesten ki_vanning.${service} finnes ikke – ${what} er ikke sendt`);
+    }
     stopAll() {
       const { ki, p } = this.ctx();
-      if (this.useKi(ki, 'stopp')) return this.call('ki_vanning', 'stopp', {});
-      if (p) return this.call('opensprinkler', 'stop', {}, { entity_id: `switch.${p}_enabled` });
+      if (this.kiPlan(ki)) return this.kiCall('stopp', {}, this.kiBtn('stopp_alt'), 'stopp');
+      if (p) return this.osCall('stop', {}, 'stopp');
+      this.toast('Fant verken KI Vanning eller OpenSprinkler å stoppe');
     }
-    rainToggle() {
-      const { ki, p } = this.ctx(), on = this.rainOn(ki, p);
-      if (this.useKi(ki, 'sett_regnpause')) return on ? this.call('ki_vanning', 'nullstill_regnpause', {}) : this.call('ki_vanning', 'sett_regnpause', { timer: 24 });
-      if (p) return this.call('opensprinkler', 'set_rain_delay', { rain_delay: on ? 0 : 24 }, { entity_id: `switch.${p}_enabled` });
-    }
-    resetAll() {
+    setRain(hours) {
       const { ki, p } = this.ctx();
-      this.setState({ skipped: null });
-      if (this.rainOn(ki, p)) {
-        if (this.useKi(ki, 'nullstill_regnpause')) return this.call('ki_vanning', 'nullstill_regnpause', {});
-        if (p) return this.call('opensprinkler', 'set_rain_delay', { rain_delay: 0 }, { entity_id: `switch.${p}_enabled` });
+      if (this.kiPlan(ki)) {
+        if (!hours) return this.kiCall('nullstill_regnpause', {}, this.kiBtn('regnpause_nullstill'), 'regnpause av');
+        return this.kiCall('sett_regnpause', { timer: hours }, this.kiBtn('regnpause_sett', a => Number(a.timer) === hours), 'regnpause');
       }
-      this.haptic('light');
+      if (p) return this.osCall('set_rain_delay', { rain_delay: hours }, hours ? 'regnpause' : 'regnpause av');
+      this.toast('Fant ingen regnpause å sette (verken KI Vanning eller OpenSprinkler)');
+    }
+    rainToggle() { const { ki, p } = this.ctx(); return this.setRain(this.rainOn(ki, p) ? 0 : 24); }
+    rainOff() { return this.setRain(0); }
+    resetAll() {
+      const { ki, p } = this.ctx(), hadSkip = !!this.state.skipped;
+      this.setState({ skipped: null });
+      if (this.rainOn(ki, p)) return this.setRain(0);
+      this.toast(hadSkip ? 'Hopp over er angret' : 'Ingen regnpause eller hopp å nullstille');
     }
     systemToggle() {
       const { ki, p } = this.ctx(), id = this.systemId(ki, p);
       if (id) return this.toggle(id);
-      if (ki) return this.call('ki_vanning', 'sett_anlegg', { pa: ki.anlegg === false });
+      if (this.kiPlan(ki)) return this.kiCall('sett_anlegg', { pa: ki.anlegg === false }, null, 'anlegg av/på');
+      this.toast('Fant ingen hovedbryter for anlegget (switch.<prefiks>_enabled eller KI Vannings «Anlegget»)');
     }
     runZone(ev, id) {
-      const { ki, zones } = this.ctx(), z = zones.find(x => x.id === id); if (!z) return;
-      if (!this.systemOn(ki, this.prefix(ki))) return this.toast('Anlegget er av');
+      const { ki, p, zones } = this.ctx(), z = zones.find(x => x.id === id); if (!z) return this.toast('Fant ikke sonen');
+      if (!this.systemOn(ki, p)) return this.toast('Anlegget er av');
       if (z.running) {
-        if (this.useKi(ki, 'stopp') && (ki.modus === 'ventiler' || !z.bryter)) return this.call('ki_vanning', 'stopp', {});
-        return z.bryter ? this.call('opensprinkler', 'stop', {}, { entity_id: z.bryter }) : this.call('ki_vanning', 'stopp', {});
+        if (this.kiPlan(ki) || !z.bryter) return this.kiCall('stopp', {}, this.kiBtn('stopp_alt'), 'stopp');
+        if (!this.svc('opensprinkler', 'stop')) return this.toast('Tjenesten opensprinkler.stop finnes ikke');
+        return this.call('opensprinkler', 'stop', { entity_id: z.bryter });
       }
-      if (this.useKi(ki, 'kjor')) return this.call('ki_vanning', 'kjor', { sone: z.bryter || z.name, minutter: z.min });
-      if (z.bryter) return this.call('opensprinkler', 'run_station', { run_seconds: z.min * 60 }, { entity_id: z.bryter });
+      if (ki && this.svc('ki_vanning', 'kjor')) return this.call('ki_vanning', 'kjor', { sone: z.bryter || z.name, minutter: z.min });
+      if (z.bryter && !this.kiPlan(ki) && this.svc('opensprinkler', 'run_station')) return this.call('opensprinkler', 'run_station', { entity_id: z.bryter, run_seconds: z.min * 60 });
+      this.toast(`Kan ikke starte ${z.name}: fant verken ki_vanning.kjor eller opensprinkler.run_station`);
     }
     runProg(ev, navn) {
+      if (!navn) return this.toast('Ingen vanning planlagt');
       const { ki, p, zones } = this.ctx(), pr = this.programs(ki, p, zones).find(x => x.navn === navn);
-      if (this.useKi(ki, 'kjor_program')) return this.call('ki_vanning', 'kjor_program', { program: navn });
-      if (pr && pr.sw) return this.call('opensprinkler', 'run_program', {}, { entity_id: pr.sw });
+      if (this.kiPlan(ki)) return this.kiCall('kjor_program', { program: navn }, null, 'kjør program');
+      if (pr && pr.sw && this.svc('opensprinkler', 'run_program')) return this.call('opensprinkler', 'run_program', { entity_id: pr.sw });
+      this.toast(`Kan ikke starte «${navn}»: fant ikke programbryteren i OpenSprinkler`);
     }
     progToggle(ev, navn) {
-      const { ki, p, zones } = this.ctx(), pr = this.programs(ki, p, zones).find(x => x.navn === navn); if (!pr) return;
+      const { ki, p, zones } = this.ctx(), pr = this.programs(ki, p, zones).find(x => x.navn === navn); if (!pr) return this.toast('Fant ikke programmet');
       if (pr.sw) return this.toggle(pr.sw);
-      this.call('ki_vanning', 'lag_program', { ...pr.raw, navn, aktiv: !pr.on });
+      if (this.kiPlan(ki)) return this.kiCall('lag_program', { ...pr.raw, navn, aktiv: !pr.on }, null, 'endring');
+      this.toast(`Fant ingen bryter for «${navn}»`);
     }
     skip(ev, key) {
-      const svc = this.services();
+      if (!key) return this.toast('Ingen vanning å hoppe over');
+      const s = this.hass && this.hass.services, kv = (s && s.ki_vanning) || {};
       if (this.state.skipped === key) {
-        const undo = svc && ['angre_hopp_over', 'angre_hopp', 'ikke_hopp_over'].find(k => svc[k]);
+        const undo = ['angre_hopp_over', 'angre_hopp', 'ikke_hopp_over'].find(k => kv[k]);
         if (undo) this.call('ki_vanning', undo, { program: key.split('|')[0] });
         return this.setState({ skipped: null });
       }
       this.setState({ skipped: key });
-      if (this.useKi(this.ki(), 'hopp_over')) this.call('ki_vanning', 'hopp_over', { program: key.split('|')[0] });
+      if (kv.hopp_over) this.call('ki_vanning', 'hopp_over', { program: key.split('|')[0] });
+      else this.toast('Hoppes over i kortet – KI Vanning har ingen hopp over-tjeneste. Bruk regnpause for å stoppe kjøringen.');
     }
     tab(ev, k) { this.setState({ tab: k }); }
     period(ev, k) { this.setState({ period: k }); }
@@ -250,23 +314,56 @@
     moreId(ev, id) { if (id) this.more(id); }
 
     /* ---------- tilstand ---------- */
-    rainOn(ki, p) { return !!(ki && ki.regnpause) || (p ? this.v(`binary_sensor.${p}_rain_delay_active`) === 'on' : false); }
-    systemId(ki, p) { if (this.config.vinter) return this.config.vinter; if (ki && ki.modus === 'ventiler') return this.kiEnt('anlegg', /^switch\..*anlegg/); return p && this.st(`switch.${p}_enabled`) ? `switch.${p}_enabled` : this.kiEnt('anlegg', /^switch\..*anlegg/); }
+    /* Regnpause: KI Vanning (ventiler) har den i oversikten (regnpause, regnpause_minutter, regnpause_til) og i
+     * number.ki_vanning_regnpause (ki_type regnpause); OpenSprinkler i binary_sensor.<p>_rain_delay_active og
+     * sensor.<p>_rain_delay_stop_time. Gir { on, until: Date|null, hours } */
+    rain(ki, p) {
+      const S0 = this.all();
+      const num = Object.keys(S0).find(id => id.startsWith('number.') && S0[id].attributes.integrasjon === 'ki_vanning' && S0[id].attributes.ki_type === 'regnpause');
+      const na = num ? S0[num].attributes : {};
+      let on = false, until = null;
+      if (ki && (ki.regnpause || na.aktiv || (num && this.n(num, 0) > 0))) {
+        on = true; const t = ki.regnpause_til || na.til; if (t && !isNaN(new Date(t))) until = new Date(t);
+        else { const m = Number(ki.regnpause_minutter || na.minutter || 0) || this.n(num, 0) * 60; if (m) until = new Date(Date.now() + m * 60e3); }
+      }
+      const rid = this.rainId(p);
+      if (!on && rid && this.v(rid) === 'on') {
+        on = true; const t = this.v(`sensor.${p}_rain_delay_stop_time`); if (t && !KD.BAD.has(t) && !isNaN(new Date(t))) until = new Date(t);
+      }
+      return { on, until, id: num || rid || null, hours: until ? Math.max(1, Math.round((until - Date.now()) / 3600e3)) : null };
+    }
+    rainOn(ki, p) { return this.rain(ki, p).on; }
+    systemId(ki, p) { if (this.config.vinter) return this.config.vinter; if (this.kiPlan(ki)) return this.kiEnt('anlegg', /^switch\..*anlegg/); return this.osCtrl(p) || this.kiEnt('anlegg', /^switch\..*anlegg/); }
     systemOn(ki, p) {
       if (this.config.vinter) return this.v(this.config.vinter) !== 'on';
       const id = this.systemId(ki, p);
       if (id && this.st(id)) return this.v(id) === 'on';
       return !(ki && ki.anlegg === false);
     }
+    /* Neste vanning fra KI Vanning: oversiktens «neste», eller sensor.ki_vanning_neste_vanning (ki_type neste).
+     * Felter: naar («I dag»/«I morgen»/ukedag), tid (HH:MM), navn, dager_fram, minutter_til, soner, total_min, estimat_liter, start? */
+    neste(ki) {
+      let n = ki && ki.neste && typeof ki.neste === 'object' ? ki.neste : null;
+      if (!n || !n.tid) { const id = this.kiEnt('neste', /^sensor\..*neste_vanning$/); const a = id ? this.st(id).attributes : null; if (a && a.tid) n = a; }
+      if (!n || !n.tid) return null;
+      let start = n.start ? new Date(n.start) : null;
+      if (!start || isNaN(start)) {
+        const tm = toMin(n.tid);
+        if (n.dager_fram != null && tm != null) { start = new Date(); start.setDate(start.getDate() + Number(n.dager_fram)); start.setHours(Math.floor(tm / 60), tm % 60, 0, 0); }
+        else if (n.minutter_til != null) { start = new Date(Math.round((Date.now() + Number(n.minutter_til) * 60e3) / 60e3) * 60e3); }
+      }
+      return start && !isNaN(start) ? { ...n, start: start.toISOString() } : null;
+    }
 
     body() {
       const s = this.state, cfg = this.config;
       const ki = this.ki(), p = this.prefix(ki), zones = this.zones(ki, p);
       const progs = this.programs(ki, p, zones);
-      const SCHED = this.schedule(ki, zones, progs);
+      const NESTE = this.neste(ki);
+      const SCHED = this.schedule(ki, zones, progs, NESTE);
       const { days: HIST } = this.daily(ki);
       const today = new Date(), TODAY = iso(today);
-      const system = this.systemOn(ki, p), rain = this.rainOn(ki, p);
+      const system = this.systemOn(ki, p), RAIN = this.rain(ki, p), rain = RAIN.on;
       const pl = (ki && ki.planlegger) || {};
 
       // hva vanner nå
@@ -303,18 +400,19 @@
       const first = nextItems[0];
       const pris = ki && ki.pris_m3 ? Number(ki.pris_m3) : this.at(`${cfg.vann_prefiks}vannkostnad_i_dag`, 'kr_per_m3', null);
       const KR = pris ? pris / 1000 : null;
-      const rainLeft = ki && ki.regnpause_minutter ? Math.max(1, Math.round(ki.regnpause_minutter / 60)) : (() => { const t = p ? this.v(`sensor.${p}_rain_delay_stop_time`) : ''; const d = new Date(t); return t && !isNaN(d) ? Math.max(1, Math.round((d - Date.now()) / 3600e3)) : 24; })();
+      const rainTxt = RAIN.hours ? `Regnpause ${RAIN.hours} t` : 'Regnpause';
+      const delayed = x => !!(rain && x && (!RAIN.until || +x.start < +RAIN.until));
 
-      const status = !system ? ['Anlegget er av', '#8e8d89'] : run ? ['Vanner nå', B] : rain ? [`Regnpause ${rainLeft} t`, AMBER] : ['Klar', GREEN];
+      const status = !system ? ['Anlegget er av', '#8e8d89'] : run ? ['Vanner nå', B] : rain ? [rainTxt, AMBER] : ['Klar', GREEN];
       const headline = !system ? 'Vanning er slått av' : run ? `${run.name} vannes` : rain ? 'Vanning er satt på pause' : 'Hagen er tørr og klar';
       const subline = run ? `${fmt(left)} igjen${queue.length ? ` · ${queue.length} soner i kø` : ''}`
-        : first ? `Neste: ${first.z.code ? first.z.code + ' ' : ''}${first.z.name} · ${kind(first.z)} · ${dayName(nextDay).toLowerCase()} ${first.time}${rain ? ' (utsettes)' : ''}` : 'Ingen vanning planlagt';
+        : first ? `Neste: ${first.z.code ? first.z.code + ' ' : ''}${first.z.name} · ${kind(first.z)} · ${dayName(nextDay).toLowerCase()} ${first.time}${delayed(first) ? ' (utsettes)' : ''}` : 'Ingen vanning planlagt';
       const ctrl = (ic, label, on, col, go, iconCol) => ({ icon: ic, label, go,
         style: { height: 68, borderRadius: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, background: on ? al(col, 0.16) : '#1c1c1f', boxShadow: on ? `inset 0 0 0 1px ${al(col, 0.45)}` : 'inset 0 0 0 1px rgba(255,255,255,0.05)', transition: 'background .2s' },
         iconStyle: { fontSize: 22, color: on ? col : iconCol || '#c9c7c2', fontVariationSettings: `'FILL' ${on ? 1 : 0}` } });
       const controls = [
         ctrl('stop_circle', 'Stopp alt', false, RED, 'stopAll', run ? RED : null),
-        ctrl('rainy', 'Regn 24t', rain, AMBER, 'rainToggle'),
+        ctrl('rainy', rain ? 'Regnpause' : 'Regn 24t', rain, AMBER, 'rainToggle'),
         ctrl('restart_alt', 'Nullstill', false, B, 'resetAll'),
         ctrl('power_settings_new', system ? 'Anlegg på' : 'Anlegg av', system, GREEN, 'systemToggle'),
       ];
@@ -346,8 +444,8 @@
       </div>
     </div>`;
         }
-        const nextWhen = nextDay ? `${dayName(nextDay)} ${dm(nextDay)}${rain ? ' · utsettes' : ''}` : 'Ingen planlagt';
-        const items = nextItems.slice(0, 3).map((x, i) => ({ name: `${x.z.code ? x.z.code + ' ' : ''}${x.z.name}`, kind: `${x.time} · ${kind(x.z)}`, icon: icon(x.z), amount: `${x.mins} min · ${nf(x.liters)} L`,
+        const nextWhen = nextDay ? `${dayName(nextDay)} ${dm(nextDay)}${delayed(first) ? ' · utsettes' : ''}` : 'Ingen planlagt';
+        const items = nextItems.slice(0, 3).map((x, i) => ({ name: `${x.z.code ? x.z.code + ' ' : ''}${x.z.name}`, kind: `${x.time} · ${kind(x.z)}`, icon: icon(x.z), amount: [x.mins ? `${x.mins} min` : '', x.liters ? `${nf(x.liters)} L` : ''].filter(Boolean).join(' · '),
           row: { display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderTop: i ? '1px solid rgba(255,255,255,0.06)' : 'none' },
           iconWrap: { width: 34, height: 34, borderRadius: 17, flex: 'none', display: 'grid', placeItems: 'center', background: al(B, 0.12), color: B } }));
         const wk = Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() + i); const k = iso(d); const v = (SCHED[k] || []).filter(x => +x.start > Date.now()).reduce((t, x) => t + x.liters, 0);
@@ -361,6 +459,18 @@
         const lastRun = p ? this.st(`sensor.${p}_last_run`) : null;
         const sist = lastK ? `${dm2(lastK)} · ${nf(HIST[lastK])} L` : lastRun && !KD.BAD.has(lastRun.state) && !isNaN(new Date(lastRun.state)) ? new Date(lastRun.state).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' }) : '–';
         const skKey = nextDay ? runKey(nextDay) : null;
+        if (rain) {
+          const til = RAIN.until ? `til ${RAIN.until.toLocaleDateString('nb-NO', { weekday: 'short' }).replace('.', '')} ${pad(RAIN.until.getHours())}:${pad(RAIN.until.getMinutes())}` : 'aktiv';
+          html += `
+    <div data-on-click="moreId" data-arg="${e(RAIN.id || '')}" style="${S({ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 12px 12px 16px', borderRadius: 20, background: al(AMBER, 0.1), boxShadow: `inset 0 0 0 1px ${al(AMBER, 0.35)}` })}">
+      <span class="ms" style="font-size:22px;color:${AMBER};font-variation-settings:'FILL' 1">rainy</span>
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+        <div style="font-size:14px;font-weight:500"><span>${e(`Regnpause ${til}`)}</span></div>
+        <div style="font-size:12px;color:#a9a7a2"><span>${e(RAIN.hours ? `${RAIN.hours} t igjen · programmene starter ikke` : 'Programmene starter ikke')}</span></div>
+      </div>
+      <button class="kd-va-b" data-on-click="rainOff" style="height:34px;padding:0 14px;border-radius:17px;background:${AMBER};color:#141416;font-size:13px;font-weight:600;flex:none">Avslutt</button>
+    </div>`;
+        }
         html += `
     <div style="background:#1c1c1f;border:1px solid rgba(255,255,255,0.05);border-radius:24px;padding:18px;display:flex;flex-direction:column;gap:16px">
       <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:12px">

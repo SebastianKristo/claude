@@ -68,6 +68,7 @@ Alle trykk gir vibrasjon i HA-appen (hendelsen `haptic`). Slå av med `haptikk: 
 | `custom:kd-sovn-card` | Søvn | `sleep` · `#sovn` |
 | `custom:kd-vaer-card` | Vær | `vaer` · `#weather` |
 | `custom:kd-stovsuger-card` | Støvsuger | `vac` · `#rolf` |
+| `custom:kd-gressklipper-card` | Robotgressklipper | `mower` · `#gressklipper` |
 | `custom:kd-media-card` | Media | `media` · `#media` |
 | `custom:kd-bil-card` | Bil | `car` · `#tesla` |
 | `custom:kd-printer-card` | 3D-printer | `printer` · `#3d` |
