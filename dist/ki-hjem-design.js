@@ -1,4 +1,4 @@
-/* KI Hjem Design – pikselkopi av Claude Design «Home Assistant sikkerhetspanel». Bygget 2026-09-26T00:04Z. */
+/* KI Hjem Design – pikselkopi av Claude Design «Home Assistant sikkerhetspanel». Bygget 2026-09-26T00:16Z. */
 
 /* ===== 00-kd-base.js ===== */
 try {
@@ -3929,8 +3929,8 @@ try {
     goTab(ev, v) { this.go(ev, 'tab:' + v); }
 
     /* ---------- visningsoppsett (per bruker) ---------- */
-    layout() { const u = (KD.ud(this, UD) || {}).oppsett || this.config.oppsett; return LAYOUTS.some(x => x[0] === u) ? u : 'liste'; }
-    setLayout(ev, v) { if (!LAYOUTS.some(x => x[0] === v) || v === this.layout()) return; KD.udSave(this, UD, { ...KD.ud(this, UD), oppsett: v }); this.setState({ pg: 0, fi: 0 }); this.haptic('selection'); }
+    camLayout() { const u = (KD.ud(this, UD) || {}).oppsett || this.config.oppsett; return LAYOUTS.some(x => x[0] === u) ? u : 'liste'; }
+    setLayout(ev, v) { if (!LAYOUTS.some(x => x[0] === v) || v === this.camLayout()) return; KD.udSave(this, UD, { ...KD.ud(this, UD), oppsett: v }); this.setState({ pg: 0, fi: 0 }); this.haptic('selection'); }
     feat(ev, k) { if (this.state.feat === k) return; this.setState({ feat: k }); this.haptic('selection'); }
     pageGo(ev, d) { this.setState(s => ({ pg: Math.max(0, (s.pg || 0) + Number(d)) })); this.haptic('selection'); }
     fokScroll(ev, a0, el) {
@@ -3943,7 +3943,7 @@ try {
       el.scrollTo({ left: i * el.clientWidth, behavior: 'smooth' }); this.setState({ fi: i }); this.haptic('selection');
     }
     layoutPickHTML() {
-      const cur = this.layout(), L = LAYOUTS.find(x => x[0] === cur);
+      const cur = this.camLayout(), L = LAYOUTS.find(x => x[0] === cur);
       return `<div data-key="kam-lay" data-lay="Visning" data-lay-navn="Visning (oppsett)" style="display:flex;flex-direction:column;gap:6px;min-width:0">
     <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:0 4px;min-width:0">
       <span style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Visning</span>
@@ -3973,7 +3973,7 @@ try {
     }
     /** Alle-visningen i valgt oppsett */
     gridHTML(feeds) {
-      const s = this.state, L = this.layout(), n = feeds.length;
+      const s = this.state, L = this.camLayout(), n = feeds.length;
       const empty = `<div style="padding:24px 0;text-align:center;font-size:13px;color:#6d6c69">Ingen kameraer funnet</div>`;
       if (!n) return `<section data-lay="Kameraer" style="display:grid;grid-template-columns:minmax(0,1fr)">${empty}</section>`;
       const grid = (cols, html) => `<section data-lay="Kameraer" data-key="kam-grid-${L}" style="display:grid;grid-template-columns:repeat(${cols},minmax(0,1fr));gap:8px;min-width:0">${html}</section>`;
