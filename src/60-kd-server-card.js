@@ -748,7 +748,7 @@
       });
       const wl = new Set(this._wlans());
       const sw = reg.filter(id => dom(id) === 'switch');
-      const poe = sw.filter(id => /port_\d+_poe$|_poe$/.test(obj(id)));
+      const pn = id => +((id.match(/_port_(\d+)/) || [])[1] || 0), poe = sw.filter(id => /port_\d+_poe$|_poe$/.test(obj(id))).sort((x, y) => x.slice(0, x.indexOf('_port_')).localeCompare(y.slice(0, y.indexOf('_port_'))) || pn(x) - pn(y));
       const blocks = Array.isArray(c.blokker) ? c.blokker.filter(id => this.st(id)) : sw.filter(id => !poe.includes(id) && !wl.has(id) && !infraDev.has((R[id] || {}).device_id) && !/wlan|wifi|ssid|dpi|restrict|forward|traffic|rule|outlet|led|vpn|port_\d/.test(obj(id)));
       const last = reg.reduce((m, id) => Math.max(m, new Date((S[id] || {}).last_updated || 0).getTime()), 0);
       const poeDev = (() => { const id = poe[0]; const dev = id && this._devs()[(R[id] || {}).device_id]; return (dev && (dev.name_by_user || dev.name)) || 'UniFi'; })();
