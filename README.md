@@ -58,7 +58,7 @@ Alle trykk gir vibrasjon i HA-appen (hendelsen `haptic`). Slå av med `haptikk: 
 | Kort | Designfil | Ark-nøkkel / hash |
 |---|---|---|
 | `custom:kd-hjem-card` | Hjem mobil | – |
-| `custom:kd-strom-card` | Strøm v3 | `strom` · `#strom` |
+| `custom:kd-strom-card` | Strøm v5 | `strom` · `#strom` |
 | `custom:kd-klima-card` | Klima v2 | `klima` · `#klima` |
 | `custom:kd-sikkerhet-card` | Sikkerhet v2 | `sik` · `#alarm` |
 | `custom:kd-kamera-card` | Kamera | `cam` · `#kamera` |
@@ -70,11 +70,11 @@ Alle trykk gir vibrasjon i HA-appen (hendelsen `haptic`). Slå av med `haptikk: 
 | `custom:kd-stovsuger-card` | Støvsuger | `vac` · `#rolf` |
 | `custom:kd-gressklipper-card` | Robotgressklipper | `mower` · `#gressklipper` |
 | `custom:kd-stromregning-card` | Strømregning | `bill` · `#stromregning` |
-| `custom:kd-media-card` | Media | `media` · `#media` |
-| `custom:kd-bil-card` | Bil | `car` · `#tesla` |
+| `custom:kd-media-card` | Media v3 | `media` · `#media` |
+| `custom:kd-bil-card` | Bil v3 | `car` · `#tesla` |
 | `custom:kd-printer-card` | 3D-printer | `printer` · `#3d` |
 | `custom:kd-server-card` | Server | `server` · `#server` |
-| `custom:kd-innstillinger-card` | Innstillinger | `settings` · `#settings` |
+| `custom:kd-innstillinger-card` | Innstillinger v2 | `settings` · `#settings` |
 | `custom:kd-kalender-card` | Kalender | `cal` · `#kalender` |
 | `custom:kd-gjoremal-card` | Gjøremål | `todo` · `#gjoremal` |
 | `custom:kd-soppel-card` | Søppel | `trash` · `#soppel` |

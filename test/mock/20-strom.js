@@ -94,14 +94,12 @@
         const d0 = new Date(start); d0.setHours(0, 0, 0, 0);
         const off = Math.round((d0 - day(0)) / 86400e3);
         const use = off === 0 ? USE.slice(0, nowHi) : USE.map((v, i) => v * (0.85 + ((i * 7 + off * 13) % 10) / 30));
-        const tot = use.reduce((a, b) => a + b, 0);
         for (const id of ids) {
           const src = SRC.find(([k]) => id === 'sensor.kdm_' + k + '_kurs_energy_daily');
           if (id === EID) out[id] = use.map((v, i) => ({ start: at(i, 0).getTime() + off * 86400e3, end: at(i, 0).getTime() + off * 86400e3 + 3600e3, change: v }));
           else if (src) out[id] = use.map((v, i) => ({ start: at(i, 0).getTime() + off * 86400e3, end: at(i, 0).getTime() + off * 86400e3 + 3600e3, change: v * src[2] }));
           else if (id === 'sensor.kdm_totalpris') out[id] = TODAY.map((v, i) => ({ start: at(i, 0).getTime() + off * 86400e3, end: at(i, 0).getTime() + off * 86400e3 + 3600e3, mean: price(v, i) }));
         }
-        void tot;
         return Promise.resolve(out);
       }
       if (msg.type === 'logbook/get_events' && (msg.entity_ids || []).includes('switch.varmtvannsbereder')) {
