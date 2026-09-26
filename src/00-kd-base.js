@@ -362,6 +362,8 @@ input,select,textarea{font:inherit;color:inherit}
   ${items.map(([k, label, icon], j) => `<button data-on-click="${KD.e(method)}" data-arg="${KD.e(k)}" data-seg-b="${j}" style="position:relative;z-index:1;height:${h}px;min-width:0;border-radius:${Math.max(4, r - P)}px;display:flex;flex-direction:${o.stack ? 'column' : 'row'};align-items:center;justify-content:center;gap:${o.stack ? 3 : 6}px;padding:0 ${o.stack ? 2 : 6}px;font-size:${o.stack ? 10 : o.small ? 12 : 13}px;font-weight:${j === i ? 600 : 500};white-space:nowrap;color:${j === i ? on : off};transition:color .25s">${icon ? `<span class="ms" style="font-size:${o.stack ? 20 : o.small ? 15 : 17}px;font-variation-settings:'FILL' ${j === i ? 1 : 0}">${KD.e(icon)}</span>` : ''}<span style="min-width:0;overflow:hidden;text-overflow:ellipsis">${KD.e(label)}</span></button>`).join('')}
 </div>`;
   };
+  /** Lange lister i Tilpass-panelene: egen rulleboks med tone i kantene */
+  KD.scrollBox = (html, max = 240) => `<div style="max-height:${max}px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;margin:0 4px;border-radius:14px;background:rgba(0,0,0,0.14);box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);-webkit-mask-image:linear-gradient(180deg,transparent 0,#000 8px,#000 calc(100% - 8px),transparent 100%);mask-image:linear-gradient(180deg,transparent 0,#000 8px,#000 calc(100% - 8px),transparent 100%)">${html}</div>`;
   /** Valg for fanestørrelse (brukes i Tilpass oppsett og Tilpass Hjem) */
   KD.faneValgHTML = (F, fn) => {
     const chip = (on, arg, label) => `<button data-on-click="${fn}" data-arg="${arg}" style="${KD.S({ height: 32, padding: '0 12px', borderRadius: 16, fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap', background: on ? 'oklch(0.78 0.13 350 / 0.2)' : 'rgba(255,255,255,0.06)', boxShadow: on ? 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.7)' : 'none', color: on ? '#f2f1ee' : '#a9a7a2' })}">${label}</button>`;
@@ -571,8 +573,8 @@ input,select,textarea{font:inherit;color:inherit}
       const secs = this._secs || [];
       const ib = (arg, icon, title, col, dis) => `<button data-on-click="layOp" data-arg="${e(arg)}" title="${title}" style="${SS({ width: 34, height: 34, borderRadius: 17, flex: 'none', display: 'grid', placeItems: 'center', color: col || '#8e8d89', opacity: dis ? 0.25 : 1, pointerEvents: dis ? 'none' : null })}"><span class="ms" style="font-size:20px">${icon}</span></button>`;
       const extra = typeof this.tilpassHTML === 'function' ? this.tilpassHTML() : '';
-      return `<div data-key="kd-lay-pad" data-lay-skip="1" style="height:calc(46vh + 110px)"></div>
-  <div data-key="kd-lay-panel" data-lay-skip="1" style="position:fixed;left:var(--kd-kant,10px);right:var(--kd-kant,10px);bottom:calc(var(--kd-dokk-h, 14px) + 6px + env(safe-area-inset-bottom));z-index:30;max-width:620px;margin:0 auto;max-height:46vh;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;box-sizing:border-box;padding:8px;border-radius:26px;background:rgba(38,38,41,0.94);backdrop-filter:blur(22px) saturate(170%);-webkit-backdrop-filter:blur(22px) saturate(170%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.12),0 18px 40px rgba(0,0,0,0.5);display:flex;flex-direction:column;gap:2px">
+      return `<div data-key="kd-lay-pad" data-lay-skip="1" style="height:calc(62vh + var(--kd-dokk-h, 14px) + 20px)"></div>
+  <div data-key="kd-lay-panel" data-lay-skip="1" style="position:fixed;left:var(--kd-kant,10px);right:var(--kd-kant,10px);bottom:calc(var(--kd-dokk-h, 14px) + 6px + env(safe-area-inset-bottom));z-index:30;max-width:620px;margin:0 auto;max-height:min(62vh, calc(100vh - var(--kd-dokk-h, 14px) - 90px));overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;box-sizing:border-box;padding:8px;border-radius:26px;background:rgba(38,38,41,0.94);backdrop-filter:blur(22px) saturate(170%);-webkit-backdrop-filter:blur(22px) saturate(170%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.12),0 18px 40px rgba(0,0,0,0.5);display:flex;flex-direction:column;gap:2px">
     <div style="position:sticky;top:-8px;z-index:1;display:flex;align-items:center;gap:8px;padding:6px 4px 6px 12px;margin:-8px -8px 0;border-radius:26px 26px 0 0;background:rgba(38,38,41,0.98)">
       <span class="ms" style="font-size:20px;color:oklch(0.82 0.1 350)">dashboard_customize</span><span style="flex:1;font-size:15px;font-weight:600">Tilpass oppsett</span>
       <button data-on-click="layReset" style="height:34px;padding:0 12px;border-radius:17px;font-size:12px;color:#a9a7a2;background:rgba(255,255,255,0.06)">Nullstill</button>
@@ -581,11 +583,11 @@ input,select,textarea{font:inherit;color:inherit}
     ${this._hasSeg ? KD.faneValgHTML(this.faneOpts(), 'faneSet') : ''}
     ${this._entHTML()}
     ${secs.length ? `<div style="padding:10px 12px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">Seksjoner</div>` : ''}
-    ${secs.map((x, i) => `<div data-key="kd-lay-${e(x.sig)}" style="min-height:44px;padding:0 4px 0 12px;border-radius:14px;display:flex;align-items:center;gap:8px;opacity:${x.hid ? 0.45 : 1}">
+    ${KD.scrollBox(secs.map((x, i) => `<div data-key="kd-lay-${e(x.sig)}" style="min-height:44px;padding:0 4px 0 12px;border-radius:14px;display:flex;align-items:center;gap:8px;opacity:${x.hid ? 0.45 : 1}">
       <span style="flex:1;min-width:0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(x.label)}</span>
       ${ib(x.sig + '|opp', 'arrow_upward', 'Flytt opp', null, i === 0)}${ib(x.sig + '|ned', 'arrow_downward', 'Flytt ned', null, i === secs.length - 1)}
       ${ib(x.sig + '|skjul', x.hid ? 'visibility_off' : 'visibility', x.hid ? 'Vis' : 'Skjul', x.hid ? '#6d6c69' : 'oklch(0.82 0.1 350)')}
-    </div>`).join('')}
+    </div>`).join(''), 260)}
   </div>`;
     }
     /* ----- Entiteter: bytt hvilke entiteter kortet bruker (alle config-nøkler med en entitet som standard) ----- */
@@ -625,7 +627,7 @@ input,select,textarea{font:inherit;color:inherit}
             <span class="ms" style="font-size:20px;color:#8e8d89">${open === k ? 'expand_less' : 'edit'}</span>
           </button>${list}</div>`;
       }).join('');
-      return `<div style="padding:10px 12px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">Entiteter</div>${rows}`;
+      return `<div style="padding:10px 12px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">Entiteter</div>${KD.scrollBox(rows, 280)}`;
     }
     _render() {
       const first = !this._didFirst;

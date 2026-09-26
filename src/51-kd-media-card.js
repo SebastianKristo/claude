@@ -1,11 +1,11 @@
 /*
- * kd-media-card – pikselkopi av Claude Design «Media» (TV-fjernkontroll + musikk/høyttalere), med ekte data.
+ * kd-media-card – pikselkopi av Claude Design «Media v3» (TV-fjernkontroll + musikk/høyttalere), med ekte data.
  *
  *   type: custom:kd-media-card            # alt annet er valgfritt («auto config»)
  *   tv: media_player.stue_tv              # Apple TV; fjernkontroll: remote.stue_tv
  *   hoyttalere: [{ entity: media_player.squeezebox_radio, navn: Sonos }, …]
  *   apper: [{ navn: Netflix, kilde: Netflix, ikon: movie, farge: 'oklch(…)' }, …]   # select_source på TV-en
- *   radio: [{ entity: button.squeezebox_radio_preset_1, navn: NRK P1 }, …]           # finnes også automatisk
+ *   radio: [{ entity: button.squeezebox_radio_preset_1, navn: NRK P1, ikon: radio }, …]  # finnes også automatisk
  *   volum: media_player.rn602_stue       # volumknappene: entitet, 'fjernkontroll' eller 'skript' (standard: automatisk)
  *   volum_opp: script.volum_opp          # med volum: skript
  *   volum_ned: script.volum_ned
@@ -17,8 +17,7 @@
  */
 (() => {
   const KD = window.KD;
-  const C = { blue: 'oklch(0.8 0.12 250)', green: 'oklch(0.8 0.12 150)', red: 'oklch(0.72 0.15 25)' };
-  const a = KD.a, PINK = KD.PINK;
+  const PINK = KD.PINK;
   const OFF = ['off', 'standby', 'unavailable', 'unknown', ''];
   const APPS = [['Plex', 'play_circle', 'oklch(0.6 0.1 75)'], ['NRK TV', 'live_tv', 'oklch(0.55 0.07 220)'], ['Telia Play', 'smart_display', 'oklch(0.5 0.12 300)'], ['TV 2 Play', 'smart_display', 'oklch(0.5 0.09 260)'], ['YouTube', 'smart_display', 'oklch(0.5 0.14 25)'], ['Netflix', 'movie', 'oklch(0.45 0.14 25)']];
   const tm = (s) => { s = Math.max(0, Math.round(s || 0)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return (h ? `${h}:${KD.hh(m)}` : `${m}`) + `:${KD.hh(x)}`; };
@@ -32,15 +31,9 @@
   const DOM_ICON = { script: 'description', button: 'radio_button_checked', input_button: 'radio_button_checked', scene: 'palette', media_player: 'speaker', remote: 'settings_remote' };
   const SRC_ICON = [[/airplay/, 'airplay'], [/bluetooth|bt\b/, 'bluetooth'], [/spotify|tidal|deezer|music|musikk/, 'library_music'], [/radio|tuner|fm|dab/, 'radio'], [/cd|phono|vinyl/, 'album'], [/optical|coax|hdmi|tv|arc/, 'settings_input_hdmi'], [/usb/, 'usb'], [/net|dlna|server/, 'lan']];
   const srcIcon = (s) => (SRC_ICON.find(([re]) => re.test(low(s))) || [0, 'input'])[1];
-  const hue = (s) => { let h = 0; for (const ch of String(s)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h % 360; };
-  /** radioflis: stort merke + liten tekst, f.eks. «NRK P1» → P1 / NRK */
-  const badge = (name) => {
-    const w = String(name || '').trim().split(/\s+/).filter(Boolean);
-    if (w.length > 1 && w[w.length - 1].length <= 4) return [w[w.length - 1], w.slice(0, -1).join(' ')];
-    if (w.length > 1) return [(w[0][0] + w[1][0]).toUpperCase(), ''];
-    const x = w[0] || '?';
-    return [x.length <= 5 ? x : x[0].toUpperCase(), x.length <= 5 ? '' : x];
-  };
+  /** ikon for en radioflis (kan overstyres med «ikon» i config.radio) */
+  const stIcon = (name) => /jazz|klassisk|classic|blues/.test(low(name)) ? 'music_note' : /mix|hits|pop|musikk/.test(low(name)) ? 'queue_music' : 'radio';
+  const PAD_LBL = { up: 'Opp', down: 'Ned', left: 'Venstre', right: 'Høyre', ok: 'OK' };
 
   class KDMediaCard extends KD.KDSheet {
     static head = ['music_note', 'Media', 'Høyttalere og TV'];
@@ -56,23 +49,21 @@
       ],
       apper: APPS.map(([navn, ikon, farge]) => ({ navn, ikon, farge })),
       radio: [
-        { entity: 'button.squeezebox_radio_preset_1', navn: 'NRK P1' },
-        { entity: 'button.squeezebox_radio_preset_2', navn: 'NRK JAZZ' },
-        { entity: 'button.squeezebox_radio_preset_3', navn: 'NRK P3' },
-        { entity: 'button.squeezebox_radio_preset_4', navn: 'P24-7 MIX' },
-        { entity: 'button.squeezebox_radio_preset_5', navn: 'NRK mp3' },
         { entity: 'button.squeezebox_radio_preset_6', navn: 'Montebello' },
+        { entity: 'button.squeezebox_radio_preset_1', navn: 'NRK P1' },
+        { entity: 'button.squeezebox_radio_preset_2', navn: 'NRK Jazz' },
+        { entity: 'button.squeezebox_radio_preset_3', navn: 'NRK P3' },
+        { entity: 'button.squeezebox_radio_preset_4', navn: 'P24-7 Mix' },
+        { entity: 'button.squeezebox_radio_preset_5', navn: 'NRK mP3' },
       ],
       vis_kilder: true,
     };
-    static sheetCss = `.kd-md-key:active{transform:scale(0.92);background:#2a2a2d!important}.kd-md-vol:active{background:#2a2a2d!important}
-.kd-md-tr{transition:transform .15s,background .15s}.kd-md-tr:active{transform:scale(0.88)}
-.kd-md-tile{transition:transform .18s}.kd-md-tile:active{transform:scale(0.94)}
+    static sheetCss = `.kd-md-key:active{transform:scale(0.93);color:#f2f1ee!important}
+.kd-md-p90:active{transform:scale(0.9)}.kd-md-p93:active{transform:scale(0.93);color:#f2f1ee!important}.kd-md-p94:active{transform:scale(0.94)}.kd-md-p95:active{transform:scale(0.95)}
 @keyframes kdmdeq{0%,100%{transform:scaleY(.3)}50%{transform:scaleY(1)}}
-.kd-md-eq>span{display:block;width:3px;height:12px;border-radius:2px;background:#f2f1ee;transform-origin:bottom;animation:kdmdeq .9s ease-in-out infinite}
-.kd-md-eq>span:nth-child(2){animation-delay:-.3s}.kd-md-eq>span:nth-child(3){animation-delay:-.6s}`;
+@keyframes kdmdmq{from{transform:translateX(0)}to{transform:translateX(-50%)}}`;
 
-    constructor() { super(); this.state = { tab: null, press: null, kbOpen: null, kbDom: {} }; this._kbQ = {}; this._drag = null; }
+    constructor() { super(); this.state = { tab: null, press: null, lastKey: null, kbOpen: null, kbDom: {} }; this._kbQ = {}; this._drag = null; }
 
     /* ----- data ----- */
     on(id) { return !!id && this.ok(id) && !OFF.includes(this.v(id)); }
@@ -153,7 +144,13 @@
 
     /* ----- handlinger ----- */
     tab(e, k) { this.setState({ tab: k }); }
-    flash(k) { this.setState({ press: k }); clearTimeout(this._pt); this._pt = setTimeout(() => this.setState({ press: null }), 160); }
+    /** trykk-tilbakemelding på styreflaten: lys opp pila, vis navnet og send en rosa «ping»-ring */
+    flash(k, label) {
+      this.setState({ press: k, lastKey: label || PAD_LBL[k] || this.state.lastKey }); clearTimeout(this._pt); this._pt = setTimeout(() => this.setState({ press: null }), 160);
+      const ring = this.$('[data-key="kd-pad-ring"]');
+      if (ring && ring.animate && PAD_LBL[k]) ring.animate([{ transform: 'scale(.6)', opacity: 0.8 }, { transform: 'scale(1.5)', opacity: 0 }], { duration: 400, easing: 'ease-out' });
+    }
+    say(label) { this.setState({ lastKey: label }); }
     /** fjernkontrollen: config → remote.<tv> → en remote med samme navn som TV-en */
     remoteId() {
       const c = this.config, tvE = this.tvId(), tv = String(tvE || '').split('.')[1] || '';
@@ -203,11 +200,15 @@
     powerTv() { const id = this.tvId(); this.call('media_player', this.on(id) ? 'turn_off' : 'turn_on', { entity_id: id }); }
     key(e, k) {
       if (k === 'power') return this.powerTv();
-      if (k === 'back') { this.flash('back'); return this.send('menu'); }
-      if (k === 'home') return this.send('home');
-      if (k === 'mic') return this.send('siri');
-      if (k === 'playpause') return this.call('media_player', 'media_play_pause', { entity_id: this.tvId() });
+      if (k === 'back') { this.say('Tilbake'); return this.send('menu'); }
+      if (k === 'home') { this.say('Hjem'); return this.send('home'); }
+      if (k === 'menu') { this.say('Meny'); return this.send('top_menu'); }
+      if (k === 'mic') return this.siri();
+      if (k === 'playpause') { this.say('Spill/pause'); return this.call('media_player', 'media_play_pause', { entity_id: this.tvId() }); }
     }
+    /** langt trykk på «Meny»: Siri */
+    siri() { this.say('Siri'); this.send('siri'); }
+    tvNext() { this.say('Neste'); this.call('media_player', 'media_next_track', { entity_id: this.tvId() }); }
     canSet(id) { return (Number(this.at(id, 'supported_features', 0)) & 4) === 4 && this.at(id, 'volume_level') != null; }
     volStep(id, dir) {
       if (this.canSet(id)) {
@@ -239,6 +240,7 @@
     }
     app(e, i) {
       const x = (this.config.apper || [])[+i]; if (!x) return;
+      this.say(`Åpner ${x.navn}`);
       if (x.skript) return this.call('script', 'turn_on', { entity_id: x.skript });
       const list = this.at(this.tvId(), 'source_list', []) || [];
       const want = x.kilde || x.navn;
@@ -437,218 +439,256 @@
       </div>`;
     }
 
+
     afterRender() {
       this._padInit();
-      // oppdater avspillingstiden hvert sekund mens noe spilles
+      this._segFit();
+      // oppdater avspillingstiden hvert sekund mens noe spilles (brukes av TV-undertittelen)
       clearTimeout(this._tick);
       if (this._connected && this._playingPos) this._tick = setTimeout(() => this._queue(), 1000);
     }
+    /** fanevelgeren har auto-brede kolonner (som designet): legg boblen over det valgte valget */
+    _segFit() {
+      const el = this.$('[data-seg="fane"]'); if (!el) return;
+      const th = el.querySelector('[data-seg-thumb]'), b = el.querySelectorAll('[data-seg-b]')[+el.getAttribute('data-seg-i') || 0];
+      if (!th || !b || !b.offsetWidth) return;
+      th.style.left = b.offsetLeft + 'px'; th.style.width = b.offsetWidth + 'px';
+    }
+
+    /* ----- felles byggeklosser (Media v3) ----- */
+    /** små equalizer-streker (animeres bare når noe spilles) */
+    eqHTML(n, col, anim) {
+      return Array.from({ length: n }, (_, i) => `<span style="width:2px;height:10px;border-radius:1px;background:${col};transform-origin:bottom;${anim ? `animation:kdmdeq ${0.7 + (i % 3) * 0.18}s ease-in-out ${i * 0.12}s infinite` : 'transform:scaleY(.3)'}"></span>`).join('');
+    }
+    /** «Spilles nå»-kortet øverst: m = { id, power, anim, icon, label, title, artist, pic, ph, powerFn, nextFn } */
+    heroHTML(m) {
+      const e = KD.e;
+      const lv = [0.5, 0.7, 0.8, 0.9, 0.75, 0.6, 0.45, 0.3, 0.8, 0.95, 0.7, 0.55, 0.4, 0.3];
+      const level = lv.map((h, i) => `<span style="flex:1;height:${h * 100}%;border-radius:2px;background:#6d6c69;transform-origin:center;${m.anim ? `animation:kdmdeq ${0.8 + (i % 4) * 0.15}s ease-in-out ${i * 0.07}s infinite` : 'transform:scaleY(.25)'}"></span>`).join('');
+      const marquee = `display:inline-block;font-size:22px;font-weight:500;letter-spacing:-0.01em;white-space:pre;animation:${m.anim ? 'kdmdmq 14s linear infinite' : 'none'}`;
+      const img = m.pic ? `background-image:${e(cssUrl(m.pic))};background-size:cover;background-position:center;` : '';
+      return `<section data-lay="md-na" data-lay-navn="Spilles nå" data-more="${e(m.id)}" style="display:flex;gap:14px;padding:18px;border-radius:28px;background:radial-gradient(90% 120% at 20% 0%, #26262a, #1c1c1f 70%);box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);opacity:${m.power ? 1 : 0.55};transition:opacity .3s;min-width:0">
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;justify-content:space-between;gap:14px">
+      <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:#8e8d89;white-space:nowrap;min-width:0">
+        <span class="ms" style="font-size:16px;font-variation-settings:'FILL' 1">${e(m.icon)}</span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis">${e(m.label)}</span>
+        <span style="display:flex;gap:2px;align-items:flex-end;height:10px;flex:none">${this.eqHTML(4, '#8e8d89', m.anim)}</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px;min-width:0">
+        <div style="overflow:hidden;white-space:nowrap;mask-image:linear-gradient(90deg,transparent,#000 6%,#000 90%,transparent);-webkit-mask-image:linear-gradient(90deg,transparent,#000 6%,#000 90%,transparent)">
+          <span style="${marquee}"><span>${e(m.title)}</span>      <span>${e(m.title)}</span>      </span>
+        </div>
+        <span style="font-size:13px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span>${e(m.artist)}</span></span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="flex:1;min-width:0;display:flex;gap:3px;align-items:center;height:22px">${level}</div>
+        <button data-on-click="${m.powerFn}" title="Av/på" style="width:40px;height:40px;border-radius:20px;flex:none;display:grid;place-items:center;background:${m.power ? '#262629' : 'oklch(0.72 0.15 25 / 0.2)'};color:${m.power ? '#f2f1ee' : 'oklch(0.72 0.15 25)'}"><span class="ms" style="font-size:20px">power_settings_new</span></button>
+        <button class="kd-md-p90" data-on-click="${m.nextFn}" title="Neste" style="width:40px;height:40px;border-radius:20px;background:#262629;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">skip_next</span></button>
+      </div>
+    </div>
+    <div data-on-click="openMore" data-arg="${e(m.id)}" style="position:relative;width:112px;height:112px;flex:none;border-radius:20px;overflow:hidden;background:#262629;${img}box-shadow:inset 0 0 0 1px rgba(255,255,255,0.08);display:grid;place-items:center;cursor:pointer">
+      ${m.pic ? '' : `<span class="ms" style="font-size:40px;color:#6d6c69;font-variation-settings:'FILL' 1">${e(m.ph)}</span>`}
+    </div>
+  </section>`;
+    }
+    /** volumraden nederst. Glidebryter når volumet kan settes direkte, ellers −/+-knapper (fjernkontroll, skript, overstyrte knapper) */
+    volRowHTML(id, muteFn, buttons) {
+      const e = KD.e, P = 'oklch(0.78 0.13 350)';
+      const v = this.volOf(id), muted = !!this.at(id, 'is_volume_muted'), x = muted || v == null ? 0 : KD.clamp(v, 0, 100);
+      let mid;
+      if (buttons) {
+        const vb = (dir, icon, t) => `<button class="kd-md-p93" data-on-click="vol" data-arg="${dir}" title="${t}" style="flex:none;width:36px;height:36px;border-radius:18px;background:#1c1c1f;display:grid;place-items:center;color:#c9c7c2"><span class="ms" style="font-size:20px">${icon}</span></button>`;
+        mid = `<div style="flex:1;min-width:0;height:36px;display:flex;align-items:center;gap:10px">
+      ${vb('down', 'volume_down', 'Volum ned')}
+      <div style="position:relative;flex:1;min-width:0;height:6px;border-radius:3px;background:#2a2a2d;overflow:hidden"><div style="position:absolute;left:0;top:0;bottom:0;width:${x}%;border-radius:3px;background:${PINK};transition:width .2s"></div></div>
+      ${vb('up', 'volume_up', 'Volum opp')}
+    </div>`;
+      } else {
+        mid = `<div ${v != null ? `data-on-pointerdown="volDrag" data-arg="${e(id)}"` : ''} role="slider" aria-label="Volum" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${x}" style="position:relative;flex:1;height:36px;cursor:pointer;touch-action:pan-y;user-select:none;-webkit-user-select:none">
+      <div style="position:absolute;left:0;right:0;top:15px;height:6px;border-radius:3px;background:#2a2a2d;pointer-events:none"></div>
+      <div style="position:absolute;left:0;top:15px;height:6px;border-radius:3px;width:${x}%;background:${PINK};pointer-events:none"></div>
+      <span style="position:absolute;top:6px;left:calc(${x}% - 12px);width:24px;height:24px;border-radius:12px;background:#f4f3ef;box-shadow:0 2px 8px rgba(0,0,0,0.4);pointer-events:none"></span>
+    </div>`;
+      }
+      return `<div data-lay="md-vol" data-lay-navn="Volum" style="display:flex;align-items:center;gap:14px;padding:6px 4px">
+    <button data-on-click="${muteFn}" title="Demp" style="font-size:14px;color:${muted ? P : '#c9c7c2'};width:52px;flex:none;text-align:left">Volum</button>
+    ${mid}
+    <span style="font-size:14px;color:${muted ? P : '#c9c7c2'};width:40px;text-align:right;font-variant-numeric:tabular-nums;flex:none">${muted ? '<span class="ms" style="font-size:18px">volume_off</span>' : v == null ? '–' : `<span>${v}</span>%`}</span>
+  </div>`;
+    }
 
     /* ----- Musikk-fanen ----- */
-    /** dra-bar volumlinje; data-on-pointerdown på beholderen, sporet er første barn */
-    sliderHTML(id, v, col, thick) {
-      const e = KD.e, x = KD.clamp(v || 0, 0, 100), h = thick ? 7 : 6, t = thick ? 18 : 16;
+    /** dra-bar volumlinje for høyttalerne; data-on-pointerdown på beholderen, sporet er første barn */
+    sliderHTML(id, v, col) {
+      const e = KD.e, x = KD.clamp(v || 0, 0, 100), h = 6, t = 16;
       return `<div data-on-pointerdown="volDrag" data-arg="${e(id)}" role="slider" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${x}" style="flex:1;min-width:0;height:34px;padding:0 ${t / 2}px;display:flex;align-items:center;cursor:pointer;touch-action:pan-y;user-select:none;-webkit-user-select:none">
-        <div style="position:relative;width:100%;height:${h}px;border-radius:${h}px;background:rgba(255,255,255,0.14);pointer-events:none">
+        <div style="position:relative;width:100%;height:${h}px;border-radius:${h}px;background:#2a2a2d;pointer-events:none">
           <div style="position:absolute;left:0;top:0;bottom:0;width:${x}%;border-radius:${h}px;background:${col}"></div>
-          <div style="position:absolute;top:50%;left:${x}%;width:${t}px;height:${t}px;margin:-${t / 2}px 0 0 -${t / 2}px;border-radius:50%;background:#f2f1ee;box-shadow:0 2px 8px rgba(0,0,0,0.45)"></div>
+          <div style="position:absolute;top:50%;left:${x}%;width:${t}px;height:${t}px;margin:-${t / 2}px 0 0 -${t / 2}px;border-radius:50%;background:#f4f3ef;box-shadow:0 2px 8px rgba(0,0,0,0.4)"></div>
         </div>
       </div>`;
     }
-    heroHTML(pl, plA, playing, act) {
-      const e = KD.e, st = this.v(pl), active = playing || st === 'paused';
-      const pic = active && plA.entity_picture ? plA.entity_picture : null;
+    musicHTML(pl, plA, playing, speakers, act) {
+      const e = KD.e, S = KD.S, cf = this.config, PC = 'oklch(0.78 0.13 350)';
+      const anim = playing;
+      const hrow = (inner, gap = 8) => `<div data-hscroll="1" style="display:flex;gap:${gap}px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:0 var(--kd-kant,10px)">${inner}</div>`;
+      const secHead = (t, meta) => `<div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:0 4px;min-width:0"><div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89"><span>${e(t)}</span></div>${meta ? `<div style="font-size:12px;color:#6d6c69;white-space:nowrap"><span>${e(meta)}</span></div>` : ''}</div>`;
+      // radiokanaler (forhåndsvalg)
+      const cur = low(plA.media_channel || plA.media_title || plA.source);
+      const stations = this.radios().map(r => {
+        const act1 = !!cur && (cur.includes(low(r.navn)) || low(r.navn).includes(cur)) && this.on(pl), on = act1 && anim;
+        return `<button class="kd-md-p95" data-on-click="radio" data-arg="${e(r.entity)}" aria-label="${e(r.navn)}" style="position:relative;flex:none;width:88px;height:88px;border-radius:22px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:${act1 ? PINK : '#1c1c1f'};color:${act1 ? '#2a1720' : '#f2f1ee'};transition:background .2s, transform .12s">
+          <span class="ms" style="font-size:24px;font-variation-settings:'FILL' 1">${e(r.ikon || stIcon(r.navn))}</span>
+          <span style="font-size:11px;font-weight:600;white-space:nowrap;max-width:80px;overflow:hidden;text-overflow:ellipsis">${e(r.navn)}</span>
+          ${on ? `<span style="position:absolute;right:10px;bottom:8px;display:flex;gap:2px;align-items:flex-end;height:10px">${this.eqHTML(3, '#2a1720', true)}</span>` : ''}
+        </button>`;
+      });
       const feat = Number(plA.supported_features || 0);
-      const title = active && plA.media_title ? plA.media_title : playing ? (plA.media_channel || plA.source || 'Spiller') : !this.st(pl) ? 'Fant ingen musikkspiller' : 'Ingenting spilles';
-      const artist = active ? ([plA.media_artist, plA.media_album_name].filter(Boolean).join(' · ') || plA.media_channel || plA.source || plA.app_name || '')
-        : (plA.source || plA.app_name || (this.st(pl) ? 'Velg en radiokanal eller kilde' : '–'));
-      const p = active ? this.pos(pl) : null;
-      this._playingPos = playing && !!p;
-      const live = active && !p && !!(plA.media_channel || /radio|tuner|fm|dab/.test(low(plA.source)));
-      const nm = (this.speakers().find(x => x.entity === pl) || {}).navn || this.fname(pl);
-      const dev = act.length > 1 ? `${nm} + ${act.length - 1}` : nm;
-      const h = hue(plA.media_title || plA.media_channel || plA.source || pl);
-      const img = pic ? `background-image:${e(cssUrl(pic))};background-size:cover;background-position:center` : '';
-      const glow = pic ? img : `background:radial-gradient(55% 45% at 28% 28%, oklch(0.62 0.15 ${h}) 0, transparent 72%),radial-gradient(60% 55% at 78% 72%, oklch(0.55 0.13 ${(h + 90) % 360}) 0, transparent 72%)`;
-      const art = pic ? img : `background:linear-gradient(150deg, oklch(0.52 0.13 ${h}), oklch(0.3 0.08 ${(h + 60) % 360}))`;
-      const plOn = this.on(pl) || playing;
-      const dim = 'rgba(242,241,238,0.58)', PK = 'oklch(0.82 0.11 350)';
-      const tb = (fn, icon, size, box, col, extra, lbl) => `<button class="kd-md-tr" data-on-click="${fn}" aria-label="${lbl}" style="flex:none;width:${box}px;height:${box}px;border-radius:50%;display:grid;place-items:center;color:${col};${extra || ''}"><span class="ms" style="font-size:${size}px;font-variation-settings:'FILL' 1">${icon}</span></button>`;
       const sh = (feat & 32768) || plA.shuffle != null, rp = (feat & 262144) || plA.repeat != null;
       const shOn = !!plA.shuffle, rpV = plA.repeat || 'off';
-      const frac = p && p[1] ? KD.clamp(p[0] / p[1], 0, 1) * 100 : 0;
-      const seekable = !!p && (feat & 2) === 2;
-      const prog = live
-        ? `<div style="display:flex;align-items:center;gap:10px;height:18px"><div style="flex:1;height:5px;border-radius:3px;background:linear-gradient(90deg, oklch(0.78 0.13 350 / 0.7), rgba(255,255,255,0.16))"></div><span style="flex:none;display:flex;align-items:center;gap:5px;font-size:11px;font-weight:600;letter-spacing:.08em;color:${PK}"><span style="width:6px;height:6px;border-radius:3px;background:${PK}"></span>DIREKTE</span></div>`
-        : `<div ${seekable ? 'data-on-click="seek"' : ''} style="height:18px;display:flex;align-items:center;cursor:${seekable ? 'pointer' : 'default'}"><div style="position:relative;width:100%;height:5px;border-radius:3px;background:rgba(255,255,255,0.16);overflow:hidden;pointer-events:none"><div style="position:absolute;left:0;top:0;bottom:0;width:${frac}%;border-radius:3px;background:#f2f1ee;transition:width 1s linear"></div></div></div>
-          <div style="display:flex;justify-content:space-between;font-size:11px;color:${dim};font-variant-numeric:tabular-nums;margin-top:-2px"><span>${p ? tm(p[0]) : '–:––'}</span><span>${p ? '-' + tm(p[1] - p[0]) : '–:––'}</span></div>`;
-      const v = this.volOf(pl), muted = !!plA.is_volume_muted;
-      return `<section data-lay="md-na" data-lay-navn="Spilles nå" style="position:relative;overflow:hidden;isolation:isolate;border-radius:28px;background:#1c1c1f;padding:14px 18px 12px;display:flex;flex-direction:column;gap:14px;min-width:0">
-    <div aria-hidden="true" style="position:absolute;inset:-30%;z-index:-2;${glow};filter:blur(46px) saturate(1.5);opacity:${active ? 0.7 : 0.32};transform:scale(1.1);transition:opacity .6s"></div>
-    <div aria-hidden="true" style="position:absolute;inset:0;z-index:-1;background:linear-gradient(180deg, rgba(28,28,31,0.15) 0%, rgba(28,28,31,0.55) 55%, rgba(28,28,31,0.92) 100%)"></div>
-    <div style="display:flex;align-items:center;gap:10px;min-width:0">
-      <button data-on-click="openMore" data-arg="${e(pl)}" style="flex:1;min-width:0;display:flex;align-items:center;gap:8px;height:36px;text-align:left">
-        <span class="ms" style="flex:none;font-size:18px;color:${dim}">${act.length > 1 ? 'speaker_group' : 'speaker'}</span>
-        <span style="min-width:0;font-size:13px;font-weight:500;color:rgba(242,241,238,0.78);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(dev)}</span>
-      </button>
-      <button data-on-click="powerMusic" aria-label="Av/på" style="flex:none;width:36px;height:36px;border-radius:18px;display:grid;place-items:center;background:${plOn ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.25)'};color:${plOn ? C.green : C.red};backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)"><span class="ms" style="font-size:20px">power_settings_new</span></button>
-    </div>
-    <div data-on-click="openMore" data-arg="${e(pl)}" style="align-self:center;width:min(100%, 272px);aspect-ratio:1;border-radius:22px;${art};display:grid;place-items:center;color:rgba(255,255,255,0.85);box-shadow:0 24px 50px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(255,255,255,0.08);transform:scale(${playing ? 1 : 0.86});transition:transform .55s cubic-bezier(.34,1.4,.5,1);cursor:pointer">
-      ${pic ? '' : `<span class="ms" style="font-size:72px;font-variation-settings:'FILL' 1">${active || plOn ? 'music_note' : 'music_off'}</span>`}
-    </div>
-    <div style="display:flex;flex-direction:column;gap:3px;min-width:0;padding-top:2px">
-      <div style="font-size:21px;font-weight:600;letter-spacing:-0.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span>${e(title)}</span></div>
-      <div style="font-size:15px;color:${dim};white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span>${e(artist)}</span></div>
-    </div>
-    <div style="display:flex;flex-direction:column;gap:6px;min-width:0">${prog}</div>
-    <div style="display:grid;grid-template-columns:minmax(0,1fr) auto auto auto minmax(0,1fr);align-items:center;gap:4px">
-      <div style="display:flex;justify-content:flex-start">${sh ? tb('shuffle', 'shuffle', 22, 42, shOn ? PK : dim, shOn ? 'background:oklch(0.78 0.13 350 / 0.16)' : '', 'Tilfeldig') : ''}</div>
-      ${tb('prev', 'skip_previous', 40, 60, '#f2f1ee', '', 'Forrige')}
-      ${tb('playPause', playing ? 'pause' : 'play_arrow', 42, 74, '#141416', 'background:#f2f1ee;box-shadow:0 10px 28px rgba(0,0,0,0.35);margin:0 6px', playing ? 'Pause' : 'Spill')}
-      ${tb('next', 'skip_next', 40, 60, '#f2f1ee', '', 'Neste')}
-      <div style="display:flex;justify-content:flex-end">${rp ? tb('repeat', rpV === 'one' ? 'repeat_one' : 'repeat', 22, 42, rpV !== 'off' ? PK : dim, rpV !== 'off' ? 'background:oklch(0.78 0.13 350 / 0.16)' : '', 'Gjenta') : ''}</div>
-    </div>
-    ${v != null ? `<div style="display:flex;align-items:center;gap:2px;min-width:0">
-      <button data-on-click="muteMusic" aria-label="Demp" style="flex:none;width:34px;height:34px;display:grid;place-items:center;color:${muted ? PK : dim}"><span class="ms" style="font-size:20px">${muted ? 'volume_off' : 'volume_mute'}</span></button>
-      ${this.sliderHTML(pl, muted ? 0 : v, 'rgba(242,241,238,0.92)', true)}
-      <span class="ms" style="flex:none;width:34px;text-align:center;font-size:20px;color:${dim}">volume_up</span>
-    </div>` : ''}
-  </section>`;
-    }
-    musicHTML(pl, plA, playing, speakers, act) {
-      const e = KD.e, S = KD.S, cf = this.config;
-      const secHead = (t, meta) => `<div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:0 4px;min-width:0"><div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89"><span>${e(t)}</span></div>${meta ? `<div style="font-size:12px;color:#6d6c69;white-space:nowrap"><span>${e(meta)}</span></div>` : ''}</div>`;
-      const hrow = (inner, gap = 8) => `<div data-hscroll="1" style="display:flex;gap:${gap}px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:0 var(--kd-kant,10px)">${inner}</div>`;
+      const round = (fn, icon, act, t) => `<button data-on-click="${fn}" title="${t}" style="width:44px;height:44px;border-radius:22px;display:grid;place-items:center;color:${act ? PC : '#8e8d89'};background:${act ? 'oklch(0.78 0.13 350 / 0.14)' : 'transparent'};transition:color .2s"><span class="ms" style="font-size:22px">${icon}</span></button>`;
+      const hold = '<span style="width:44px;height:44px"></span>';
+      const transport = `<div data-lay="md-ctl" data-lay-navn="Avspilling" style="display:flex;align-items:center;justify-content:space-between;padding:6px 8px">
+      ${rp ? round('repeat', rpV === 'one' ? 'repeat_one' : 'repeat', rpV !== 'off', 'Gjenta') : hold}
+      <button class="kd-md-p90" data-on-click="prev" title="Forrige" style="width:52px;height:52px;display:grid;place-items:center"><span class="ms" style="font-size:34px;font-variation-settings:'FILL' 1">skip_previous</span></button>
+      <button class="kd-md-p94" data-on-click="playPause" title="Spill/pause" style="width:76px;height:76px;border-radius:38px;background:${PINK};color:#2a1720;display:grid;place-items:center;box-shadow:0 8px 24px oklch(0.78 0.13 350 / 0.3)"><span class="ms" style="font-size:36px;font-variation-settings:'FILL' 1">${playing ? 'pause' : 'play_arrow'}</span></button>
+      <button class="kd-md-p90" data-on-click="next" title="Neste" style="width:52px;height:52px;display:grid;place-items:center"><span class="ms" style="font-size:34px;font-variation-settings:'FILL' 1">skip_next</span></button>
+      ${sh ? round('shuffle', 'shuffle', shOn, 'Tilfeldig') : hold}
+    </div>`;
       // høyttalere: kort med gruppe-bryter og volumlinje
       const spk = speakers.map(sp => {
         const id = sp.entity, on = this.inGroup(id), grp = this.grouped(id) || id === pl, main = id === pl;
         const st = this.v(id), vol = this.volOf(id), muted = !!this.at(id, 'is_volume_muted');
         const t = this.at(id, 'media_title');
         const sub = on ? (st === 'playing' || playing ? (id !== pl && t && st === 'playing' ? 'Spiller · ' + t : 'Spiller') : grp ? 'I gruppen' : 'På') : (!this.ok(id) ? 'Utilgjengelig' : grp ? 'Ikke med' : 'Av');
-        return `<div data-key="md-sp-${e(id)}" style="padding:12px 12px ${vol != null ? 4 : 12}px 12px;border-radius:22px;background:#1c1c1f;box-shadow:${on ? `inset 0 0 0 1px ${a(C.blue, 0.22)}` : 'inset 0 0 0 1px rgba(255,255,255,0.04)'};display:flex;flex-direction:column;gap:2px;min-width:0;transition:box-shadow .2s">
+        return `<div data-key="md-sp-${e(id)}" style="padding:12px 12px ${vol != null ? 4 : 12}px 12px;border-radius:22px;background:#1c1c1f;box-shadow:${on ? 'inset 0 0 0 1px oklch(0.78 0.13 350 / 0.25)' : 'inset 0 0 0 1px rgba(255,255,255,0.04)'};display:flex;flex-direction:column;gap:2px;min-width:0;transition:box-shadow .2s">
         <div style="display:flex;align-items:center;gap:12px;min-width:0">
-          <span style="flex:none;width:40px;height:40px;border-radius:20px;display:grid;place-items:center;background:${on ? a(C.blue, 0.18) : '#232326'};color:${on ? C.blue : '#6d6c69'};transition:background .2s,color .2s"><span class="ms" style="font-size:20px;font-variation-settings:'FILL' 1">${on && (st === 'playing' || playing) ? 'graphic_eq' : 'speaker'}</span></span>
+          <span style="flex:none;width:40px;height:40px;border-radius:20px;display:grid;place-items:center;background:${on ? 'oklch(0.78 0.13 350 / 0.14)' : '#232326'};color:${on ? PC : '#6d6c69'};transition:background .2s,color .2s"><span class="ms" style="font-size:20px;font-variation-settings:'FILL' 1">${on && (st === 'playing' || playing) ? 'graphic_eq' : 'speaker'}</span></span>
           <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
             <div style="display:flex;align-items:center;gap:6px;min-width:0"><span style="min-width:0;font-size:15px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(sp.navn)}</span>${main && speakers.length > 1 ? '<span style="flex:none;font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:8px;background:rgba(255,255,255,0.08);color:#c9c7c2">Hoved</span>' : ''}</div>
             <span style="font-size:12px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(sub)}</span>
           </div>
-          <button data-on-click="toggleSpeaker" data-arg="${e(id)}" role="switch" aria-checked="${on}" aria-label="${e((grp && !main ? 'Gruppe: ' : 'Av/på: ') + sp.navn)}" style="flex:none;position:relative;width:50px;height:30px;border-radius:15px;background:${on ? C.blue : '#3a3a3d'};transition:background .2s"><span style="position:absolute;top:3px;left:${on ? 23 : 3}px;width:24px;height:24px;border-radius:12px;background:#f4f3ef;box-shadow:0 2px 4px rgba(0,0,0,0.3);transition:left .2s;display:grid;place-items:center"><span class="ms" style="font-size:14px;color:${on ? 'oklch(0.45 0.1 250)' : '#8e8d89'}">${grp && !main ? (on ? 'link' : 'add') : 'power_settings_new'}</span></span></button>
+          <button data-on-click="toggleSpeaker" data-arg="${e(id)}" role="switch" aria-checked="${on}" aria-label="${e((grp && !main ? 'Gruppe: ' : 'Av/på: ') + sp.navn)}" style="flex:none;position:relative;width:50px;height:30px;border-radius:15px;background:${on ? PC : '#3a3a3d'};transition:background .2s"><span style="position:absolute;top:3px;left:${on ? 23 : 3}px;width:24px;height:24px;border-radius:12px;background:#f4f3ef;box-shadow:0 2px 4px rgba(0,0,0,0.3);transition:left .2s;display:grid;place-items:center"><span class="ms" style="font-size:14px;color:${on ? 'oklch(0.45 0.1 350)' : '#8e8d89'}">${grp && !main ? (on ? 'link' : 'add') : 'power_settings_new'}</span></span></button>
         </div>
         ${vol != null ? `<div style="display:flex;align-items:center;gap:4px;padding-left:44px;min-width:0;opacity:${on ? 1 : 0.5};transition:opacity .2s">
-          ${this.sliderHTML(id, muted ? 0 : vol, on ? '#f2f1ee' : '#8e8d89')}
+          ${this.sliderHTML(id, muted ? 0 : vol, on ? PINK : '#8e8d89')}
           <span style="flex:none;width:30px;text-align:right;font-size:12px;color:#a9a7a2;font-variant-numeric:tabular-nums">${muted ? '<span class="ms" style="font-size:15px">volume_off</span>' : vol}</span>
         </div>` : ''}
       </div>`;
       });
-      // radiokanaler: kvadratiske fliser (logo fra entity_picture, ellers initialer på farget flate)
-      const cur = low(plA.media_channel || plA.media_title || plA.source);
-      const radios = this.radios().map(r => {
-        const on = playing && !!cur && (cur.includes(low(r.navn)) || low(r.navn).includes(cur));
-        const pic = r.bilde || this.at(r.entity, 'entity_picture');
-        const [big, small] = badge(r.navn), h = hue(r.navn);
-        return `<button class="kd-md-tile" data-on-click="radio" data-arg="${e(r.entity)}" aria-label="${e(r.navn)}" style="flex:none;width:100px;display:flex;flex-direction:column;gap:8px;text-align:left;min-width:0">
-          <span style="position:relative;width:100px;height:100px;border-radius:24px;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;${pic ? `background:#232326 ${e(cssUrl(pic))} center/cover no-repeat` : `background:linear-gradient(150deg, oklch(0.6 0.13 ${h}), oklch(0.33 0.09 ${(h + 50) % 360}))`};color:#fff;box-shadow:${on ? 'inset 0 0 0 3px oklch(0.8 0.12 350)' : 'inset 0 0 0 1px rgba(255,255,255,0.07)'}">
-            ${pic ? '' : `${small ? `<span style="max-width:84px;font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;opacity:.78;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(small)}</span>` : ''}<span style="max-width:84px;font-size:${big.length > 3 ? 22 : 28}px;font-weight:600;letter-spacing:-0.02em;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(big)}</span>`}
-            <span aria-hidden="true" style="position:absolute;inset:0;background:linear-gradient(180deg, rgba(255,255,255,0.16), rgba(255,255,255,0) 45%);pointer-events:none"></span>
-            ${on ? '<span class="kd-md-eq" style="position:absolute;right:8px;bottom:8px;width:26px;height:26px;border-radius:13px;background:rgba(0,0,0,0.45);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:flex;align-items:flex-end;justify-content:center;gap:2px;padding-bottom:7px;box-sizing:border-box"><span></span><span></span><span></span></span>' : ''}
-          </span>
-          <span style="font-size:12px;font-weight:500;padding:0 2px;color:${on ? '#f2f1ee' : '#a9a7a2'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(r.navn)}</span>
-        </button>`;
-      });
-      const chip = (on) => ({ flex: 'none', height: 40, padding: '0 16px 0 12px', borderRadius: 20, display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', background: on ? a(C.blue, 0.16) : '#1c1c1f', color: on ? '#f2f1ee' : '#c9c7c2', boxShadow: on ? `inset 0 0 0 1px ${a(C.blue, 0.5)}` : 'inset 0 0 0 1px rgba(255,255,255,0.04)' });
-      const sources = cf.vis_kilder === false ? [] : (plA.source_list || []).map(src => { const on = low(src) === low(plA.source); return `<button data-on-click="source" data-arg="${e(src)}" style="${S(chip(on))}"><span class="ms" style="font-size:18px;color:${on ? C.blue : '#8e8d89'}">${srcIcon(src)}</span><span>${e(src)}</span></button>`; });
-      return `${spk.length ? `<section style="display:flex;flex-direction:column;gap:8px;min-width:0">
+      const chip = (on) => ({ flex: 'none', height: 40, padding: '0 16px 0 12px', borderRadius: 20, display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', background: on ? PINK : '#1c1c1f', color: on ? '#2a1720' : '#c9c7c2' });
+      const sources = cf.vis_kilder === false ? [] : (plA.source_list || []).map(src => { const on = low(src) === low(plA.source); return `<button data-on-click="source" data-arg="${e(src)}" style="${S(chip(on))}"><span class="ms" style="font-size:18px;font-variation-settings:'FILL' ${on ? 1 : 0}">${srcIcon(src)}</span><span>${e(src)}</span></button>`; });
+      return {
+        top: `${stations.length ? `<div data-lay="md-radio" data-lay-navn="Radio">${hrow(stations.join(''))}</div>` : ''}
+  ${transport}`,
+        bottom: `${spk.length ? `<section data-lay="md-spk" data-lay-navn="Høyttalere" style="display:flex;flex-direction:column;gap:8px;min-width:0;margin-top:6px">
       ${secHead('Høyttalere', `${act.length} av ${speakers.length} i gruppen`)}
       ${spk.join('')}
     </section>` : ''}
-    ${radios.length ? `<section style="display:flex;flex-direction:column;gap:10px;min-width:0">
-      ${secHead('Radio')}
-      ${hrow(radios.join(''), 12)}
-    </section>` : ''}
-    ${sources.length ? `<section style="display:flex;flex-direction:column;gap:10px;min-width:0">
+    ${sources.length ? `<section data-lay="md-src" data-lay-navn="Kilde" style="display:flex;flex-direction:column;gap:10px;min-width:0;margin-top:6px">
       ${secHead('Kilde')}
       ${hrow(sources.join(''), 6)}
-    </section>` : ''}`;
+    </section>` : ''}`,
+      };
+    }
+
+    /* ----- TV-fanen ----- */
+    tvHTML(app) {
+      const e = KD.e, s = this.state;
+      const apps = this.appList().map(x => { const on = !!app && app.navn === x.navn; return `<button class="kd-md-p95" data-on-click="app" data-arg="${x.i}" style="height:64px;border-radius:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;background:${on ? PINK : '#1c1c1f'};color:${on ? '#2a1720' : '#f2f1ee'};transition:background .2s, transform .12s;min-width:0">
+          <span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">${e(x.ikon || 'smart_display')}</span>
+          <span style="font-size:12px;font-weight:600;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;padding:0 6px;box-sizing:border-box">${e(x.navn)}</span>
+        </button>`; });
+      const arrow = (k, icon, pos) => `<span style="position:absolute;${pos};width:56px;height:56px;display:grid;place-items:center;color:${s.press === k ? '#f2f1ee' : '#c9c7c2'};pointer-events:none"><span class="ms" style="font-size:30px">${icon}</span></span>`;
+      const keys = [['arrow_back', 'Tilbake', 'back'], ['home', 'Hjem', 'home'], ['menu', 'Meny', 'menu'], ['play_pause', 'Spill/pause', 'playpause']];
+      const rid = this.remoteId();
+      const last = s.lastKey || [this.tvName(), rid ? this.fname(rid) : ''].filter(Boolean).join(' · ');
+      return `${apps.length ? `<div data-lay="md-apps" data-lay-navn="Apper" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">${apps.join('')}</div>` : ''}
+  <div data-lay="md-remote" data-lay-navn="Fjernkontroll" style="display:flex;align-items:center;gap:14px">
+    <div data-key="kd-pad" role="group" aria-label="Styreflate" style="position:relative;width:188px;height:188px;flex:none;border-radius:94px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;cursor:pointer">
+      ${arrow('up', 'keyboard_arrow_up', 'left:66px;top:4px')}
+      ${arrow('down', 'keyboard_arrow_down', 'left:66px;bottom:4px')}
+      ${arrow('left', 'keyboard_arrow_left', 'top:66px;left:4px')}
+      ${arrow('right', 'keyboard_arrow_right', 'top:66px;right:4px')}
+      <span style="position:absolute;left:59px;top:59px;width:70px;height:70px;border-radius:35px;background:#262629;font-size:14px;font-weight:600;display:grid;place-items:center;pointer-events:none;transform:scale(${s.press === 'ok' ? 0.92 : 1});transition:transform .12s">OK</span>
+      <span data-key="kd-pad-ring" style="position:absolute;inset:0;border-radius:94px;box-shadow:inset 0 0 0 2px oklch(0.78 0.13 350);pointer-events:none"></span>
+    </div>
+    <div style="flex:1;min-width:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
+      ${keys.map(([icon, label, k]) => `<button class="kd-md-key" data-on-click="key" data-arg="${k}" ${k === 'menu' ? 'data-hold="siri"' : ''} title="${label}" style="height:56px;border-radius:20px;background:#1c1c1f;display:grid;place-items:center;color:#c9c7c2"><span class="ms" style="font-size:24px">${icon}</span></button>`).join('')}
+      <div style="grid-column:1 / -1;font-size:11px;color:#6d6c69;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span>${e(last)}</span></div>
+    </div>
+  </div>`;
+    }
+    tvName() { const c = this.config, id = this.tvId(); return (id === c.tv && c.tv_navn) || this.fname(id); }
+    /** volumknappene i TV-fanen: glidebryter bare når volumet kan settes direkte og ingen knapp er overstyrt */
+    tvVolButtons() {
+      const m = this.volMode(); if (m === 'fjernkontroll' || m === 'skript') return true;
+      if (['opp', 'ned'].some(k => this.btn(k).type !== 'auto')) return true;
+      const id = this.volTarget();
+      if (m === 'auto' && id === this.config.tv && this.config.fjernkontroll && this.st(this.config.fjernkontroll) && !this.canSet(id)) return true;
+      return !this.canSet(id);
     }
 
     body() {
-      const s = this.state, cf = this.config, e = KD.e, S = KD.S;
+      const s = this.state;
       const tvId = this.tvId(), tvA = (this.st(tvId) || {}).attributes || {};
       const tvOn = this.on(tvId);
       const pl = this.player(), plA = (this.st(pl) || {}).attributes || {};
       const playing = this.v(pl) === 'playing';
       if (!s.tab) s.tab = !tvOn && playing ? 'music' : 'tv';
-      const tv = s.tab === 'tv';
+      const music = s.tab === 'music';
       const speakers = this.speakers();
       const act = speakers.filter(x => this.inGroup(x.entity));
-      const head = `<header style="display:flex;align-items:center;justify-content:space-between">
-    <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Media</div>
-    <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
+      const head = `<header style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:6px">
+    <div style="font-size:30px;font-weight:600;letter-spacing:-0.03em">Media</div>
+    <button data-on-click="closeSheet" style="width:44px;height:44px;border-radius:22px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:22px">close</span></button>
   </header>`;
-      const seg = KD.segHTML('fane', [['tv', 'TV', 'tv'], ['music', 'Musikk', 'music_note']], s.tab, 'tab', { pink: true });
-      const wrap = (inner) => `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
+      // fanevelger: felles glass-fanevelger, stylet som designets ramme med auto-brede valg
+      const seg = KD.segHTML('fane', [['tv', 'TV'], ['music', 'Musikk']], s.tab, 'tab', { pink: true, bg: 'transparent', r: 22, style: 'gap:2px;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.14);align-self:center;margin:4px 0' })
+        .replace(/grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/, 'grid-template-columns:repeat(2,auto)')
+        .replace(/box-shadow:0 4px 14px rgba\(0,0,0,0\.28\), inset 0 1px 0 rgba\(255,255,255,0\.35\)/, 'box-shadow:none')
+        .replace(/border-radius:18px/g, 'border-radius:19px')
+        .replace(/padding:0 6px/g, 'padding:0 18px')
+        .replace(/font-weight:600/g, 'font-weight:500');
+
+      let hero, content, vol, extra = '';
+      if (music) {
+        const active = playing || this.v(pl) === 'paused';
+        const nm = (speakers.find(x => x.entity === pl) || {}).navn || this.fname(pl);
+        const dev = act.length > 1 ? `${nm} + ${act.length - 1}` : nm;
+        const chan = plA.media_channel || plA.source || plA.app_name || '';
+        const title = active && plA.media_title ? plA.media_title : playing ? (plA.media_channel || plA.source || 'Spiller') : !this.st(pl) ? 'Fant ingen musikkspiller' : 'Ingenting spilles';
+        const artist = active ? ([plA.media_artist, plA.media_album_name].filter(Boolean).join(' · ') || plA.media_channel || plA.source || plA.app_name || '')
+          : (plA.source || plA.app_name || (this.st(pl) ? 'Velg en radiokanal eller kilde' : '–'));
+        hero = this.heroHTML({ id: pl, power: this.on(pl) || playing, anim: playing, icon: act.length > 1 ? 'speaker_group' : 'speaker', label: chan ? `${dev} · ${chan}` : dev,
+          title, artist, pic: active ? plA.entity_picture : null, ph: 'music_note', powerFn: 'powerMusic', nextFn: 'next' });
+        const m = this.musicHTML(pl, plA, playing, speakers, act);
+        content = m.top; extra = m.bottom;
+        vol = this.volRowHTML(pl, 'muteMusic', false);
+        this._playingPos = false;
+      } else {
+        const app = tvOn ? this.appOf(tvA) : null;
+        const tvPos = tvOn ? this.pos(tvId) : null;
+        this._playingPos = !!(tvPos && this.v(tvId) === 'playing');
+        const tvState = this.v(tvId), appName = app ? app.navn : tvA.app_name || tvA.source || '';
+        const title = !this.ok(tvId) ? 'Utilgjengelig' : !tvOn ? 'Av' : tvA.media_title || appName || 'Hjem-skjerm';
+        const ep = tvA.media_season != null && tvA.media_episode != null ? `Sesong ${tvA.media_season} · episode ${tvA.media_episode}` : '';
+        const verb = tvState === 'playing' ? 'Spiller' : tvState === 'paused' ? 'Pause' : '';
+        const sub = !tvOn ? 'Trykk på av/på for å starte'
+          : ep || tvA.media_artist || tvA.media_channel || (verb && tvPos ? `${verb} · ${tm(tvPos[0])} av ${tm(tvPos[1])}`
+            : verb ? [verb, tvA.media_title ? appName : ''].filter(Boolean).join(' · ') : appName || 'Velg en app');
+        hero = this.heroHTML({ id: tvId, power: tvOn, anim: tvOn && tvState === 'playing', icon: 'tv', label: tvOn && appName ? `${this.tvName()} · ${appName}` : this.tvName(),
+          title, artist: sub, pic: tvOn ? tvA.entity_picture : null, ph: app ? app.ikon || 'smart_display' : 'tv', powerFn: 'powerTv', nextFn: 'tvNext' });
+        content = this.tvHTML(app);
+        vol = this.volRowHTML(this.volTarget(), 'mute', this.tvVolButtons());
+      }
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:14px">
   ${head}
+  ${hero}
   ${seg}
-  ${inner}
+  ${content}
+  ${vol}
+  ${extra}
 </div>`;
-      if (!tv) return wrap(this.heroHTML(pl, plA, playing, act) + this.musicHTML(pl, plA, playing, speakers, act));
-
-      const app = tvOn ? this.appOf(tvA) : null;
-      const tvPos = tvOn ? this.pos(tvId) : null;
-      this._playingPos = !!(tvPos && this.v(tvId) === 'playing');
-      const tvState = this.v(tvId);
-      const title = !this.ok(tvId) ? 'Utilgjengelig' : !tvOn ? 'Av' : tvA.media_title || (app ? app.navn : tvA.app_name || tvA.source || 'Hjem-skjerm');
-      const verb = tvState === 'playing' ? 'Spiller' : tvState === 'paused' ? 'Pause' : '';
-      const sub = !tvOn ? 'Trykk på av/på for å starte'
-        : verb && tvPos ? `${verb} · ${tm(tvPos[0])} av ${tm(tvPos[1])}`
-          : verb ? [verb, tvA.media_title ? (app ? app.navn : tvA.app_name) : ''].filter(Boolean).join(' · ')
-            : app || tvA.app_name ? (app ? app.navn : tvA.app_name) : 'Velg en app';
-      const now = { device: (tvId === cf.tv && cf.tv_navn) || this.fname(tvId), title, sub, icon: app ? app.ikon || 'smart_display' : 'tv', pic: tvOn ? tvA.entity_picture : null };
-      const artBg = app ? (app.farge || '#2a2a2d') : '#2a2a2d';
-      const art = { width: 64, height: 64, borderRadius: 18, flex: 'none', display: 'grid', placeItems: 'center', background: artBg, color: '#f2f1ee', transition: 'background .3s' };
-      if (now.pic) Object.assign(art, { backgroundImage: e(cssUrl(now.pic)), backgroundSize: 'cover', backgroundPosition: 'center' });
-      const powerBtn = { width: 44, height: 44, borderRadius: 22, flex: 'none', display: 'grid', placeItems: 'center', background: tvOn ? a(C.green, 0.2) : '#232326', color: tvOn ? C.green : C.red };
-      const padBtn = (k, icon, pos) => ({ k, icon, style: { position: 'absolute', ...pos, width: 64, height: 64, borderRadius: 32, display: 'grid', placeItems: 'center', color: s.press === k ? '#f2f1ee' : '#a9a7a2', background: s.press === k ? 'rgba(255,255,255,0.08)' : 'transparent', transition: 'background .15s' } });
-      const pad = [padBtn('up', 'keyboard_arrow_up', { left: 93, top: 6 }), padBtn('down', 'keyboard_arrow_down', { left: 93, bottom: 6 }), padBtn('left', 'keyboard_arrow_left', { left: 6, top: 93 }), padBtn('right', 'keyboard_arrow_right', { right: 6, top: 93 })];
-      const ok = { position: 'absolute', inset: 75, borderRadius: '50%', background: s.press === 'ok' ? '#333336' : '#232326', boxShadow: '0 0 0 1px rgba(255,255,255,0.06), 0 8px 20px rgba(0,0,0,0.3)', fontSize: 15, fontWeight: 600, color: '#c9c7c2', transition: 'background .15s' };
-      const keys = [['power_settings_new', 'power', C.red], ['undo', 'back'], ['home', 'home'], ['mic', 'mic'], ['play_pause', 'playpause']].map(([icon, k, col]) => ({ icon, k, iconStyle: { fontSize: 24, color: col || '#f2f1ee' } }));
-      const vA = (this.st(this.volTarget()) || {}).attributes || {};
-      const muted = !!vA.is_volume_muted;
-      const volN = vA.volume_level != null ? Math.round(vA.volume_level * 100) : null;
-      const muteIcon = muted ? 'volume_off' : 'volume_mute', volLabel = muted ? 'Dempet' : volN == null ? '–' : `${volN}`;
-      const volBar = { width: `${muted || volN == null ? 0 : volN}%`, height: '100%', borderRadius: 2, background: '#f2f1ee', transition: 'width .2s' };
-      const apps = this.appList().map(x => ({ i: x.i, name: x.navn, icon: x.ikon || 'smart_display',
-        style: { height: 76, borderRadius: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, background: x.farge || '#2a2a2d', boxShadow: app && app.navn === x.navn ? 'inset 0 0 0 2px #f2f1ee' : 'none', color: '#f2f1ee' } }));
-
-      return wrap(`<section data-lay="md-na" data-lay-navn="Spilles nå" data-on-click="openMore" data-arg="${e(tvId)}" style="display:flex;align-items:center;gap:16px;padding:16px;border-radius:24px;background:#1c1c1f;cursor:pointer;min-width:0">
-    <div style="${S(art)}"><span class="ms" style="font-size:30px;font-variation-settings:'FILL' 1;${now.pic ? 'opacity:0' : ''}"><span>${e(now.icon)}</span></span></div>
-    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
-      <div style="font-size:12px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span>${e(now.device)}</span></div>
-      <div style="font-size:18px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span>${e(now.title)}</span></div>
-      <div style="font-size:12px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span>${e(now.sub)}</span></div>
-    </div>
-    <button data-on-click="powerTv" style="${S(powerBtn)}"><span class="ms" style="font-size:22px">power_settings_new</span></button>
-  </section>
-    <section style="display:flex;justify-content:center">
-      <div data-key="kd-pad" role="group" aria-label="Styreflate" style="position:relative;width:250px;height:250px;border-radius:50%;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05);touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;cursor:pointer">
-        ${pad.map(p => `<span data-arg="${p.k}" style="${S({ ...p.style, pointerEvents: 'none' })}"><span class="ms" style="font-size:28px"><span>${p.icon}</span></span></span>`).join('')}
-        <span data-arg="ok" style="${S({ ...ok, display: 'grid', placeItems: 'center', pointerEvents: 'none' })}">OK</span>
-      </div>
-    </section>
-    <section style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px">
-      ${keys.map(k => `<button class="kd-md-key" data-on-click="key" data-arg="${k.k}" style="height:56px;border-radius:28px;background:#1c1c1f;display:grid;place-items:center"><span class="ms" style="${S(k.iconStyle)}"><span>${k.icon}</span></span></button>`).join('')}
-    </section>
-    <section style="display:flex;align-items:center;gap:8px;height:60px;padding:0 6px;border-radius:30px;background:#1c1c1f">
-      <button class="kd-md-vol" data-on-click="vol" data-arg="down" style="width:48px;height:48px;border-radius:24px;display:grid;place-items:center"><span class="ms" style="font-size:24px">volume_down</span></button>
-      <div style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:6px">
-        <div style="height:4px;width:100%;border-radius:2px;background:#2e2e31;overflow:hidden"><div style="${S(volBar)}"></div></div>
-        <button data-on-click="mute" style="font-size:12px;color:#a9a7a2;display:flex;align-items:center;gap:4px;font-variant-numeric:tabular-nums"><span class="ms" style="font-size:15px"><span>${muteIcon}</span></span><span>${e(volLabel)}</span></button>
-      </div>
-      <button class="kd-md-vol" data-on-click="vol" data-arg="up" style="width:48px;height:48px;border-radius:24px;display:grid;place-items:center"><span class="ms" style="font-size:24px">volume_up</span></button>
-    </section>
-    ${apps.length ? `<section style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
-      ${apps.map(p => `<button data-on-click="app" data-arg="${p.i}" style="${S(p.style)}"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1"><span>${e(p.icon)}</span></span><span style="font-size:12px;font-weight:600"><span>${e(p.name)}</span></span></button>`).join('')}
-    </section>` : ''}`);
     }
   }
 

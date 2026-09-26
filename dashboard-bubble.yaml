@@ -47,6 +47,7 @@ views:
           - { <<: *ark, hash: '#weather', cards: [{ type: custom:kd-vaer-card }] }
           - { <<: *ark, hash: '#rolf', cards: [{ type: custom:kd-stovsuger-card }] }
           - { <<: *ark, hash: '#gressklipper', cards: [{ type: custom:kd-gressklipper-card }] }
+          - { <<: *ark, hash: '#stromregning', cards: [{ type: custom:kd-stromregning-card }] }
           - { <<: *ark, hash: '#media', cards: [{ type: custom:kd-media-card }] }
           - { <<: *ark, hash: '#tesla', cards: [{ type: custom:kd-bil-card }] }
           - { <<: *ark, hash: '#3d', cards: [{ type: custom:kd-printer-card }] }

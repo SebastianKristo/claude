@@ -40,10 +40,10 @@
     'snowy-rainy': ['Sludd', 'weather_mix'], sunny: ['Sol', 'sunny'], windy: ['Vind', 'air'], 'windy-variant': ['Vind', 'air'],
   };
   // hash → ark-nøkkel
-  const HASH = { strom: 'strom', alarm: 'sik', sikkerhet: 'sik', vanning: 'vann', rolf: 'vac', stovsuger: 'vac', media: 'media', tesla: 'car', bil: 'car', server: 'server', settings: 'settings', innstillinger: 'settings', kalender: 'cal', personer: 'person', person: 'person', weather: 'vaer', vaer: 'vaer', lys: 'lys', kamera: 'cam', klima: 'klima', soppel: 'trash', gjoremal: 'todo', planter: 'plants', sovn: 'sleep', '3d': 'printer', printer: 'printer', gressklipper: 'mower', plen: 'mower' };
-  const SHEET_HASH = { strom: 'strom', sik: 'alarm', vann: 'vanning', vac: 'rolf', media: 'media', car: 'tesla', server: 'server', settings: 'settings', cal: 'kalender', person: 'personer', vaer: 'weather', lys: 'lys', cam: 'kamera', klima: 'klima', trash: 'soppel', todo: 'gjoremal', plants: 'planter', sleep: 'sovn', printer: '3d', mower: 'gressklipper' };
-  const HEADS = { strom: ['bolt', 'Strøm', 'Forbruk og priser'], sik: ['shield', 'Sikkerhet', ''], vann: ['sprinkler', 'Vanning', 'Hage og plen'], vac: ['cleaning_services', 'Støvsuger', 'Sir Sweeps'], media: ['music_note', 'Media', 'Høyttalere og TV'], car: ['directions_car', 'Bil', 'Tesla Model Y'], server: ['dns', 'Server', 'Proxmox · UniFi'], settings: ['tune', 'Innstillinger', 'Dashbord'], cal: ['calendar_month', 'Kalender', 'Familie og skole'], person: ['person', 'Tilstedeværelse', 'Mobil, sone og søvn'], vaer: ['partly_cloudy_day', 'Vær', 'Strømstad'], lys: ['lightbulb', 'Lys', 'Alle rom'], cam: ['videocam', 'Kamera', ''], klima: ['thermostat', 'Klima', 'Energimotoren'], trash: ['delete', 'Søppel', 'Tømmeplan'], todo: ['checklist', 'Gjøremål', 'Store og personlige'], plants: ['potted_plant', 'Planter', 'Jordfukt og vanning'], sleep: ['bedtime', 'Søvn', 'Søvn og vekking'], printer: ['print', '3D-printer', 'Creality K2'], mower: ['grass', 'Gressklipper', 'Robotklipper'] };
-  const TAGS = { strom: 'kd-strom-card', sik: 'kd-sikkerhet-card', vann: 'kd-vanning-card', vac: 'kd-stovsuger-card', media: 'kd-media-card', car: 'kd-bil-card', server: 'kd-server-card', settings: 'kd-innstillinger-card', cal: 'kd-kalender-card', person: 'kd-person-card', vaer: 'kd-vaer-card', lys: 'kd-lys-card', cam: 'kd-kamera-card', klima: 'kd-klima-card', trash: 'kd-soppel-card', todo: 'kd-gjoremal-card', plants: 'kd-planter-card', sleep: 'kd-sovn-card', printer: 'kd-printer-card', rom: 'kd-rom-card', mower: 'kd-gressklipper-card' };
+  const HASH = { strom: 'strom', alarm: 'sik', sikkerhet: 'sik', vanning: 'vann', rolf: 'vac', stovsuger: 'vac', media: 'media', tesla: 'car', bil: 'car', server: 'server', settings: 'settings', innstillinger: 'settings', kalender: 'cal', personer: 'person', person: 'person', weather: 'vaer', vaer: 'vaer', lys: 'lys', kamera: 'cam', klima: 'klima', soppel: 'trash', gjoremal: 'todo', planter: 'plants', sovn: 'sleep', '3d': 'printer', printer: 'printer', gressklipper: 'mower', plen: 'mower', stromregning: 'bill', regning: 'bill' };
+  const SHEET_HASH = { strom: 'strom', sik: 'alarm', vann: 'vanning', vac: 'rolf', media: 'media', car: 'tesla', server: 'server', settings: 'settings', cal: 'kalender', person: 'personer', vaer: 'weather', lys: 'lys', cam: 'kamera', klima: 'klima', trash: 'soppel', todo: 'gjoremal', plants: 'planter', sleep: 'sovn', printer: '3d', mower: 'gressklipper', bill: 'stromregning' };
+  const HEADS = { strom: ['bolt', 'Strøm', 'Forbruk og priser'], sik: ['shield', 'Sikkerhet', ''], vann: ['sprinkler', 'Vanning', 'Hage og plen'], vac: ['cleaning_services', 'Støvsuger', 'Sir Sweeps'], media: ['music_note', 'Media', 'Høyttalere og TV'], car: ['directions_car', 'Bil', 'Tesla Model Y'], server: ['dns', 'Server', 'Proxmox · UniFi'], settings: ['tune', 'Innstillinger', 'Dashbord'], cal: ['calendar_month', 'Kalender', 'Familie og skole'], person: ['person', 'Tilstedeværelse', 'Mobil, sone og søvn'], vaer: ['partly_cloudy_day', 'Vær', 'Strømstad'], lys: ['lightbulb', 'Lys', 'Alle rom'], cam: ['videocam', 'Kamera', ''], klima: ['thermostat', 'Klima', 'Energimotoren'], trash: ['delete', 'Søppel', 'Tømmeplan'], todo: ['checklist', 'Gjøremål', 'Store og personlige'], plants: ['potted_plant', 'Planter', 'Jordfukt og vanning'], sleep: ['bedtime', 'Søvn', 'Søvn og vekking'], printer: ['print', '3D-printer', 'Creality K2'], mower: ['grass', 'Gressklipper', 'Robotklipper'], bill: ['receipt_long', 'Strømregning', 'Estimat og effekttrinn'] };
+  const TAGS = { strom: 'kd-strom-card', sik: 'kd-sikkerhet-card', vann: 'kd-vanning-card', vac: 'kd-stovsuger-card', media: 'kd-media-card', car: 'kd-bil-card', server: 'kd-server-card', settings: 'kd-innstillinger-card', cal: 'kd-kalender-card', person: 'kd-person-card', vaer: 'kd-vaer-card', lys: 'kd-lys-card', cam: 'kd-kamera-card', klima: 'kd-klima-card', trash: 'kd-soppel-card', todo: 'kd-gjoremal-card', plants: 'kd-planter-card', sleep: 'kd-sovn-card', printer: 'kd-printer-card', rom: 'kd-rom-card', mower: 'kd-gressklipper-card', bill: 'kd-stromregning-card' };
   const FRACTION = {
     restavfall: ['Restavfall', '#8e8d89'], plastemballasje: ['Plastavfall', 'oklch(0.76 0.13 350)'], plast: ['Plastavfall', 'oklch(0.76 0.13 350)'],
     papir_og_papp: ['Papp og papir', 'oklch(0.8 0.12 250)'], papir: ['Papp og papir', 'oklch(0.8 0.12 250)'], glass_og_metallemballasje: ['Glass og metall', 'oklch(0.8 0.12 150)'], matavfall: ['Matavfall', 'oklch(0.82 0.12 75)'],
@@ -122,6 +122,7 @@
         { ikon: 'bedtime', navn: 'Søvn', ark: 'sleep', farge: 'oklch(0.72 0.1 275)' },
         { ikon: 'print', navn: '3D-printer', ark: 'printer', farge: 'oklch(0.82 0.12 75)' },
         { ikon: 'checklist', navn: 'Gjøremål', ark: 'todo', farge: '#c9c7c2' },
+        { ikon: 'receipt_long', navn: 'Strømregning', ark: 'bill', farge: 'oklch(0.8 0.12 250)' },
         { ikon: 'grass', navn: 'Gressklipper', ark: 'mower', farge: 'oklch(0.8 0.12 150)' },
       ],
       bilde: true,
@@ -180,6 +181,7 @@
       window.removeEventListener('popstate', this._onLoc);
       window.removeEventListener('scroll', this._onWinScroll);
       this._paintPage(false);
+      document.documentElement.style.removeProperty('--kd-dokk-h');
     }
     set hass(h) { super.hass = h; if (this._sheetEl) this._sheetEl.hass = h; }
     get hass() { return this._hass; }
@@ -633,6 +635,8 @@
     }
 
     afterRender() {
+      // dokkens høyde som global CSS-variabel, så Tilpass-panelene i bubble-card-popups også legger seg rett over navbaren
+      if (this._dokkH != null && document.documentElement.style.getPropertyValue('--kd-dokk-h') !== this._dokkH + 'px') document.documentElement.style.setProperty('--kd-dokk-h', this._dokkH + 'px');
       // HA kan legge temaet på nytt (navigasjon/tema-bytte) – mal over igjen hvis noe er overskrevet
       if (this._painted && this._painted.some(el => el.style.getPropertyValue('--lovelace-background') !== (this.config.bakgrunn || '#141416'))) { const col = this.config.bakgrunn || '#141416'; for (const el of this._painted) ['--lovelace-background', '--primary-background-color', '--view-background'].forEach(v => el.style.setProperty(v, col)); }
       if (this._animHead && this.state.sheetOpen) { this._animHead = false; requestAnimationFrame(() => KD.animateSheetTop(this.shadowRoot)); }
@@ -857,7 +861,7 @@
       const ITEMS = LAY.dock.map(it => [it.ikon || 'circle', it.navn || '', dotOf(it)]);
       ITEMS.push(['more_horiz', 'Mer', LAY.menu.some(dotOf)]);
       const GAP = 2, PAD = 6, AVAIL = Math.min(window.innerWidth || 460, 560) - 16 - 2 * PAD, FIT = Math.floor((AVAIL - GAP * (ITEMS.length - 1)) / ITEMS.length);
-      const SZ = Math.max(38, Math.min(NAVN ? 58 : 44, FIT)), SH = BRED ? (NAVN ? 58 : 50) : NAVN ? 52 : 44, N = ITEMS.length, MB = 18 + SH + 2 * PAD + 10;
+      const SZ = Math.max(38, Math.min(NAVN ? 58 : 44, FIT)), SH = BRED ? (NAVN ? 58 : 50) : NAVN ? 52 : 44, N = ITEMS.length, MB = 18 + SH + 2 * PAD + 10; this._dokkH = MB - 10;
       const CELL = `((100% - ${2 * PAD}px - ${(N - 1) * GAP}px) / ${N})`, dist = Math.abs(tab - (this._prevTab ?? tab)), lx = s.lx;
       const navStyle = {
         position: 'fixed', left: '50%', bottom: 18, zIndex: 24, display: 'flex', gap: GAP, touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none', maxWidth: 'calc(100vw - 16px)', padding: PAD, borderRadius: BRED ? (SH + 2 * PAD) / 2 : NAVN ? 32 : 30, overflow: 'hidden', isolation: 'isolate',
@@ -934,8 +938,8 @@
         ${chipH(HU.person_sted !== false, 'person_sted|' + (HU.person_sted === false), 'hjemSet', 'Sted', 'location_on')}
         ${chipH(!!HU.person_ikon, 'person_ikon|' + !HU.person_ikon, 'hjemSet', 'Ikon foran navn', 'home_pin')}
         ${chipH(HU.person_ring !== false, 'person_ring|' + (HU.person_ring === false), 'hjemSet', 'Ring rundt meg', 'radio_button_unchecked')}
-      </div>${persRows}
-      ${head('Etasjer')}${etgRows}
+      </div>${KD.scrollBox(persRows, 260)}
+      ${head('Etasjer')}${KD.scrollBox(etgRows, 300)}
       ${head('Romkort')}<div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 10px 6px">${[['stor', 'Stor'], ['middels', 'Middels'], ['liten', 'Liten']].map(([v, l]) => chipH((HU.romkort || c.romkort || 'stor') === v, 'romkort|' + v, 'hjemSet', l)).join('')}
         ${chipH(HU.klimaknapp != null ? HU.klimaknapp !== false : c.klimaknapp !== false, 'klimaknapp|' + (HU.klimaknapp != null ? HU.klimaknapp === false : c.klimaknapp === false), 'hjemSet', 'Klimaknapp', 'thermostat')}</div>
       ${head('Avstand under strømpriser')}<div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 10px 6px">${[[0, 'Ingen'], [24, 'Liten'], [60, 'Middels'], [120, 'Stor']].map(([v, l]) => chipH(+(HU.gap_strom || 0) === v, 'gap_strom|' + v, 'hjemSet', l)).join('')}</div>

@@ -1,14 +1,18 @@
 /*
- * kd-bil-card – pikselkopi av Claude Design «Bil» (Tesla Model Y), med ekte data.
+ * kd-bil-card – pikselkopi av Claude Design «Bil v3» (Tesla Model Y), med ekte data.
  *
  *   type: custom:kd-bil-card        # alt annet er valgfritt («auto config»)
- * Batterinivå, klima, sentry, posisjon (device_tracker) og forbruk letes opp automatisk blant entiteter
- * med prefiksene i `prefiks` (standard: tesla_model_y, folkevogn). «Siste turer» bygges fra historikken
+ *   bilde: /local/tesla.png          # valgfritt sidebilde av bilen i toppkortet (ellers tegnet bil)
+ *   faner: [lading, kjoring, klima, sparing]   # valgfritt; standard: alle som har data
+ * Batterinivå, klima, sentry, ladeport, dekktrykk, setevarme, posisjon (device_tracker) og forbruk letes opp
+ * automatisk blant entiteter med prefiksene i `prefiks` (standard: tesla_model_y, folkevogn).
+ * «Daglig kjøring» kommer fra dagsstatistikken til kilometertelleren, «Siste turer» fra historikken
  * til posisjonen, kilometertelleren og batteriet. «Spart per dag» kommer fra langtidsstatistikken.
+ * Langt trykk på ruter/kort åpner mer-info for entiteten bak.
  */
 (() => {
   const KD = window.KD;
-  const C = { green: 'oklch(0.8 0.12 150)', amber: 'oklch(0.82 0.12 75)', blue: 'oklch(0.8 0.12 250)', red: 'oklch(0.72 0.15 25)' };
+  const C = { green: 'oklch(0.8 0.12 150)', amber: 'oklch(0.82 0.12 75)', blue: 'oklch(0.8 0.12 250)', red: 'oklch(0.72 0.15 25)', orange: 'oklch(0.78 0.15 45)' };
   const a = KD.a, PINK = KD.PINK;
   const nf = (n, d = 1) => (n == null || isNaN(n)) ? '–' : Number(n).toLocaleString('nb-NO', { minimumFractionDigits: d, maximumFractionDigits: d });
   const AUTO = {
@@ -20,7 +24,6 @@
     ladestatus: [/^(select|sensor)\..*charging_state/],
     ladeport: [/^cover\..*charge_port/, /^(switch|lock)\..*charge_port/, /^(cover|switch)\..*ladeport/],
   };
-  const PILL = 'display:inline-flex;align-items:center;height:30px;padding:0 11px;border-radius:15px;background:#232326;color:#f2f1ee;font-weight:500;vertical-align:middle;white-space:nowrap';
   const SEAT = { off: 'Av', low: 'Lav', medium: 'Middels', high: 'Høy', '0': 'Av', '1': 'Lav', '2': 'Middels', '3': 'Høy', auto: 'Auto' };
 
   /** Bilscenen (designets CarScene) som SVG/HTML-streng */
@@ -81,7 +84,7 @@
       frunk: 'switch.tesla_model_y_car_trunk_front',
       bagasje: 'switch.tesla_model_y_car_trunk_rear',
       vindu: 'switch.tesla_model_y_klima_climate_window_vent',
-      klima: null, sentry: null, posisjon: null, forbruk: null,
+      klima: null, sentry: null, posisjon: null, forbruk: null, faner: null, bilde: null,
       i_dag: 'sensor.tesla_model_y_daglig_kjoring',
       km_stand: 'sensor.tesla_model_y_kilometerteller',
       spart_maned: 'sensor.ki_drivstoff_spart_denne_maneden',
@@ -95,14 +98,17 @@
     };
     static sheetCss = `
 @keyframes rise{0%{transform:translateY(6px);opacity:0}40%{opacity:.9}100%{transform:translateY(-16px);opacity:0}}
-@keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}
+@keyframes pulse{0%,100%{opacity:.45}50%{opacity:1}}
 @keyframes flow{from{background-position:0 0}to{background-position:40px 0}}
 @keyframes ring{from{transform:scale(.6);opacity:.8}to{transform:scale(2.2);opacity:0}}
-@keyframes bob{0%{transform:translateY(0)}30%{transform:translateY(-5px)}60%{transform:translateY(0)}}
-.kd-car-act:active{transform:scale(0.95)}
-@keyframes kdcflow{to{background-position:28.28px 0}}`;
+@keyframes bob{0%{transform:translateY(0)}35%{transform:translateY(-4px)}70%{transform:translateY(0)}}
+.kd-car-t:active{transform:scale(0.94)}
+.kd-car-l:active,.kd-car-p:active{transform:scale(0.95)}
+[data-seg="car-tab"]>button{padding:0 18px!important;font-weight:500!important}
+[data-seg="car-tab"] [data-seg-thumb]{box-shadow:none!important}
+[data-seg="car-tab"][data-seg-i="0"]>button:not([data-seg-b="0"]),[data-seg="car-tab"][data-seg-i="1"]>button:not([data-seg-b="1"]),[data-seg="car-tab"][data-seg-i="2"]>button:not([data-seg-b="2"]),[data-seg="car-tab"][data-seg-i="3"]>button:not([data-seg-b="3"]){color:#c9c7c2!important}`;
 
-    constructor() { super(); this.state = { tab: 'charge', flash: null }; }
+    constructor() { super(); this.state = { tab: 'charge', flash: null, bump: null, day: 6 }; }
 
     /* ----- oppdagelse ----- */
     auto(key) {
@@ -220,7 +226,42 @@
       return inc.slice(-30);
     }
 
-    afterRender() {}
+    /** Daglig kjøring siste 7 dager fra kilometertellerens dagsstatistikk: [{d: Date, km}] (eldst først, i dag sist) */
+    weekDays() {
+      const odo = this.config.km_stand; if (!odo || !this.st(odo)) return null;
+      const r = this.cached('kdcar-week-' + odo, 30 * 60e3, () => this.stats([odo], 24 * 10, 'day', ['max', 'state']), null);
+      const rows = r && r[odo]; if (!rows || !rows.length) return null;
+      const endOf = new Map();
+      for (const x of rows) { const v = x.max ?? x.state; if (v != null && !isNaN(v)) endOf.set(new Date(typeof x.start === 'number' && x.start < 1e12 ? x.start * 1000 : x.start).toDateString(), +v); }
+      const t0 = new Date(); t0.setHours(0, 0, 0, 0);
+      const dayAt = (i) => { const d = new Date(t0); d.setDate(d.getDate() - i); return d; };
+      const cur = this.n(odo);
+      const end = (i) => { if (i === 0 && cur != null) return cur; for (let k = i; k < i + 4; k++) { const v = endOf.get(dayAt(k).toDateString()); if (v != null) return v; } return null; };
+      const out = [];
+      for (let i = 6; i >= 0; i--) {
+        const e1 = end(i), e0 = end(i + 1);
+        let km = e1 != null && e0 != null ? Math.max(0, e1 - e0) : null;
+        if (i === 0 && km == null && this.ok(this.config.i_dag)) km = this.n(this.config.i_dag);
+        out.push({ d: dayAt(i), km: km == null ? 0 : km });
+      }
+      return out;
+    }
+
+    /* ----- handlinger (design v3) ----- */
+    bump(k) { this.setState({ bump: k }); clearTimeout(this._bt); this._bt = setTimeout(() => this.setState({ bump: null }), 520); }
+    tile(e, k) { this.bump(k); this.act(e, k); }
+    holdTile(e, k) {
+      const c = this.config;
+      const id = { lock: c.laas, horn: c.tut, climate: this.auto('klima') || c.defrost, frunk: c.frunk, trunk: c.bagasje, port: this.auto('ladeport'), sentry: this.auto('sentry') }[k];
+      if (id) this.more(id);
+    }
+    pickDay(e, i) { this.setState({ day: +i }); }
+    toggleClimate() { this.act(null, 'climate'); }
+    cycleSeat(e, id) {
+      const opts = (this.at(id, 'options', []) || []).map(String); if (opts.length < 2) return;
+      const i = opts.indexOf(String(this.v(id)));
+      this.call('select', 'select_option', { entity_id: id, option: opts[(i + 1) % opts.length] });
+    }
 
     body() {
       const s = this.state, cf = this.config, e = KD.e, S = KD.S;
@@ -233,9 +274,9 @@
       const climate = climId ? (this.ok(climId) && this.v(climId) !== 'off') : this.isOn(cf.defrost);
       const climTemp = climId ? parseFloat(this.at(climId, 'temperature')) : NaN;
       const inside = climId ? parseFloat(this.at(climId, 'current_temperature')) : NaN;
+      const outside = climId ? parseFloat(this.at(climId, 'outside_temperature', this.at(climId, 'outside_temp'))) : NaN;
       const frunk = this.isOpen(cf.frunk), trunk = this.isOpen(cf.bagasje), windowOpen = this.isOpen(cf.vindu), portOpen = this.isOpen(portId);
       const sentry = sentryId ? this.isOn(sentryId) : false;
-      const sc = { climate, charging, sentry, locked, frunk, trunk, window: windowOpen };
       const b = batt == null ? null : Math.floor(batt);
       const lim = limit == null ? null : Math.round(limit);
       const cap = cf.kapasitet || 75;
@@ -243,7 +284,7 @@
       let mins = null;
       if (charging && this.n(cf.ladetid, 0) > 0) mins = Math.round(this.n(cf.ladetid));
       else if (need != null) mins = Math.round(need / (charging && kw > 0.3 ? kw : (cf.ladeeffekt_kw || 11)) * 60);
-      const eta = mins == null ? '–' : mins ? (mins >= 60 ? `${Math.floor(mins / 60)} t ${mins % 60} min` : `${mins} min`) : 'ferdig';
+      const eta = mins == null || need === 0 && !charging ? '–' : mins >= 60 ? `${Math.floor(mins / 60)} t ${mins % 60} min` : `${mins} min`;
       const strom = this.n(cf.strompris);
       const cost = this.ok(cf.ladepris) ? Math.round(this.n(cf.ladepris)) : need != null && strom != null ? Math.round(need * strom) : '–';
       const last = this.ok(cf.forrige_lading) ? Math.round(this.n(cf.forrige_lading)) : '–';
@@ -251,165 +292,203 @@
       const til = /^\d{1,2}:\d{2}/.test(this.v(cf.nattlading_til)) && this.isOn(cf.nattlading) ? this.v(cf.nattlading_til).slice(0, 5) : null;
       const zoneRaw = trId ? this.v(trId) : '';
       const place = !zoneRaw || KD.BAD.has(zoneRaw) ? null : zoneRaw === 'home' ? 'Hjemme' : zoneRaw === 'not_home' ? 'Underveis' : zoneRaw;
-      const lbl = (t, right = '') => `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 4px;min-height:22px"><div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;white-space:nowrap">${e(t)}</div>${right}</div>`;
-      const card = 'border-radius:24px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)';
+      const sw = (on, col) => ({ track: { position: 'relative', width: 50, height: 30, borderRadius: 15, flex: 'none', background: on ? col : 'rgba(255,255,255,0.16)', transition: 'background .2s' }, knob: { position: 'absolute', top: 3, left: on ? 23 : 3, width: 24, height: 24, borderRadius: 12, background: '#f4f3ef', transition: 'left .22s cubic-bezier(.3,1.4,.6,1)' } });
+      const swHTML = (on, col, h, arg = '') => { const x = sw(on, col); return `<button data-on-click="${h}"${arg ? ` data-arg="${e(arg)}"` : ''} style="${S(x.track)}"><span style="${S(x.knob)}"></span></button>`; };
+      const iconC = (icon, fill = true) => `<span style="width:44px;height:44px;border-radius:22px;background:#262629;display:grid;place-items:center;color:#c9c7c2"><span class="ms" style="font-size:22px${fill ? ";font-variation-settings:'FILL' 1" : ''}">${icon}</span></span>`;
+      const big = 'font-size:32px;font-weight:300;letter-spacing:-0.03em;line-height:1.05';
+      const box150 = 'height:150px;box-sizing:border-box;padding:14px 16px 16px;border-radius:28px;background:#1c1c1f;display:flex;flex-direction:column;justify-content:space-between';
+      const PILL3 = 'display:inline-flex;align-items:center;height:30px;padding:0 11px;border-radius:15px;background:#232326;font-weight:500;vertical-align:middle;white-space:nowrap';
 
-      /* ---- helt ---- */
-      const heroBg = climate ? 'radial-gradient(110% 80% at 70% 45%, #3a2a24 0%, #1f1f24 55%, #18181b 100%)' : charging ? 'radial-gradient(110% 80% at 70% 55%, #1c3029 0%, #1c1f24 55%, #18181b 100%)' : 'radial-gradient(110% 80% at 70% 50%, #283039 0%, #1c1e22 55%, #18181b 100%)';
-      const chips = [[locked, locked ? 'lock' : 'lock_open', locked ? 'Låst' : 'Ulåst', locked ? '#c9c7c2' : C.amber, !locked],
-        [charging, 'bolt', kw != null && kw > 0.3 ? `Lader ${nf(kw, 1)} kW` : 'Lader', C.green, true], [climate, 'heat', !isNaN(climTemp) ? `Klima ${Math.round(climTemp)}°` : 'Klima på', C.amber, true],
-        [windowOpen, 'window', 'Vindu åpent', C.blue, true], [frunk, 'garage', 'Frunk åpen', C.blue, true], [trunk, 'local_shipping', 'Bagasje åpen', C.blue, true], [portOpen, 'ev_charger', 'Ladeport åpen', C.blue, true]]
-        .filter((x, i) => i === 0 || x[0]).map(([, icon, t, c, hi]) => `<span style="height:24px;padding:0 9px 0 7px;border-radius:12px;display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;white-space:nowrap;background:${hi ? a(c, 0.18) : 'rgba(255,255,255,0.07)'};color:${c}"><span class="ms" style="font-size:14px;font-variation-settings:'FILL' 1">${icon}</span>${e(t)}</span>`).join('');
-      const batCol = b != null && b < 20 ? C.red : C.green;
-      const heroRight = charging ? [`${eta === 'ferdig' ? 'Ferdig ladet' : `${eta} til ${lim == null ? '–' : lim} %`}`, kw != null && kw > 0.3 ? `${nf(kw, 1)} kW` : 'Lader'] : [zoneRaw === 'not_home' ? 'Underveis' : 'Parkert', lim != null ? `Ladegrense ${lim} %` : ''];
-      const hero = `<section data-on-click="openMore" data-arg="${e(batId || cf.lader || '')}" style="position:relative;overflow:hidden;padding:18px 18px 16px;border-radius:30px;box-sizing:border-box;display:flex;flex-direction:column;gap:6px;background:${heroBg};box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05);transition:background .8s;cursor:pointer">
-    <div style="position:relative;z-index:1;display:flex;align-items:flex-start;gap:10px">
-      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
-        <span style="font-size:18px;font-weight:600;letter-spacing:-0.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(cf.navn)}</span>
-        ${place ? `<span data-on-click="openMore" data-arg="${e(trId)}" style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#a9a7a2;min-width:0"><span class="ms" style="font-size:15px;font-variation-settings:'FILL' 1">${zoneRaw === 'home' ? 'home' : 'location_on'}</span><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(place)}</span></span>` : ''}
+      /* ---- helt (bilde til høyre, tekst til venstre) ---- */
+      const chipSt = S({ height: 26, padding: '0 10px 0 8px', borderRadius: 13, display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', background: '#262629', color: sentry ? C.red : '#c9c7c2' });
+      const chips = [sentry ? { icon: 'videocam', t: 'Sentry på', h: 'toggleSentry' } : { icon: locked ? 'lock' : 'lock_open', t: locked ? 'Låst' : 'Ulåst', h: sentryId ? 'toggleSentry' : '' }];
+      if (portOpen) chips.push({ icon: 'ev_charger', t: 'Ladeport åpen', h: '', col: C.blue });
+      const chipHTML = chips.map(c => `<span${c.h ? ` data-on-click="${c.h}" data-hold="holdTile" data-arg="sentry"` : ''} style="${chipSt}${c.col ? `;color:${c.col}` : ''}${c.h ? ';pointer-events:auto;cursor:pointer' : ''}"><span class="ms" style="font-size:14px;font-variation-settings:'FILL' 1">${c.icon}</span><span>${e(c.t)}</span></span>`).join('');
+      const heroSub = `${range == null ? '–' : Math.round(range)} km · grense ${lim == null ? '–' : lim} %`;
+      const photo = cf.bilde
+        ? `<img src="${e(cf.bilde)}" alt="" style="position:absolute;right:0;top:0;bottom:0;width:60%;height:100%;object-fit:cover">`
+        : carScene({ climate, charging, sentry, locked, frunk, trunk, window: windowOpen }, 'position:absolute;right:2px;top:44px;width:58%;height:118px;pointer-events:none');
+      const hero = `<section data-on-click="openMore" data-arg="${e(batId || cf.lader || '')}" style="position:relative;height:184px;border-radius:28px;background:#1c1c1f;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);cursor:pointer">
+    ${photo}
+    <div style="position:absolute;inset:0;background:linear-gradient(90deg, #1c1c1f 38%, rgba(28,28,31,0) 70%);pointer-events:none"></div>
+    <div style="position:absolute;left:18px;top:18px;bottom:18px;display:flex;flex-direction:column;justify-content:space-between;pointer-events:none">
+      <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-start">
+        <span style="font-size:13px;color:#8e8d89">${e(cf.navn)}</span>
+        <div style="display:flex;gap:6px">${chipHTML}</div>
       </div>
-      ${sentryId ? `<button data-on-click="toggleSentry" style="flex:none;height:32px;padding:0 12px 0 10px;border-radius:16px;display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;background:${sentry ? a(C.red, 0.18) : 'rgba(255,255,255,0.07)'};color:${sentry ? C.red : '#a9a7a2'}"><span class="ms" style="font-size:16px;font-variation-settings:'FILL' 1">${sentry ? 'videocam' : 'videocam_off'}</span>Sentry</button>` : ''}
-    </div>
-    <div style="position:relative;z-index:1;display:flex;gap:5px;flex-wrap:wrap">${chips}</div>
-    <div style="position:relative;height:150px;margin:0 -6px">
-      ${cf.bilde ? `<img src="${e(cf.bilde)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 16px 20px rgba(0,0,0,0.5))">` : carScene(sc, 'position:absolute;left:50%;top:0;width:300px;max-width:100%;height:150px;transform:translateX(-50%);pointer-events:none')}
-    </div>
-    <div style="position:relative;z-index:1;display:flex;align-items:flex-end;justify-content:space-between;gap:10px">
-      <div style="display:flex;flex-direction:column;gap:2px;min-width:0">
-        <span style="font-size:52px;font-weight:300;letter-spacing:-0.045em;line-height:0.95;font-variant-numeric:tabular-nums">${b == null ? '–' : b}<span style="font-size:20px;color:#8e8d89;letter-spacing:0;margin-left:2px">%</span></span>
-        <span style="font-size:13px;color:#a9a7a2;white-space:nowrap"><span style="color:#f2f1ee;font-weight:600">${range == null ? '–' : Math.round(range)} km</span> rekkevidde</span>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div style="display:flex;align-items:baseline;gap:3px"><span style="font-size:40px;font-weight:300;letter-spacing:-0.04em;line-height:1;font-variant-numeric:tabular-nums">${b == null ? '–' : b}</span><span style="font-size:14px;color:#8e8d89">%</span></div>
+        <span style="font-size:12px;color:#8e8d89;white-space:nowrap">${e(heroSub)}</span>
       </div>
-      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;min-width:0;text-align:right;padding-bottom:2px">
-        <span style="font-size:13px;font-weight:600;color:${charging ? C.green : '#f2f1ee'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">${e(heroRight[0])}</span>
-        <span style="font-size:12px;color:#8e8d89;white-space:nowrap">${e(heroRight[1])}</span>
-      </div>
-    </div>
-    <div style="position:relative;z-index:1;height:12px;border-radius:6px;background:rgba(255,255,255,0.08);margin-top:8px">
-      <div style="position:absolute;left:0;top:0;bottom:0;width:${batt == null ? 0 : KD.clamp(batt, 0, 100)}%;border-radius:6px;background:${charging ? `repeating-linear-gradient(-45deg, ${C.green} 0 10px, oklch(0.72 0.12 150) 10px 20px)` : `linear-gradient(90deg, ${a(batCol, 0.75)}, ${batCol})`};box-shadow:0 0 14px ${a(batCol, 0.35)};transition:width 1s${charging ? ';animation:kdcflow .9s linear infinite' : ''}"></div>
-      ${lim == null ? '' : `<span style="position:absolute;top:-4px;bottom:-4px;left:calc(${lim}% - 1px);width:2px;border-radius:1px;background:#f2f1ee;box-shadow:0 0 6px rgba(0,0,0,0.6);transition:left .3s"></span>`}
     </div>
   </section>`;
 
-      /* ---- hurtigknapper ---- */
-      const tile = (k, icon, label, sub, on, col, handler = 'act') => `<button class="kd-car-act" data-on-click="${handler}" data-arg="${k}" style="min-width:0;height:88px;border-radius:22px;padding:10px 4px;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;background:${on ? a(col, 0.15) : '#1c1c1f'};box-shadow:${on ? `inset 0 0 0 1px ${a(col, 0.45)}` : 'inset 0 0 0 1px rgba(255,255,255,0.04)'};transition:transform .15s, background .25s">
-        <span style="width:38px;height:38px;border-radius:19px;display:grid;place-items:center;background:${on ? a(col, 0.25) : '#2a2a2e'};color:${on ? col : '#e4e2dd'};transition:background .25s"><span class="ms" style="font-size:21px;font-variation-settings:'FILL' ${on ? 1 : 0}">${icon}</span></span>
-        <span style="display:flex;flex-direction:column;align-items:center;gap:0;min-width:0;max-width:100%"><span style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">${e(label)}</span><span style="font-size:10.5px;color:${on ? col : '#8e8d89'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">${e(sub)}</span></span></button>`;
+      /* ---- hurtigknapper (5 ruter) ---- */
+      const tile = (k, icon, label, on, col) => `<button class="kd-car-t" data-on-click="tile" data-hold="holdTile" data-arg="${k}" title="${e(label)}" style="${S({ aspectRatio: '1', borderRadius: 22, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, background: on ? a(col, 0.16) : '#1c1c1f', boxShadow: on ? `inset 0 0 0 1px ${a(col, 0.45)}` : 'inset 0 0 0 1px rgba(255,255,255,0.04)', transition: 'background .25s, transform .12s' })}">
+        <span class="ms" style="${S({ fontSize: 28, color: on ? col : '#f2f1ee', fontVariationSettings: `'FILL' ${on || k === 'lock' ? 1 : 0}`, animation: s.bump === k ? 'bob .5s ease-out' : 'none' })}">${icon}</span>
+        <span style="font-size:10px;color:#8e8d89;white-space:nowrap">${e(label)}</span>
+      </button>`;
       const tiles = [
-        tile('lock', locked ? 'lock' : 'lock_open', locked ? 'Låst' : 'Ulåst', locked ? 'Sikret' : 'Trykk for å låse', !locked, C.amber),
-        tile('climate', 'heat', 'Klima', climate ? (!isNaN(climTemp) ? `På · ${Math.round(climTemp)}°` : 'På') : !isNaN(inside) ? `Av · ${Math.round(inside)}° inne` : 'Av', climate, C.amber),
-        cf.frunk && this.st(cf.frunk) ? tile('frunk', 'garage', 'Frunk', frunk ? 'Åpen' : 'Lukket', frunk, C.blue) : '',
-        cf.bagasje && this.st(cf.bagasje) ? tile('trunk', 'local_shipping', 'Bagasje', trunk ? 'Åpen' : 'Lukket', trunk, C.blue) : '',
-        portId ? tile('port', 'ev_charger', 'Ladeport', portOpen ? 'Åpen' : 'Lukket', portOpen, C.green) : '',
-        cf.vindu && this.st(cf.vindu) ? tile('window', 'window', 'Vinduer', windowOpen ? 'Luftes' : 'Lukket', windowOpen, C.blue) : '',
-        sentryId ? tile('sentry', sentry ? 'videocam' : 'videocam_off', 'Sentry', sentry ? 'Overvåker' : 'Av', sentry, C.red) : '',
-        cf.tut ? tile('horn', 'campaign', 'Tut', 'Blink og tut', s.flash === 'horn', C.blue) : '',
+        tile('lock', locked ? 'lock' : 'lock_open', locked ? 'Låst' : 'Ulåst', !locked, C.amber),
+        cf.tut ? tile('horn', 'campaign', 'Tut', s.bump === 'horn', C.blue) : '',
+        climId || (cf.defrost && this.st(cf.defrost)) ? tile('climate', 'heat', 'Klima', climate, C.orange) : '',
+        cf.frunk && this.st(cf.frunk) ? tile('frunk', 'garage', 'Frunk', frunk, C.blue) : '',
+        cf.bagasje && this.st(cf.bagasje) ? tile('trunk', 'luggage', 'Bagasje', trunk, C.blue) : '',
       ].filter(Boolean);
-      const controls = `<section style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px">${tiles.join('')}</section>`;
+      const controls = `<section style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px">${tiles.join('')}</section>`;
 
-      const hasClim = !!(climId || (cf.defrost && this.st(cf.defrost)));
-      const tabList = [['charge', 'Lading', 'bolt'], ...(hasClim ? [['climate', 'Klima', 'thermostat']] : []), ['drive', 'Kjøring', 'route'], ['save', 'Sparing', 'savings']];
-      const tab = tabList.some(t => t[0] === s.tab) ? s.tab : 'charge';
-      const tabs = KD.segHTML('car-tab', tabList, tab, 'tab', { pink: true });
+      /* ---- faner ---- */
+      const hasClim = !!(climId || (cf.defrost && this.st(cf.defrost)) || this.seats().length);
+      const hasSave = !!(cf.spart_ar && this.st(cf.spart_ar) || cf.spart_maned && this.st(cf.spart_maned));
+      const all = [['charge', 'Lading'], ['drive', 'Kjøring'], ...(hasClim ? [['climate', 'Klima']] : []), ...(hasSave ? [['save', 'Sparing']] : [])];
+      const want = Array.isArray(cf.faner) ? cf.faner.map(x => ({ lading: 'charge', kjoring: 'drive', kjøring: 'drive', klima: 'climate', sparing: 'save' }[x] || x)) : null;
+      const tabList = want ? all.filter(t => want.includes(t[0])) : all;
+      const tab = tabList.some(t => t[0] === s.tab) ? s.tab : (tabList[0] || ['charge'])[0];
+      const tabs = tabList.length > 1 ? KD.segHTML('car-tab', tabList, tab, 'tab', { pink: true, bg: 'transparent', r: 23, style: 'align-self:center;margin:4px 0;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.14)' }) : '';
       let tabHTML = '';
 
       if (tab === 'charge') {
-        const steps = [50, 60, 70, 80, 90, 100];
-        if (lim != null && !steps.includes(lim)) { steps.push(lim); steps.sort((x, y) => x - y); if (steps.length > 6) steps.splice(steps.indexOf(lim) === 0 ? 1 : 0, 1); }
-        const cStats = [['Effekt', kw == null ? '–' : `${nf(kw, 1)} kW`, cf.ladeeffekt], ['Til grensen', eta, cf.ladetid], ['Kostnad', cost === '–' ? '–' : `${cost} kr`, cf.ladepris]];
-        tabHTML = `<section style="position:relative;overflow:hidden;display:flex;flex-direction:column;gap:14px;padding:16px;border-radius:26px;background:${charging ? `linear-gradient(150deg, ${a(C.green, 0.2)}, ${a(C.green, 0.05)} 60%), #1c1c1f` : '#1c1c1f'};box-shadow:inset 0 0 0 1px ${charging ? a(C.green, 0.3) : 'rgba(255,255,255,0.04)'}">
-      <button data-on-click="toggleCharge" style="display:flex;align-items:center;gap:12px;text-align:left;width:100%">
-        <span style="width:46px;height:46px;border-radius:23px;flex:none;display:grid;place-items:center;background:${charging ? C.green : '#2a2a2e'};color:${charging ? '#10231a' : '#e4e2dd'}"><span class="ms" style="font-size:24px;font-variation-settings:'FILL' 1">ev_station</span></span>
-        <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-size:16px;font-weight:600">${charging ? 'Lader nå' : 'Lading av'}</span><span style="font-size:12px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(charging ? (eta === 'ferdig' ? 'Ladegrensen er nådd' : `Ferdig om ca. ${eta}`) : smartOn ? 'KI Lading styrer når bilen lader' : 'Trykk for å starte lading')}</span></span>
-        ${this.sw(charging)}
-      </button>
-      <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-radius:18px;background:rgba(255,255,255,0.04);padding:10px 0">
-        ${cStats.map(([l, v, id], i) => `<div data-on-click="openMore" data-arg="${e(id || '')}" style="min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;padding:0 6px;${i ? 'border-left:1px solid rgba(255,255,255,0.06)' : ''}"><span style="font-size:11px;color:#8e8d89;white-space:nowrap">${e(l)}</span><span style="font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">${e(v)}</span></div>`).join('')}
+        const steps = [50, 60, 70, 80, 100];
+        if (lim != null && !steps.includes(lim)) { let bi = 0; steps.forEach((v, i) => { if (Math.abs(v - lim) < Math.abs(steps[bi] - lim)) bi = i; }); steps[bi] = lim; steps.sort((x, y) => x - y); }
+        const ch = sw(charging, C.green);
+        const chargeIcon = S({ width: 44, height: 44, borderRadius: 22, display: 'grid', placeItems: 'center', background: charging ? a(C.green, 0.2) : '#262629', color: charging ? C.green : '#c9c7c2', animation: charging ? 'pulse 1.6s ease-in-out infinite' : 'none' });
+        const smartSub = smartOn ? 'Lader når strømmen er billigst' + (til ? ` · ferdig ${til}` : '') : 'Lader straks bilen kobles til';
+        const hasLim = !!(cf.ladegrense && this.st(cf.ladegrense));
+        tabHTML = `<div style="display:flex;flex-direction:column;gap:12px">
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
+        <div data-on-click="openMore" data-arg="${e(cf.lader || '')}" style="${box150}">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="${chargeIcon}"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">ev_station</span></span>
+            <button data-on-click="toggleCharge" style="${S(ch.track)}"><span style="${S(ch.knob)}"></span></button>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:12px;color:#8e8d89">Lading</span><span style="${big}">${charging ? 'På' : 'Av'}</span></div>
+        </div>
+        <div data-on-click="openMore" data-arg="${e(cf.ladeeffekt || '')}" style="${box150}">
+          ${iconC('bolt')}
+          <div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:12px;color:#8e8d89">Ladeeffekt</span><div style="display:flex;align-items:baseline;gap:4px"><span style="${big};font-variant-numeric:tabular-nums">${e(kw == null ? '–' : nf(kw, 1))}</span><span style="font-size:13px;color:#8e8d89">kW</span></div></div>
+        </div>
       </div>
-    </section>
-    ${cf.ladegrense && this.st(cf.ladegrense) ? `<section style="display:flex;flex-direction:column;gap:8px">
-      ${lbl('Ladegrense', `<span style="font-size:13px;font-weight:600;font-variant-numeric:tabular-nums">${lim == null ? '–' : lim} %</span>`)}
-      ${KD.segHTML('car-lim', steps.map(v => [String(v), `${v} %`]), lim == null ? '' : String(lim), 'setLimit', {})}
-      <div style="display:flex;justify-content:space-between;padding:0 6px;font-size:11px;color:#6d6c69"><span>Hverdag 70–80 %</span><span>Langtur 100 %</span></div>
-    </section>` : ''}
-    <div style="font-size:17px;line-height:1.85;text-wrap:pretty;padding:0 4px;color:#c9c7c2">Det tar ca. <span style="${PILL}">${e(eta)}</span> å lade til <span style="${PILL};background:oklch(0.78 0.13 350 / 0.2);box-shadow:inset 0 0 0 1px oklch(0.78 0.13 350 / 0.45)">${lim == null ? '–' : lim} %</span> og koster ca. <span style="${PILL}">${e(cost)} kr</span>. Sist lading kostet <span style="${PILL}">${e(last)} kr</span>.</div>
-    ${cf.smartlading && this.st(cf.smartlading) ? `<section><button data-on-click="toggleSmart" style="width:100%;display:flex;align-items:center;gap:12px;padding:14px;border-radius:24px;text-align:left;background:${smartOn ? 'linear-gradient(135deg, oklch(0.78 0.13 350 / 0.16), oklch(0.9 0.05 20 / 0.06)), #1c1c1f' : '#1c1c1f'};box-shadow:inset 0 0 0 1px ${smartOn ? 'oklch(0.78 0.13 350 / 0.35)' : 'rgba(255,255,255,0.04)'}">
-      <span style="width:42px;height:42px;border-radius:21px;flex:none;display:grid;place-items:center;background:${smartOn ? PINK : '#2a2a2e'};color:${smartOn ? '#2a1720' : '#e4e2dd'}"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">auto_awesome</span></span>
-      <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-size:15px;font-weight:600">KI Lading</span><span style="font-size:12px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(smartOn ? 'Lader i billigste timer' + (til ? ` · ferdig ${til}` : '') : 'Lader med en gang bilen kobles til')}</span></span>
-      ${this.sw(smartOn)}
-    </button></section>` : ''}`;
+      ${hasLim ? `<div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px">
+        ${steps.map(v => { const on = lim === v; return `<button class="kd-car-l" data-on-click="setLimit" data-arg="${v}" style="${S({ height: 80, borderRadius: 22, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, background: on ? PINK : '#1c1c1f', color: on ? '#2a1720' : '#f2f1ee', transition: 'background .2s, transform .12s' })}">
+            <span style="${S({ width: 28, height: 3, borderRadius: 2, background: on ? 'rgba(42,23,32,0.35)' : batt != null && v <= batt ? C.green : '#3a3a3d' })}"></span>
+            <span style="font-size:14px;font-weight:600;font-variant-numeric:tabular-nums">${v}%</span>
+          </button>`; }).join('')}
+      </div>` : ''}
+      <div style="font-size:19px;line-height:1.85;letter-spacing:-0.01em;padding:4px 4px;text-wrap:pretty">
+        Det vil ta ca <span data-on-click="openMore" data-arg="${e(cf.ladetid || '')}" style="${PILL3};font-variant-numeric:tabular-nums"><span>${e(eta)}</span></span> å lade til <span style="${PILL3};background:oklch(0.78 0.13 350 / 0.16);box-shadow:inset 0 0 0 1px oklch(0.78 0.13 350 / 0.4);font-variant-numeric:tabular-nums"><span>${lim == null ? '–' : lim}</span><span>%</span></span>, og det vil koste ca <span data-on-click="openMore" data-arg="${e(cf.ladepris || '')}" style="${PILL3};font-variant-numeric:tabular-nums"><span>${e(cost)}</span><span>kr</span></span>. Sist lading kostet <span data-on-click="openMore" data-arg="${e(cf.forrige_lading || '')}" style="${PILL3}">${e(last)} kr</span>.
+      </div>
+      ${cf.smartlading && this.st(cf.smartlading) ? `<div data-on-click="openMore" data-arg="${e(cf.smartlading)}" style="height:150px;box-sizing:border-box;padding:16px;border-radius:28px;background:#1c1c1f;display:flex;flex-direction:column;justify-content:space-between">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+          <div style="display:flex;flex-direction:column;gap:3px"><span style="font-size:13px;color:#8e8d89">Smartlading</span><span style="font-size:12px;color:#6d6c69">${e(smartSub)}</span></div>
+          ${iconC('schedule', false)}
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-end">
+          <span style="font-size:32px;font-weight:300;letter-spacing:-0.03em;line-height:1">${smartOn ? 'På' : 'Av'}</span>
+          ${swHTML(smartOn, C.green, 'toggleSmart')}
+        </div>
+      </div>` : ''}
+      ${portId ? `<div data-on-click="openMore" data-arg="${e(portId)}" style="${box150}">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="${S({ width: 44, height: 44, borderRadius: 22, display: 'grid', placeItems: 'center', background: portOpen ? a(C.blue, 0.2) : '#262629', color: portOpen ? C.blue : '#c9c7c2' })}"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">ev_charger</span></span>
+          ${swHTML(portOpen, C.blue, 'act', 'port')}
+        </div>
+        <div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:12px;color:#8e8d89">Ladeport</span><span style="${big}">${portOpen ? 'Åpen' : 'Lukket'}</span></div>
+      </div>` : ''}
+    </div>`;
       }
 
       if (tab === 'climate') {
-        const cOn = climate, cc = C.amber;
         const seats = this.seats();
-        const tog = (h, icon, title, sub, on, col) => `<button data-on-click="${h}" style="width:100%;display:flex;align-items:center;gap:12px;padding:12px 14px;text-align:left;border-radius:22px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
-        <span style="width:38px;height:38px;border-radius:19px;flex:none;display:grid;place-items:center;background:${on ? a(col, 0.2) : '#2a2a2e'};color:${on ? col : '#c9c7c2'}"><span class="ms" style="font-size:20px;font-variation-settings:'FILL' 1">${icon}</span></span>
-        <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-size:14px;font-weight:600">${e(title)}</span><span style="font-size:12px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(sub)}</span></span>${this.sw(on)}</button>`;
-        tabHTML = `${climId ? `<section style="position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:center;gap:14px;padding:18px 16px 16px;border-radius:26px;background:${cOn ? `radial-gradient(100% 90% at 50% 0%, ${a(cc, 0.22)}, rgba(0,0,0,0) 70%), #1c1c1f` : '#1c1c1f'};box-shadow:inset 0 0 0 1px ${cOn ? a(cc, 0.3) : 'rgba(255,255,255,0.04)'}">
-      <div style="width:100%;display:flex;justify-content:space-between;align-items:center;gap:8px">
-        <span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#a9a7a2"><span class="ms" style="font-size:16px">device_thermostat</span>Inne ${isNaN(inside) ? '–' : nf(inside, 0)}°</span>
-        <button data-on-click="act" data-arg="climate" style="height:32px;padding:0 14px 0 10px;border-radius:16px;display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;background:${cOn ? cc : 'rgba(255,255,255,0.08)'};color:${cOn ? '#2a1c0c' : '#e4e2dd'}"><span class="ms" style="font-size:17px;font-variation-settings:'FILL' 1">power_settings_new</span>${cOn ? 'På' : 'Av'}</button>
+        const cl = sw(climate, 'oklch(0.7 0.14 45)');
+        const climaSub = climate ? (isNaN(climTemp) ? 'Varmer kupé' : `Varmer kupé · ${nf(climTemp, 0)}°`) : [isNaN(inside) ? '' : `Kupé ${nf(inside, 0)}°`, isNaN(outside) ? '' : `ute ${nf(outside, 0)}°`].filter(Boolean).join(' · ') || 'Av';
+        const chipB = (h, arg, icon, label, on) => `<button data-on-click="${h}" data-arg="${e(arg)}" style="${S({ height: 34, padding: '0 12px 0 9px', borderRadius: 17, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap', background: on ? a(C.orange, 0.18) : '#262629', color: on ? C.orange : '#a9a7a2', boxShadow: on ? `inset 0 0 0 1px ${a(C.orange, 0.4)}` : 'none', transition: 'background .2s' })}"><span class="ms" style="font-size:16px;font-variation-settings:'FILL' 1">${icon}</span><span>${e(label)}</span></button>`;
+        const chipsC = [
+          ...seats.map(x => { const v = String(this.v(x.id)); const off = /^(off|0|av)$/i.test(v); return chipB('cycleSeat', x.id, 'airline_seat_recline_normal', off ? x.navn : `${x.navn} · ${SEAT[v.toLowerCase()] || v}`, !off); }),
+          cf.defrost && this.st(cf.defrost) ? chipB('toggleDefrost', '', 'mode_heat', 'Avising', this.isOn(cf.defrost)) : '',
+          cf.vindu && this.st(cf.vindu) ? chipB('toggleWindow', '', 'window', windowOpen ? 'Vinduer luftet' : 'Luft vinduer', windowOpen) : '',
+        ].filter(Boolean);
+        tabHTML = `<section style="${S({ display: 'flex', flexDirection: 'column', gap: 16, padding: 16, borderRadius: 26, background: climate ? 'radial-gradient(120% 100% at 50% 0%, oklch(0.32 0.06 45), #1c1c1f 70%)' : '#1c1c1f', transition: 'background .6s' })}">
+    <div data-on-click="openMore" data-arg="${e(climId || cf.defrost || '')}" style="display:flex;align-items:center;gap:12px">
+      <span style="${S({ width: 44, height: 44, borderRadius: 22, flex: 'none', display: 'grid', placeItems: 'center', background: climate ? a(C.orange, 0.22) : '#262629', color: climate ? C.orange : '#a9a7a2', animation: climate ? 'pulse 2s ease-in-out infinite' : 'none' })}"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">heat</span></span>
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+        <span style="font-size:15px;font-weight:500">Klima</span>
+        <span style="font-size:12px;color:#8e8d89;white-space:nowrap">${e(climaSub)}</span>
       </div>
-      <div style="display:flex;align-items:center;justify-content:center;gap:22px">
-        <button data-on-click="stepTemp" data-arg="-1" style="width:52px;height:52px;border-radius:26px;display:grid;place-items:center;background:#2a2a2e"><span class="ms" style="font-size:26px">remove</span></button>
-        <span style="min-width:120px;text-align:center;font-size:58px;font-weight:300;letter-spacing:-0.04em;line-height:1;font-variant-numeric:tabular-nums;color:${cOn ? '#f2f1ee' : '#a9a7a2'}">${isNaN(climTemp) ? '–' : nf(climTemp, climTemp % 1 ? 1 : 0)}<span style="font-size:24px;color:#8e8d89">°</span></span>
-        <button data-on-click="stepTemp" data-arg="1" style="width:52px;height:52px;border-radius:26px;display:grid;place-items:center;background:#2a2a2e"><span class="ms" style="font-size:26px">add</span></button>
-      </div>
-      <span style="font-size:12px;color:#8e8d89">${cOn ? 'Klimaanlegget går' : 'Forvarm bilen før du drar'}</span>
-    </section>` : ''}
-    ${cf.defrost && this.st(cf.defrost) || cf.vindu && this.st(cf.vindu) ? `<section style="display:flex;flex-direction:column;gap:8px">
-      ${cf.defrost && this.st(cf.defrost) ? tog('toggleDefrost', 'ac_unit', 'Avising', this.isOn(cf.defrost) ? 'Maks varme på ruter og speil' : 'Av', this.isOn(cf.defrost), C.blue) : ''}
-      ${cf.vindu && this.st(cf.vindu) ? tog('toggleWindow', 'window', 'Luft vinduene', windowOpen ? 'Vinduene står på gløtt' : 'Lukket', windowOpen, C.blue) : ''}
-    </section>` : ''}
-    ${seats.map(x => `<section style="display:flex;flex-direction:column;gap:8px">
-      ${lbl(x.navn)}
-      ${KD.segHTML('seat-' + x.id, x.opts.map(o => [x.id + '|' + o, SEAT[String(o).toLowerCase()] || o]), x.id + '|' + this.v(x.id), 'selOpt', { small: true })}
-    </section>`).join('')}`;
+      <button data-on-click="toggleClimate" style="${S(cl.track)}"><span style="${S(cl.knob)}"></span></button>
+    </div>
+    ${climId ? `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+      <button class="kd-car-p" data-on-click="stepTemp" data-arg="-1" style="width:52px;height:52px;border-radius:26px;background:#262629;display:grid;place-items:center"><span class="ms" style="font-size:24px">remove</span></button>
+      <div style="display:flex;align-items:baseline;gap:2px;font-variant-numeric:tabular-nums"><span style="font-size:40px;font-weight:300;letter-spacing:-0.04em;line-height:1">${isNaN(climTemp) ? '–' : nf(climTemp, climTemp % 1 ? 1 : 0)}</span><span style="font-size:18px;color:#8e8d89">°</span></div>
+      <button class="kd-car-p" data-on-click="stepTemp" data-arg="1" style="width:52px;height:52px;border-radius:26px;background:#262629;display:grid;place-items:center"><span class="ms" style="font-size:24px">add</span></button>
+    </div>` : ''}
+    ${chipsC.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap">${chipsC.join('')}</div>` : ''}
+  </section>`;
       }
 
       if (tab === 'drive') {
-        const fb = this.auto('forbruk');
-        const kmToday = this.n(cf.i_dag), odo = this.n(cf.km_stand);
-        const driveStats = [['route', 'I dag', kmToday == null ? '–' : `${Math.round(kmToday).toLocaleString('nb-NO')} km`, cf.i_dag], ['electric_bolt', 'Forbruk', fb && this.ok(fb) ? `${Math.round(this.n(fb))} ${this.unit(fb) || 'Wh/km'}` : '–', fb], ['speed', 'Km-stand', odo == null ? '–' : Math.round(odo).toLocaleString('nb-NO'), cf.km_stand]];
+        const odo = this.n(cf.km_stand);
+        const days = this.weekDays() || [];
+        const DN = ['Sø', 'Ma', 'Ti', 'On', 'To', 'Fr', 'Lø'], DL = ['Søndag', 'Mandag', 'Tirsdag', 'Onsdag', 'Torsdag', 'Fredag', 'Lørdag'];
+        const sel = KD.clamp(s.day == null ? 6 : s.day, 0, Math.max(0, days.length - 1));
+        const max = Math.max(1, ...days.map(x => x.km));
+        const sd = days[sel];
+        const fb = this.auto('forbruk'); let whkm = fb && this.ok(fb) ? this.n(fb) : null;
+        if (whkm != null && /kwh\/100/i.test(this.unit(fb))) whkm *= 10; else if (whkm != null && /kwh\/km/i.test(this.unit(fb))) whkm *= 1000;
+        const weekKm = days.reduce((x, y) => x + y.km, 0);
+        const fmt = (v) => v == null ? '–' : Math.round(v).toLocaleString('nb-NO');
+        const driveStats = [['road', 'Rekkevidde', fmt(range), cf.rekkevidde], ['speed', 'Kilometerstand', fmt(odo), cf.km_stand]];
         const dur = (ms) => { const m = Math.round(ms / 60e3); return m >= 60 ? `${Math.floor(m / 60)} t ${m % 60} min` : `${m} min`; };
         const whenW = (d) => { const t0 = new Date(); t0.setHours(0, 0, 0, 0); const diff = Math.round((t0 - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400e3); if (diff <= 0) return 'I dag'; if (diff === 1) return 'I går'; const w = d.toLocaleDateString('nb-NO', { weekday: 'short' }).replace('.', ''); return w.charAt(0).toUpperCase() + w.slice(1); };
         const trips = this.trips();
         const ty = this.tyres();
-        const trS = trId ? this.st(trId) : null;
-        tabHTML = `${place ? `<section data-on-click="openMore" data-arg="${e(trId)}" style="display:flex;align-items:center;gap:12px;padding:14px;${card};cursor:pointer">
-      <span style="position:relative;width:46px;height:46px;border-radius:23px;flex:none;display:grid;place-items:center;background:${a(C.blue, 0.16)};color:${C.blue}"><span class="ms" style="font-size:24px;font-variation-settings:'FILL' 1">${zoneRaw === 'home' ? 'home' : 'location_on'}</span></span>
-      <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-size:11px;color:#8e8d89">Posisjon</span><span style="font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(place)}</span><span style="font-size:12px;color:#6d6c69">${trS ? `Sist endret ${e(KD.ago(trS.last_changed))}` : ''}</span></span>
-      <span class="ms" style="font-size:22px;color:#6d6c69">chevron_right</span>
-    </section>` : ''}
-    <section style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
-      ${driveStats.map(([ic, l, v, id]) => `<div data-on-click="openMore" data-arg="${e(id || '')}" style="min-width:0;display:flex;flex-direction:column;gap:8px;padding:14px;${card}"><span class="ms" style="font-size:20px;color:#8e8d89">${ic}</span><span style="display:flex;flex-direction:column;gap:2px;min-width:0"><span style="font-size:11px;color:#8e8d89">${e(l)}</span><span style="font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(v)}</span></span></div>`).join('')}
-    </section>
-    ${ty ? `<section style="display:flex;flex-direction:column;gap:8px">
-      ${lbl('Dekktrykk', ty.low ? `<span style="font-size:12px;color:${C.amber}">Sjekk trykket</span>` : `<span style="font-size:12px;color:#6d6c69">Alt i orden</span>`)}
-      <div style="position:relative;display:grid;grid-template-columns:minmax(0,1fr) 84px minmax(0,1fr);grid-template-rows:auto auto;gap:14px 10px;align-items:center;padding:16px;${card}">
-        ${['fl', 'fr', 'rl', 'rr'].map((k, i) => { const t = ty[k]; const lo = t && t.low; return `<div data-on-click="openMore" data-arg="${e(t ? t.id : '')}" style="grid-column:${i % 2 ? 3 : 1};grid-row:${i < 2 ? 1 : 2};min-width:0;display:flex;flex-direction:column;align-items:${i % 2 ? 'flex-start' : 'flex-end'};gap:1px"><span style="font-size:22px;font-weight:400;letter-spacing:-0.02em;font-variant-numeric:tabular-nums;color:${lo ? C.amber : '#f2f1ee'}">${t ? nf(t.v, t.u === 'psi' ? 0 : 1) : '–'}<span style="font-size:11px;color:#8e8d89;margin-left:3px">${e(t ? t.u : '')}</span></span><span style="font-size:11px;color:#8e8d89">${['Foran venstre', 'Foran høyre', 'Bak venstre', 'Bak høyre'][i]}</span></div>`; }).join('')}
-        <svg viewBox="0 0 84 150" style="grid-column:2;grid-row:1 / span 2;width:84px;height:150px">
-          <rect x="14" y="6" width="56" height="138" rx="24" fill="#2a2a2e" stroke="rgba(255,255,255,0.10)"></rect>
-          <path d="M22 44 Q42 34 62 44 L60 62 Q42 56 24 62 Z" fill="#1a1d22"></path><path d="M24 104 Q42 98 60 104 L62 118 Q42 126 22 118 Z" fill="#1a1d22"></path>
-          ${[[6, 26, 'fl'], [70, 26, 'fr'], [6, 98, 'rl'], [70, 98, 'rr']].map(([x, y, k]) => `<rect x="${x}" y="${y}" width="8" height="26" rx="4" fill="${ty[k] && ty[k].low ? C.amber : ty[k] ? C.green : '#48474a'}"></rect>`).join('')}
-        </svg>
+        const cardH = (title, right) => `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><span style="font-size:13px;color:#8e8d89">${e(title)}</span>${right || ''}</div>`;
+        tabHTML = `<div style="display:flex;flex-direction:column;gap:12px">
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
+        ${driveStats.map(([icon, label, v, id]) => `<div data-on-click="openMore" data-arg="${e(id || '')}" style="${box150}">
+            ${iconC(icon, false)}
+            <div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:12px;color:#8e8d89">${e(label)}</span><div style="display:flex;align-items:baseline;gap:4px;white-space:nowrap"><span style="${big};font-variant-numeric:tabular-nums">${e(v)}</span><span style="font-size:13px;color:#8e8d89">km</span></div></div>
+          </div>`).join('')}
       </div>
-    </section>` : ''}
-    ${trips.length ? `<section style="display:flex;flex-direction:column;gap:8px">
-      ${lbl('Siste turer')}
-      <div style="display:flex;flex-direction:column;padding:2px 14px;${card}">
-      ${trips.map((t, i) => `<div style="display:flex;gap:14px;padding:12px 0;${i ? 'border-top:1px solid rgba(255,255,255,0.05)' : ''}">
-          <div style="display:flex;flex-direction:column;align-items:center;width:10px;flex:none;padding-top:5px;gap:3px"><span style="width:8px;height:8px;border-radius:4px;background:#8e8d89"></span><span style="width:1px;height:14px;background:#48474a"></span><span style="width:8px;height:8px;border-radius:4px;background:${C.green}"></span></div>
-          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px">
+      ${days.length ? `<div style="box-sizing:border-box;padding:16px 16px 14px;border-radius:28px;background:#1c1c1f;display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <span style="font-size:13px;color:#8e8d89">Daglig kjøring siste 7 dager</span>
+            <div style="display:flex;align-items:baseline;gap:4px"><span style="font-size:32px;font-weight:300;letter-spacing:-0.03em;line-height:1;font-variant-numeric:tabular-nums">${e(fmt(sd && sd.km))}</span><span style="font-size:13px;color:#8e8d89">km</span></div>
+          </div>
+          <span style="font-size:12px;color:#8e8d89;white-space:nowrap">${e(sd ? (sel === days.length - 1 ? 'I dag' : DL[sd.d.getDay()]) : '')}</span>
+        </div>
+        <div style="display:flex;gap:6px;align-items:flex-end;height:130px">
+          ${days.map((x, i) => `<button data-on-click="pickDay" data-arg="${i}" style="flex:1;min-width:0;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:stretch"><span style="${S({ height: `${Math.max(4, x.km / max * 100)}%`, borderRadius: 10, background: i === sel ? C.blue : a(C.blue, 0.35), transition: 'background .2s, height .3s' })}"></span></button>`).join('')}
+        </div>
+        <div style="display:flex;gap:6px">
+          ${days.map((x, i) => `<span style="${S({ flex: 1, textAlign: 'center', fontSize: 11, color: i === sel ? '#f2f1ee' : '#6d6c69' })}">${DN[x.d.getDay()]}</span>`).join('')}
+        </div>
+        <div style="display:flex;justify-content:space-between;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06);font-size:12px;color:#8e8d89"><span>Uken totalt</span><span style="color:#f2f1ee;font-variant-numeric:tabular-nums"><span>${e(fmt(weekKm))}</span> km · <span>${e(whkm == null ? '–' : nf(weekKm * whkm / 1000, 0))}</span> kWh</span></div>
+      </div>` : ''}
+      ${ty ? `<div style="box-sizing:border-box;padding:16px;border-radius:28px;background:#1c1c1f;display:flex;flex-direction:column;gap:14px">
+        ${cardH('Dekktrykk', ty.low ? `<span style="font-size:12px;color:${C.amber};white-space:nowrap">Sjekk trykket</span>` : `<span style="font-size:12px;color:#6d6c69;white-space:nowrap">Alt i orden</span>`)}
+        <div style="position:relative;display:grid;grid-template-columns:minmax(0,1fr) 84px minmax(0,1fr);grid-template-rows:auto auto;gap:14px 10px;align-items:center">
+          ${['fl', 'fr', 'rl', 'rr'].map((k, i) => { const t = ty[k]; const lo = t && t.low; return `<div data-on-click="openMore" data-arg="${e(t ? t.id : '')}" style="grid-column:${i % 2 ? 3 : 1};grid-row:${i < 2 ? 1 : 2};min-width:0;display:flex;flex-direction:column;align-items:${i % 2 ? 'flex-start' : 'flex-end'};gap:1px"><span style="display:flex;align-items:baseline;gap:3px;font-size:22px;font-weight:300;letter-spacing:-0.02em;font-variant-numeric:tabular-nums;color:${lo ? C.amber : '#f2f1ee'}"><span>${t ? nf(t.v, t.u === 'psi' ? 0 : 1) : '–'}</span><span style="font-size:11px;color:#8e8d89">${e(t ? t.u : '')}</span></span><span style="font-size:11px;color:#8e8d89">${['Foran venstre', 'Foran høyre', 'Bak venstre', 'Bak høyre'][i]}</span></div>`; }).join('')}
+          <svg viewBox="0 0 84 150" style="grid-column:2;grid-row:1 / span 2;width:84px;height:150px">
+            <rect x="14" y="6" width="56" height="138" rx="24" fill="#262629" stroke="rgba(255,255,255,0.10)"></rect>
+            <path d="M22 44 Q42 34 62 44 L60 62 Q42 56 24 62 Z" fill="#1a1d22"></path><path d="M24 104 Q42 98 60 104 L62 118 Q42 126 22 118 Z" fill="#1a1d22"></path>
+            ${[[6, 26, 'fl'], [70, 26, 'fr'], [6, 98, 'rl'], [70, 98, 'rr']].map(([x, y, k]) => `<rect x="${x}" y="${y}" width="8" height="26" rx="4" fill="${ty[k] && ty[k].low ? C.amber : ty[k] ? C.green : '#48474a'}"></rect>`).join('')}
+          </svg>
+        </div>
+      </div>` : ''}
+      ${trips.length ? `<div style="box-sizing:border-box;padding:16px 16px 6px;border-radius:28px;background:#1c1c1f;display:flex;flex-direction:column;gap:4px">
+        ${cardH('Siste turer', place ? `<span data-on-click="openMore" data-arg="${e(trId)}" style="font-size:12px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(place)}</span>` : '')}
+        ${trips.map((t, i) => `<div style="display:flex;align-items:center;gap:12px;padding:10px 0;${i ? 'border-top:1px solid rgba(255,255,255,0.05)' : ''}">
+          <span style="width:40px;height:40px;border-radius:20px;background:#262629;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:20px;color:#a9a7a2">route</span></span>
+          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
             <span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(`${t.from} → ${t.to}`)}</span>
-            <span style="font-size:12px;color:#8e8d89">${e([t.km != null ? `${Math.round(t.km).toLocaleString('nb-NO')} km` : '', dur(t.d1 - t.d0), t.kwh != null ? `${t.kwh < 10 ? nf(t.kwh, 1) : Math.round(t.kwh)} kWh` : ''].filter(Boolean).join(' · '))}</span>
+            <span style="font-size:12px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e([t.km != null ? `${Math.round(t.km).toLocaleString('nb-NO')} km` : '', dur(t.d1 - t.d0), t.kwh != null ? `${t.kwh < 10 ? nf(t.kwh, 1) : Math.round(t.kwh)} kWh` : ''].filter(Boolean).join(' · '))}</span>
           </div>
           <span style="font-size:12px;color:#8e8d89;white-space:nowrap">${e(whenW(t.d1))}</span>
         </div>`).join('')}
-      </div>
-    </section>` : ''}`;
+      </div>` : ''}
+    </div>`;
       }
-
       if (tab === 'save') {
         const pctOf = (id) => { const d = Number(this.at(id, 'diesel_ville_kostet')), el = Number(this.at(id, 'strom_kostet')); return d > 0 && !isNaN(el) ? KD.clamp(Math.round((1 - el / d) * 100), 0, 100) : null; };
         const saveCards = [['Spart denne måneden', cf.spart_maned, C.green], ['Spart i år', cf.spart_ar, C.amber]].map(([label, id, c]) => {
@@ -449,10 +528,10 @@
     </section>`;
       }
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:18px">
-  <header style="display:flex;align-items:center;justify-content:space-between">
-    <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89"><span>${e(cf.navn)}</span></div>
-    <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:12px">
+  <header style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:6px">
+    <div style="font-size:30px;font-weight:600;letter-spacing:-0.03em">${e(cf.navn)}</div>
+    <button data-on-click="closeSheet" style="width:44px;height:44px;border-radius:22px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:22px">close</span></button>
   </header>
   ${hero}
   ${controls}
@@ -460,10 +539,8 @@
   ${tabHTML}
 </div>`;
     }
-    /** Bryter (spor + knott) */
-    sw(on) { return `<span style="position:relative;width:46px;height:28px;border-radius:14px;flex:none;background:${on ? 'oklch(0.72 0.14 150)' : 'rgba(255,255,255,0.18)'};transition:background .2s"><span style="position:absolute;top:3px;left:${on ? 21 : 3}px;width:22px;height:22px;border-radius:11px;background:#f4f3ef;box-shadow:0 2px 6px rgba(0,0,0,0.3);transition:left .25s cubic-bezier(.34,1.4,.64,1)"></span></span>`; }
   }
 
-  KD.define('kd-bil-card', KDBilCard, 'KD Bil', 'Tesla Model Y – pikselkopi av Claude Design');
+  KD.define('kd-bil-card', KDBilCard, 'KD Bil', 'Tesla Model Y – pikselkopi av Claude Design «Bil v3»');
   KD.sheet('car', 'kd-bil-card');
 })();

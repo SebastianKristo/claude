@@ -91,14 +91,14 @@
     return out;
   };
 
-  const SHEET_TITLES = { mower: 'Gressklipper', strom: 'Strøm', klima: 'Klima', sik: 'Sikkerhet', cam: 'Kamera', person: 'Person', vann: 'Vanning', plants: 'Planter', sleep: 'Søvn',
+  const SHEET_TITLES = { bill: 'Strømregning', mower: 'Gressklipper', strom: 'Strøm', klima: 'Klima', sik: 'Sikkerhet', cam: 'Kamera', person: 'Person', vann: 'Vanning', plants: 'Planter', sleep: 'Søvn',
     vaer: 'Vær', vac: 'Støvsuger', media: 'Media', car: 'Bil', printer: '3D-printer', server: 'Server', settings: 'Innstillinger', cal: 'Kalender',
     todo: 'Gjøremål', trash: 'Søppel', lys: 'Lys', rom: 'Rom (alle)' };
-  const SHEET_ICON = { mower: 'mdi:robot-mower', strom: 'mdi:flash', klima: 'mdi:thermostat', sik: 'mdi:shield-home', cam: 'mdi:cctv', person: 'mdi:account', vann: 'mdi:sprinkler',
+  const SHEET_ICON = { bill: 'mdi:receipt-text', mower: 'mdi:robot-mower', strom: 'mdi:flash', klima: 'mdi:thermostat', sik: 'mdi:shield-home', cam: 'mdi:cctv', person: 'mdi:account', vann: 'mdi:sprinkler',
     plants: 'mdi:sprout', sleep: 'mdi:sleep', vaer: 'mdi:weather-partly-cloudy', vac: 'mdi:robot-vacuum', media: 'mdi:music', car: 'mdi:car-electric',
     printer: 'mdi:printer-3d', server: 'mdi:server', settings: 'mdi:tune', cal: 'mdi:calendar', todo: 'mdi:checkbox-marked-outline', trash: 'mdi:delete',
     lys: 'mdi:lightbulb-group', rom: 'mdi:sofa' };
-  const SHEET_TAG = { mower: 'kd-gressklipper-card', strom: 'kd-strom-card', klima: 'kd-klima-card', sik: 'kd-sikkerhet-card', cam: 'kd-kamera-card', person: 'kd-person-card', vann: 'kd-vanning-card',
+  const SHEET_TAG = { bill: 'kd-stromregning-card', mower: 'kd-gressklipper-card', strom: 'kd-strom-card', klima: 'kd-klima-card', sik: 'kd-sikkerhet-card', cam: 'kd-kamera-card', person: 'kd-person-card', vann: 'kd-vanning-card',
     plants: 'kd-planter-card', sleep: 'kd-sovn-card', vaer: 'kd-vaer-card', vac: 'kd-stovsuger-card', media: 'kd-media-card', car: 'kd-bil-card',
     printer: 'kd-printer-card', server: 'kd-server-card', settings: 'kd-innstillinger-card', cal: 'kd-kalender-card', todo: 'kd-gjoremal-card',
     trash: 'kd-soppel-card', lys: 'kd-lys-card', rom: 'kd-rom-card' };
