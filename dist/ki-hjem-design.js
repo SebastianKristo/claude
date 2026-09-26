@@ -1,4 +1,4 @@
-/* KI Hjem Design – pikselkopi av Claude Design «Home Assistant sikkerhetspanel». Bygget 2026-09-25T23:57Z. */
+/* KI Hjem Design – pikselkopi av Claude Design «Home Assistant sikkerhetspanel». Bygget 2026-09-25T23:59Z. */
 
 /* ===== 00-kd-base.js ===== */
 try {
@@ -6455,7 +6455,7 @@ try {
       if (s.tab === 'info') {
         const hrs = this.hours(cf.tid_totalt);
         const last = [['event', 'Når', endOk ? `${this.dayWord(end).replace(/^./, c => c.toUpperCase())} ${KD.hm(end)}` : '–'], ['square_foot', 'Areal', area != null ? `${area} m²` : '–'], ['timer', 'Varighet', elMin != null ? `${Math.round(elMin)} min` : '–']];
-        const tot = [['Totalt', hrs == null ? '–' : `${Math.round(hrs).toLocaleString('nb-NO')} t`], ['Areal', this.ok(cf.areal_totalt) ? `${Math.round(this.n(cf.areal_totalt)).toLocaleString('nb-NO')} m²` : '–'], ['Turer', this.ok(E.turer) ? Math.round(this.n(E.turer)).toLocaleString('nb-NO') : '–']];
+        const tot = [['Tid', hrs == null ? '–' : `${Math.round(hrs).toLocaleString('nb-NO')} t`], ['Areal', this.ok(cf.areal_totalt) ? `${Math.round(this.n(cf.areal_totalt)).toLocaleString('nb-NO')} m²` : '–'], ['Turer', this.ok(E.turer) ? Math.round(this.n(E.turer)).toLocaleString('nb-NO') : '–']];
         const PICON = { main_brush: 'cleaning_services', side_brush: 'mode_fan', filter: 'filter_alt', sensor: 'sensors' };
         const parts = this.parts();
         tabHTML = `<section style="display:flex;flex-direction:column;gap:8px">
@@ -8754,7 +8754,7 @@ try {
         const dayS = d => { const n = Math.round((day0(d) - TODAY) / DAY); return n < 8 ? cap(d.toLocaleDateString('nb-NO', { weekday: 'short' }).replace('.', '')) : dmon(d); };
         const subOf = u => (u.type === 'serie' ? [u.episode, u.number, u.plex ? 'på Plex' : u.studio] : [u.kino ? 'Kino' : 'Film', u.plex ? 'på Plex' : u.studio]).filter(Boolean).join(' · ');
         const F = ups[0];
-        up = { filters: [['alle', 'Alle'], ['serie', 'Serier'], ['film', 'Filmer'], ['plex', 'Plex']].map(([k, l]) => ({ k, label: l, style: { height: 34, padding: '0 14px', borderRadius: 17, fontSize: 13, fontWeight: 500, background: s.filter === k ? '#f4f3ef' : '#1c1c1f', color: s.filter === k ? '#1a1a1c' : '#c9c7c2' } })),
+        up = { filters: [['alle', 'Alle'], ['serie', 'Serier'], ['film', 'Filmer'], ['plex', 'Plex']].filter(([k]) => k === 'alle' || (k === 'serie' ? this.st(c.serier) : k === 'film' ? this.st(c.filmer) : this.st(c.plex_serier) || this.st(c.plex_filmer))).map(([k, l]) => ({ k, label: l, style: { height: 34, padding: '0 14px', borderRadius: 17, fontSize: 13, fontWeight: 500, background: s.filter === k ? '#f4f3ef' : '#1c1c1f', color: s.filter === k ? '#1a1a1c' : '#c9c7c2' } })),
           featured: F ? { title: F.title, sub: subOf(F), when: `${dayS(F.when)} kl. ${hm(F.when)}`, tag: s.filter === 'plex' ? 'Plex' : F.type === 'serie' ? 'Sonarr' : 'Radarr', initials: ini(F.title),
             card: { display: 'flex', gap: 14, alignItems: 'center', padding: 14, borderRadius: 24, background: `linear-gradient(120deg, ${col(F)}, #1c1c1f 85%)` },
             poster: { width: 84, height: 120, borderRadius: 12, flex: 'none', display: 'grid', placeItems: 'center', padding: 8, boxSizing: 'border-box', background: `linear-gradient(160deg, ${col(F)}, #111)`, boxShadow: '0 8px 20px rgba(0,0,0,0.4)' } } : null,
@@ -10281,6 +10281,77 @@ try {
       const r = this._room(), ud = JSON.parse(JSON.stringify(H.userHideNow(this) || {}));
       delete ud[r.id]; H.saveUserHide(this, ud); this._queue();
     }
+    /* ----- tilpass fliser og scener (per bruker, i romraden: fliser/scener { skjul, vis, rekkefolge, navn, ekstra }) ----- */
+    _udRow(kind, fn) {
+      const r = this._room(), ud = JSON.parse(JSON.stringify(KD.userData(this) || {}));
+      const row = ud[r.id] = ud[r.id] || {};
+      const g = row[kind] = row[kind] || {};
+      fn(g);
+      for (const k of Object.keys(g)) if ((Array.isArray(g[k]) && !g[k].length) || (g[k] && typeof g[k] === 'object' && !Array.isArray(g[k]) && !Object.keys(g[k]).length)) delete g[k];
+      if (!Object.keys(g).length) delete row[kind];
+      this.haptic('selection');
+      KD.saveUserData(this, ud);
+      this._queue();
+    }
+    tileTog(ev, key) { this.edHide(ev, 'fliser|' + key); }
+    sceneHide(ev, key) { this.edHide(ev, 'scener|' + key); }
+    edHide(ev, arg) {
+      const i = String(arg).indexOf('|'), kind = arg.slice(0, i), key = arg.slice(i + 1);
+      const hidden = kind === 'fliser' ? (this._tileHid ? this._tileHid(key) : false) : !!((this._scenes || []).find(x => x.key === key) || {}).hid;
+      this._udRow(kind, g => {
+        g.skjul = (g.skjul || []).filter(x => x !== key);
+        if (kind === 'fliser') { g.vis = (g.vis || []).filter(x => x !== key); if (!hidden) g.skjul.push(key); else g.vis.push(key); }
+        else if (!hidden) g.skjul.push(key);
+      });
+    }
+    edMove(ev, arg) {
+      const [kind, key, d] = String(arg).split('|');
+      const list = [...((kind === 'fliser' ? this._tileOrder : this._sceneOrder) || [])];
+      const i = list.indexOf(key), j = i + (+d); if (i < 0 || j < 0 || j >= list.length) return;
+      [list[i], list[j]] = [list[j], list[i]];
+      this._udRow(kind, g => { g.rekkefolge = list; });
+    }
+    edName(ev, arg, el) {
+      const i = String(arg).indexOf('|'), kind = arg.slice(0, i), key = arg.slice(i + 1), v = String((el && el.value) || '').trim();
+      const def = (el && el.getAttribute('placeholder')) || '';
+      this._udRow(kind, g => { g.navn = { ...(g.navn || {}) }; if (!v || v === def) delete g.navn[key]; else g.navn[key] = v.slice(0, 30); });
+    }
+    edKey(ev) { if (ev.key === 'Enter') { ev.preventDefault(); ev.target.blur(); } }
+    scDel(ev, key) {
+      this._udRow('scener', g => { g.ekstra = (g.ekstra || []).filter(x => x !== key); g.skjul = (g.skjul || []).filter(x => x !== key); g.rekkefolge = (g.rekkefolge || []).filter(x => x !== key); if (g.navn) delete g.navn[key]; });
+    }
+    scAddTog() { this.setState({ scAdd: !this.state.scAdd, scQ: '' }); }
+    scQ(ev, arg, el) { this._scQ = el.value; clearTimeout(this._scqT); this._scqT = setTimeout(() => this.setState({ scQ: this._scQ }), 150); }
+    scAddGo(ev, id) {
+      if (!id) return;
+      this._udRow('scener', g => { g.ekstra = [...(g.ekstra || []).filter(x => x !== id), id]; g.skjul = (g.skjul || []).filter(x => x !== id); });
+    }
+    /** redigeringspanel for fliser/scener: gi nytt navn, flytt, skjul/vis (+ legg til scene/skript) */
+    _edPanel(kind, title, icon, items, navn) {
+      const s = this.state, n = items.length;
+      const ib = (on, arg, ic, tip, col, dis) => `<button class="kdr-a92" data-on-click="${on}" data-arg="${E(arg)}" title="${tip}" style="${S({ width: 34, height: 34, borderRadius: 17, flex: 'none', display: 'grid', placeItems: 'center', color: col || '#8e8d89', opacity: dis ? 0.25 : 1, pointerEvents: dis ? 'none' : null })}"><span class="ms" style="font-size:19px">${ic}</span></button>`;
+      const rows = items.map((x, i) => `<div data-key="ed-${kind}-${E(x.key)}" style="display:flex;align-items:center;gap:2px;min-height:48px;border-top:${i ? '1px solid rgba(255,255,255,0.05)' : 'none'}">
+          <span style="${S({ width: 34, height: 34, borderRadius: 17, flex: 'none', display: 'grid', placeItems: 'center', marginRight: 6, background: x.hid ? '#262629' : 'oklch(0.78 0.13 350 / 0.18)', color: x.hid ? '#6d6c69' : 'oklch(0.85 0.09 350)' })}"><span class="ms" style="font-size:18px">${E(x.icon)}</span></span>
+          <input data-on-change="edName" data-on-keydown="edKey" data-arg="${E(kind + '|' + x.key)}" value="${E(x.label)}" placeholder="${E(x.def)}" maxlength="30" enterkeyhint="done" autocomplete="off" style="${S({ flex: 1, minWidth: 0, height: 36, padding: '0 10px', borderRadius: 12, border: 'none', outline: 'none', background: 'rgba(255,255,255,0.04)', color: x.hid ? '#8e8d89' : '#f2f1ee', font: 'inherit', fontSize: 13, boxSizing: 'border-box', textDecoration: x.hid ? 'line-through' : 'none' })}">
+          ${ib('edMove', `${kind}|${x.key}|-1`, 'arrow_upward', 'Flytt fram', null, i === 0)}${ib('edMove', `${kind}|${x.key}|1`, 'arrow_downward', 'Flytt bak', null, i === n - 1)}
+          ${ib('edHide', `${kind}|${x.key}`, x.hid ? 'visibility_off' : 'visibility', x.hid ? 'Vis' : 'Skjul', x.hid ? '#6d6c69' : 'oklch(0.82 0.1 350)')}
+          ${x.extra ? ib('scDel', x.key, 'delete', 'Fjern', 'oklch(0.72 0.15 25)') : ''}
+        </div>`).join('');
+      let add = '';
+      if (kind === 'scener') {
+        const have = new Set(items.map(x => x.key)), q = String(s.scQ || '').toLowerCase(), r = this._r || this._room(), w = String(r.navn || r.id).toLowerCase();
+        const cand = s.scAdd ? Object.keys(this.all()).filter(id => /^(scene|script)\./.test(id) && !have.has(id) && (!q || (id + ' ' + this.fname(id)).toLowerCase().includes(q)))
+          .sort((x, y) => ((y.includes(r.id) || this.fname(y).toLowerCase().includes(w)) - (x.includes(r.id) || this.fname(x).toLowerCase().includes(w))) || (y.startsWith('scene.') - x.startsWith('scene.')) || this.fname(x).localeCompare(this.fname(y), 'nb')) : [];
+        add = `<button class="kdr-a92" data-on-click="scAddTog" style="display:flex;align-items:center;justify-content:center;gap:6px;height:40px;margin-top:6px;border-radius:20px;font-size:13px;font-weight:500;background:${s.scAdd ? 'oklch(0.78 0.13 350 / 0.2)' : 'rgba(255,255,255,0.06)'};color:#e6e4df"><span class="ms" style="font-size:18px">${s.scAdd ? 'expand_less' : 'add'}</span>${s.scAdd ? 'Lukk' : 'Legg til scene eller skript'}</button>
+        ${s.scAdd ? `<input data-key="kd-scq" data-keep="1" data-on-input="scQ" placeholder="Søk etter scene eller skript …" autocomplete="off" style="height:38px;margin-top:8px;padding:0 14px;border-radius:19px;border:none;outline:none;background:#262629;color:#f2f1ee;font:inherit;font-size:13px;box-sizing:border-box;width:100%">
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;max-height:240px;overflow-y:auto;overscroll-behavior:contain">${cand.slice(0, 40).map(id => `<button class="kdr-a92" data-key="kd-sca-${E(id)}" data-on-click="scAddGo" data-arg="${E(id)}" style="${S({ display: 'flex', alignItems: 'center', gap: 6, maxWidth: '100%', minWidth: 0, height: 34, padding: '0 12px 0 8px', borderRadius: 17, fontSize: 12, fontWeight: 500, background: 'rgba(255,255,255,0.06)', color: '#c9c7c2' })}"><span class="ms" style="font-size:16px;flex:none">${id.startsWith('script.') ? 'play_circle' : 'palette'}</span><span style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(this.fname(id))}</span></button>`).join('') || '<span style="font-size:12px;color:#6d6c69">Ingen scener eller skript funnet</span>'}</div>
+        ${cand.length > 40 ? `<span style="display:block;margin-top:6px;font-size:11px;color:#6d6c69">${cand.length - 40} til – søk for å snevre inn</span>` : ''}` : ''}`;
+      }
+      return `<div data-key="kd-ed-${kind}" style="display:flex;flex-direction:column;padding:12px 10px 10px 12px;border-radius:24px;background:#1c1c1f;box-shadow:inset 0 0 0 1px oklch(0.78 0.13 350 / 0.25)">
+      <div style="display:flex;align-items:center;gap:8px;padding:0 4px 6px;font-size:12px;color:#8e8d89"><span class="ms" style="font-size:16px">${icon}</span><span style="flex:1">${E(title)} · gi nytt navn, flytt eller skjul</span></div>
+      ${rows || '<span style="padding:8px 4px;font-size:12px;color:#6d6c69">Ingen ennå</span>'}${add}
+    </div>`;
+    }
     sensorAll(ev, k) { this.setState({ sensAll: this.state.sensAll === k ? null : k, sensQ: '' }); }
     sensorQ(ev, arg, el) { this._sensQ = el.value; clearTimeout(this._sqT); this._sqT = setTimeout(() => this.setState({ sensQ: this._sensQ }), 150); }
     /** Animasjonen i topp-pillen (innflyging + pulserende glød) – av/på per bruker, gjelder alle popups */
@@ -10549,7 +10620,7 @@ try {
     </div>
   </section>
 
-  <section style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
+  <section style="display:flex;flex-direction:column;gap:12px"><div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
     ${tiles.map(t => `<button class="kdr-a97" data-key="${t.key}" data-on-click="${s.edit ? 'tileTog' : t.go}" data-arg="${E(s.edit ? t.key : t.arg)}" ${s.edit ? '' : 'data-hold="moreInfo" '}style="${S({ ...t.style, ...(s.edit ? { opacity: t.hid ? 0.38 : 1, boxShadow: t.hid ? 'inset 0 0 0 1px rgba(255,255,255,0.12)' : 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.55)' } : {}) })}">
         <span style="${S(t.fill)}"></span>
         <span style="${S(t.iconWrap)}"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">${t.icon}</span></span>
@@ -10559,10 +10630,9 @@ try {
         </span>
         ${s.edit ? `<span class="ms" style="position:relative;margin-left:auto;font-size:18px;color:${t.hid ? '#f2f1ee' : 'oklch(0.82 0.1 350)'}">${t.hid ? 'visibility_off' : 'visibility'}</span>` : ''}
       </button>`).join('')}
-  </section>
-  ${s.edit ? this._edPanel('fliser', 'Fliser', 'grid_view', tilesAll.map(t => ({ key: t.key, icon: t.icon, label: t.label, def: t.def, hid: t.hid })), UF.navn) : ''}
+  </div>${s.edit ? this._edPanel('fliser', 'Fliser', 'grid_view', tilesAll.map(t => ({ key: t.key, icon: t.icon, label: t.label, def: t.def, hid: t.hid })), UF.navn) : ''}</section>
 
-  ${scShown.length ? `<section data-hscroll="1" style="display:flex;gap:14px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:2px var(--kd-kant,10px)">
+  ${scShown.length || s.edit ? `<section style="display:flex;flex-direction:column;gap:12px">${scShown.length ? `<div data-hscroll="1" style="display:flex;gap:14px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:2px var(--kd-kant,10px)">
     ${scShown.map(x => { const act = s.scene === x.key && !s.edit;
       const bubble = { width: 58, height: 58, borderRadius: 29, display: 'grid', placeItems: 'center', background: act ? PINK : '#1c1c1f', color: act ? '#2a1720' : '#c9c7c2', boxShadow: act ? '0 6px 18px rgba(240,140,190,0.3)' : 'inset 0 0 0 1px rgba(255,255,255,0.05)', transform: act ? 'scale(1.06)' : 'scale(1)', transition: 'transform .35s cubic-bezier(.34,1.8,.64,1), background .25s' };
       if (s.edit) Object.assign(bubble, { opacity: x.hid ? 0.38 : 1, boxShadow: x.hid ? 'inset 0 0 0 1px rgba(255,255,255,0.12)' : 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.55)' });
@@ -10570,8 +10640,7 @@ try {
         <span style="${S(bubble)}"><span class="ms" style="${S({ fontSize: 24, fontVariationSettings: `'FILL' ${act ? 1 : 0}` })}">${E(x.icon)}</span></span>
         <span style="${S({ fontSize: 11, fontWeight: 500, color: act ? '#f2f1ee' : '#8e8d89', whiteSpace: 'nowrap', maxWidth: 66, overflow: 'hidden', textOverflow: 'ellipsis', opacity: s.edit && x.hid ? 0.5 : 1 })}">${E(x.label)}</span>
       </button>`; }).join('')}
-  </section>` : ''}
-  ${s.edit ? this._edPanel('scener', 'Scener', 'auto_awesome', scenes.map(x => ({ key: x.key, icon: x.icon, label: x.label, def: x.def, hid: x.hid, extra: x.extra })), US.navn) : ''}
+  </div>` : ''}${s.edit ? this._edPanel('scener', 'Scener', 'auto_awesome', scenes.map(x => ({ key: x.key, icon: x.icon, label: x.label, def: x.def, hid: x.hid, extra: x.extra })), US.navn) : ''}</section>` : ''}
 
   ${lightRows.length ? `<section style="display:flex;flex-direction:column;gap:8px">
     <div style="display:flex;justify-content:space-between;padding:0 6px"><span style="font-size:15px;font-weight:500">Lys</span><span style="font-size:12px;color:#8e8d89">${on} på · dra for å dimme</span></div>

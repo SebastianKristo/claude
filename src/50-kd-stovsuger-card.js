@@ -346,7 +346,7 @@
       if (s.tab === 'info') {
         const hrs = this.hours(cf.tid_totalt);
         const last = [['event', 'Når', endOk ? `${this.dayWord(end).replace(/^./, c => c.toUpperCase())} ${KD.hm(end)}` : '–'], ['square_foot', 'Areal', area != null ? `${area} m²` : '–'], ['timer', 'Varighet', elMin != null ? `${Math.round(elMin)} min` : '–']];
-        const tot = [['Totalt', hrs == null ? '–' : `${Math.round(hrs).toLocaleString('nb-NO')} t`], ['Areal', this.ok(cf.areal_totalt) ? `${Math.round(this.n(cf.areal_totalt)).toLocaleString('nb-NO')} m²` : '–'], ['Turer', this.ok(E.turer) ? Math.round(this.n(E.turer)).toLocaleString('nb-NO') : '–']];
+        const tot = [['Tid', hrs == null ? '–' : `${Math.round(hrs).toLocaleString('nb-NO')} t`], ['Areal', this.ok(cf.areal_totalt) ? `${Math.round(this.n(cf.areal_totalt)).toLocaleString('nb-NO')} m²` : '–'], ['Turer', this.ok(E.turer) ? Math.round(this.n(E.turer)).toLocaleString('nb-NO') : '–']];
         const PICON = { main_brush: 'cleaning_services', side_brush: 'mode_fan', filter: 'filter_alt', sensor: 'sensors' };
         const parts = this.parts();
         tabHTML = `<section style="display:flex;flex-direction:column;gap:8px">
