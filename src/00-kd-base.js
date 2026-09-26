@@ -151,6 +151,7 @@ input,select,textarea{font:inherit;color:inherit}
     /* ----- livssyklus ----- */
     setConfig(config) {
       this.config = Object.assign({}, this.constructor.defaults || {}, config || {});
+      this._cfg0 = this.config; this._entJs = null; // brukerens entitetsvalg (Tilpass oppsett → Entiteter) legges over i _render
       // kant: sidemarg (px) – arves av innebygde ark via CSS-variabelen
       if (config && config.kant != null || this.constructor.defaults && this.constructor.defaults.kant != null) this.style.setProperty('--kd-kant', parseFloat(this.config.kant) + 'px');
       this._force = true; this._queue();
@@ -177,6 +178,10 @@ input,select,textarea{font:inherit;color:inherit}
     flush() { if (this._raf) { cancelAnimationFrame(this._raf); this._raf = null; } this._render(); }
     _render() {
       if (!this._hass && !this.constructor.noHass) return;
+      if (this._cfg0 && this.layKey) { // entitetsvalg per bruker (kd_ark[kort].ent) overstyrer config
+        const ov = ((KD.ud(this, 'kd_ark') || {})[this.layKey()] || {}).ent || {}, js = JSON.stringify(ov);
+        if (js !== this._entJs) { this._entJs = js; this.config = Object.assign({}, this._cfg0, ov); }
+      }
       this._force = false;
       this._used = new Set(); this._usedAll = false;
       let html;
@@ -529,12 +534,13 @@ input,select,textarea{font:inherit;color:inherit}
       const ib = (arg, icon, title, col, dis) => `<button data-on-click="layOp" data-arg="${e(arg)}" title="${title}" style="${SS({ width: 34, height: 34, borderRadius: 17, flex: 'none', display: 'grid', placeItems: 'center', color: col || '#8e8d89', opacity: dis ? 0.25 : 1, pointerEvents: dis ? 'none' : null })}"><span class="ms" style="font-size:20px">${icon}</span></button>`;
       const extra = typeof this.tilpassHTML === 'function' ? this.tilpassHTML() : '';
       return `<div data-key="kd-lay-pad" data-lay-skip="1" style="height:calc(46vh + 110px)"></div>
-  <div data-key="kd-lay-panel" data-lay-skip="1" style="position:fixed;left:var(--kd-kant,10px);right:var(--kd-kant,10px);bottom:calc(100px + env(safe-area-inset-bottom));z-index:30;max-width:620px;margin:0 auto;max-height:46vh;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;box-sizing:border-box;padding:8px;border-radius:26px;background:rgba(38,38,41,0.94);backdrop-filter:blur(22px) saturate(170%);-webkit-backdrop-filter:blur(22px) saturate(170%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.12),0 18px 40px rgba(0,0,0,0.5);display:flex;flex-direction:column;gap:2px">
+  <div data-key="kd-lay-panel" data-lay-skip="1" style="position:fixed;left:var(--kd-kant,10px);right:var(--kd-kant,10px);bottom:calc(var(--kd-dokk-h, 14px) + 6px + env(safe-area-inset-bottom));z-index:30;max-width:620px;margin:0 auto;max-height:46vh;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;box-sizing:border-box;padding:8px;border-radius:26px;background:rgba(38,38,41,0.94);backdrop-filter:blur(22px) saturate(170%);-webkit-backdrop-filter:blur(22px) saturate(170%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.12),0 18px 40px rgba(0,0,0,0.5);display:flex;flex-direction:column;gap:2px">
     <div style="position:sticky;top:-8px;z-index:1;display:flex;align-items:center;gap:8px;padding:6px 4px 6px 12px;margin:-8px -8px 0;border-radius:26px 26px 0 0;background:rgba(38,38,41,0.98)">
       <span class="ms" style="font-size:20px;color:oklch(0.82 0.1 350)">dashboard_customize</span><span style="flex:1;font-size:15px;font-weight:600">Tilpass oppsett</span>
       <button data-on-click="layReset" style="height:34px;padding:0 12px;border-radius:17px;font-size:12px;color:#a9a7a2;background:rgba(255,255,255,0.06)">Nullstill</button>
       <button data-on-click="layTog" style="height:34px;padding:0 14px;margin-right:8px;border-radius:17px;font-size:13px;font-weight:600;background:linear-gradient(135deg, oklch(0.78 0.13 350), oklch(0.9 0.05 20));color:#2a1720">Ferdig</button></div>
     ${extra}
+    ${this._entHTML()}
     ${secs.length ? `<div style="padding:10px 12px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">Seksjoner</div>` : ''}
     ${secs.map((x, i) => `<div data-key="kd-lay-${e(x.sig)}" style="min-height:44px;padding:0 4px 0 12px;border-radius:14px;display:flex;align-items:center;gap:8px;opacity:${x.hid ? 0.45 : 1}">
       <span style="flex:1;min-width:0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(x.label)}</span>
@@ -542,6 +548,45 @@ input,select,textarea{font:inherit;color:inherit}
       ${ib(x.sig + '|skjul', x.hid ? 'visibility_off' : 'visibility', x.hid ? 'Vis' : 'Skjul', x.hid ? '#6d6c69' : 'oklch(0.82 0.1 350)')}
     </div>`).join('')}
   </div>`;
+    }
+    /* ----- Entiteter: bytt hvilke entiteter kortet bruker (alle config-nøkler med en entitet som standard) ----- */
+    _entKeys() {
+      const D = this.constructor.defaults || {};
+      return Object.keys(D).filter(k => typeof D[k] === 'string' && /^[a-z_]+\.[a-z0-9_]+$/.test(D[k]) && k !== 'type');
+    }
+    entOpen(ev, k) { this._entQ = ''; this.setState({ entOpen: this.state.entOpen === k ? null : k }); }
+    entQ(ev, arg, el) { this._entQ = el.value; clearTimeout(this._eqT); this._eqT = setTimeout(() => this._queue(), 150); }
+    entSet(ev, arg) {
+      const i = String(arg).indexOf('|'), k = arg.slice(0, i), id = arg.slice(i + 1);
+      const D = { ...this._layData() }, ent = { ...(D.ent || {}) };
+      if (id) ent[k] = id; else delete ent[k];
+      D.ent = ent; this._laySave(D); this.setState({ entOpen: null });
+    }
+    _entHTML() {
+      const keys = this._entKeys(); if (!keys.length) return '';
+      const e = KD.e, SS = KD.S, D = this.constructor.defaults || {}, ov = this._layData().ent || {}, open = this.state.entOpen;
+      const nice = k => k.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
+      const rows = keys.map(k => {
+        const cur = this.config[k], dom = String(D[k]).split('.')[0], mine = ov[k] != null, ok = cur && this.st(cur);
+        let list = '';
+        if (open === k) {
+          const q = String(this._entQ || '').toLowerCase(), all = this.all();
+          const ids = Object.keys(all).filter(id => id.startsWith(dom + '.') && (!q || (id + ' ' + this.fname(id)).toLowerCase().includes(q))).sort((a, b) => this.fname(a).localeCompare(this.fname(b), 'nb'));
+          list = `<div style="display:flex;flex-direction:column;gap:6px;padding:0 10px 10px">
+            <input data-key="ent-q-${e(k)}" data-keep="1" data-on-input="entQ" placeholder="Søk i ${e(dom)} …" autocomplete="off" style="height:36px;padding:0 14px;border-radius:18px;border:none;outline:none;background:#262629;color:#f2f1ee;font:inherit;font-size:13px">
+            <div style="display:flex;flex-wrap:wrap;gap:6px;max-height:200px;overflow-y:auto">
+              ${mine ? `<button data-on-click="entSet" data-arg="${e(k + '|')}" style="height:32px;padding:0 12px;border-radius:16px;font-size:12px;background:rgba(255,255,255,0.06);color:#c9c7c2">Standard (${e(D[k])})</button>` : ''}
+              ${ids.slice(0, 60).map(id => `<button data-on-click="entSet" data-arg="${e(k + '|' + id)}" style="${SS({ height: 32, maxWidth: '100%', padding: '0 12px', borderRadius: 16, fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', background: id === cur ? 'oklch(0.78 0.13 350 / 0.2)' : 'rgba(255,255,255,0.06)', boxShadow: id === cur ? 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.7)' : 'none', color: id === cur ? '#f2f1ee' : '#a9a7a2' })}">${e(this.fname(id))}</button>`).join('') || '<span style="font-size:12px;color:#6d6c69">Ingen treff</span>'}
+            </div></div>`;
+        }
+        return `<div data-key="ent-${e(k)}" style="border-radius:14px;${open === k ? 'background:rgba(255,255,255,0.04)' : ''}">
+          <button data-on-click="entOpen" data-arg="${e(k)}" style="width:100%;min-height:46px;padding:4px 10px 4px 12px;display:flex;align-items:center;gap:10px;text-align:left">
+            <span style="flex:1;min-width:0;display:flex;flex-direction:column"><span style="font-size:13px">${e(nice(k))}${mine ? ' <span style="font-size:10px;color:oklch(0.82 0.1 350)">● endret</span>' : ''}</span>
+              <span style="font-size:11px;color:${ok ? '#8e8d89' : 'oklch(0.72 0.15 25)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(cur ? (ok ? this.fname(cur) + ' · ' + cur : cur + ' (finnes ikke)') : '–')}</span></span>
+            <span class="ms" style="font-size:20px;color:#8e8d89">${open === k ? 'expand_less' : 'edit'}</span>
+          </button>${list}</div>`;
+      }).join('');
+      return `<div style="padding:10px 12px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">Entiteter</div>${rows}`;
     }
     _render() {
       const first = !this._didFirst;

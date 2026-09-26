@@ -62,7 +62,7 @@
   class KDKameraCard extends KD.KDSheet {
     static head = function () { const n = this.cams().length; return ['videocam', 'Kamera', `${n} ${n === 1 ? 'kamera' : 'kameraer'}`]; };
     static defaults = { kameraer: DEFAULT_CAMS, auto: true, skjul: [], navn: { ringeklokke: 'Inngang' }, oppdater: 10, oppdater_enkel: 2, direkte: true, sirene: null, bilde_mappe: '/config/www/kamera', frigate: 'auto', lagring: null, fane: null };
-    static sheetCss = `.kd-cam-ctl:active,.kd-cam-ev:active,.kd-cam-ed:active{filter:brightness(1.15)}.kd-cam-ed:disabled{opacity:.3}`;
+    static sheetCss = `@keyframes kdpop{from{opacity:0;transform:translateY(-6px) scale(.96)}to{opacity:1;transform:none}}.kd-cam-ctl:active,.kd-cam-ev:active,.kd-cam-ed:active{filter:brightness(1.15)}.kd-cam-ed:disabled{opacity:.3}`;
     static getStubConfig() { return {}; }
     getCardSize() { return 14; }
     constructor() { super(); this.state = { tab: 'live', view: 'alle', obj: 'all', fav: {} }; this._tick = [0, 0]; }
@@ -258,14 +258,21 @@
       const i = Math.max(0, Math.min(n - 1, typeof d === 'string' && d[0] === '=' ? Number(d.slice(1)) : (this.state.fi || 0) + Number(d)));
       el.scrollTo({ left: i * el.clientWidth, behavior: 'smooth' }); this.setState({ fi: i }); this.haptic('selection');
     }
+    layMenu() { this.setState({ layMenu: !this.state.layMenu }); }
+    layPick(ev, v) { this.setState({ layMenu: false }); this.setLayout(ev, v); }
+    /** Visning som nedtrekksmeny (glass) */
     layoutPickHTML() {
-      const cur = this.camLayout(), L = LAYOUTS.find(x => x[0] === cur);
-      return `<div data-key="kam-lay" data-lay="Visning" data-lay-navn="Visning (oppsett)" style="display:flex;flex-direction:column;gap:6px;min-width:0">
-    <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:0 4px;min-width:0">
-      <span style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Visning</span>
-      <span style="font-size:12px;color:#c9c7c2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(L[1])}</span>
-    </div>
-    ${KD.segHTML('kam-oppsett', LAYOUTS.map(([k, , icon]) => [k, '', icon]), cur, 'setLayout', { small: true })}
+      const cur = this.camLayout(), L = LAYOUTS.find(x => x[0] === cur), open = !!this.state.layMenu;
+      return `<div data-key="kam-lay" data-lay="Visning" data-lay-navn="Visning (oppsett)" style="position:relative;display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0;z-index:${open ? 6 : 1}">
+    <span style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding-left:4px">Visning</span>
+    <button data-on-click="layMenu" style="display:flex;align-items:center;gap:8px;height:38px;padding:0 10px 0 12px;border-radius:19px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);font-size:13px;font-weight:500;color:#f2f1ee;min-width:0">
+      <span class="ms" style="font-size:18px;color:oklch(0.82 0.1 350)">${L[2]}</span><span style="white-space:nowrap">${e(L[1])}</span>
+      <span class="ms" style="font-size:20px;color:#8e8d89;transition:transform .25s;transform:rotate(${open ? 180 : 0}deg)">expand_more</span>
+    </button>
+    ${open ? `<div data-key="kam-lay-bd" data-on-click="layMenu" style="position:fixed;inset:0;z-index:5"></div>
+    <div data-key="kam-lay-menu" style="position:absolute;right:0;top:44px;z-index:6;min-width:200px;padding:6px;border-radius:20px;background:rgba(40,40,44,0.72);backdrop-filter:blur(22px) saturate(190%);-webkit-backdrop-filter:blur(22px) saturate(190%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.3),inset 0 0 0 0.5px rgba(255,255,255,0.18),0 18px 40px rgba(0,0,0,0.45);display:flex;flex-direction:column;gap:2px;animation:kdpop .22s cubic-bezier(.34,1.4,.64,1)">
+      ${LAYOUTS.map(([k, label, icon]) => `<button data-on-click="layPick" data-arg="${k}" style="height:42px;padding:0 12px 0 10px;border-radius:14px;display:flex;align-items:center;gap:10px;font-size:14px;font-weight:500;white-space:nowrap;background:${k === cur ? 'rgba(255,255,255,0.1)' : 'transparent'}"><span class="ms" style="font-size:19px;color:${k === cur ? 'oklch(0.82 0.1 350)' : '#c9c7c2'}">${icon}</span><span style="flex:1;text-align:left">${e(label)}</span>${k === cur ? '<span class="ms" style="font-size:18px;color:oklch(0.82 0.1 350)">check</span>' : ''}</button>`).join('')}
+    </div>` : ''}
   </div>`;
     }
     /** Én kameraflis. sz: lg | md | sm. tap: 'feat' gjør hele flisa til knapp som løfter kameraet fram. */
@@ -427,7 +434,7 @@
         <span class="ms" style="font-size:24px;color:${GREEN_E};font-variation-settings:'FILL' 1">add_circle</span>
       </button>`).join('')}
   </section>` : ''}
-  <div data-key="kd-edit-bar" style="position:fixed;left:var(--kd-kant,10px);right:var(--kd-kant,10px);bottom:calc(100px + env(safe-area-inset-bottom));z-index:30;max-width:620px;margin:0 auto;box-sizing:border-box;display:flex;align-items:center;gap:10px;padding:8px 8px 8px 16px;border-radius:30px;background:rgba(38,38,41,0.92);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.07),0 8px 24px rgba(0,0,0,0.35)">
+  <div data-key="kd-edit-bar" style="position:fixed;left:var(--kd-kant,10px);right:var(--kd-kant,10px);bottom:calc(var(--kd-dokk-h, 14px) + 6px + env(safe-area-inset-bottom));z-index:30;max-width:620px;margin:0 auto;box-sizing:border-box;display:flex;align-items:center;gap:10px;padding:8px 8px 8px 16px;border-radius:30px;background:rgba(38,38,41,0.92);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.07),0 8px 24px rgba(0,0,0,0.35)">
     <span class="ms" style="font-size:20px;color:oklch(0.82 0.1 350);flex:none">tune</span>
     <span style="flex:1;min-width:0;display:flex;flex-direction:column"><span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Tilpass kameraer</span><span style="font-size:11px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${this.userList() ? 'Din egen rekkefølge' : 'Trykk på navnet for å bytte'}</span></span>
     <button class="kd-cam-ed" data-on-click="editReset" style="height:40px;padding:0 14px;border-radius:20px;background:rgba(255,255,255,0.08);font-size:13px;font-weight:500;flex:none">Nullstill</button>
