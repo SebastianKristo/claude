@@ -14,15 +14,24 @@
  *   bursdager: calendar.birthdays
  *   post: sensor.nar_kommer_posten_posten_sensor_next    post_kalender: calendar.posten_calendar   postnummer: ''
  *   serier: sensor.sonarr_sonarr_upcoming_media   filmer: sensor.radarr_radarr_upcoming_media
+ *                                        # finnes de ikke, velges selv: calendar.sonarr / sensor.sonarr_upcoming (Sonarr)
+ *                                        # og calendar.radarr / sensor.radarr_upcoming (Radarr i HA core)
+ *   framover_dager: 30                   # hvor langt fram Sonarr/Radarr-kalenderen leses
  *   plex_serier: sensor.d_day_darling_plex_recently_added_show   plex_filmer: sensor.d_day_darling_plex_recently_added_movie
- *   hytter: []                           # sensor.<sted>_oversikt fra KI Hyttebesøk (tom = finnes selv)
+ *   hytter: []                           # sensor.ki_hyttebesok_<sted>_oversikt fra KI Hyttebesøk (tom = finnes selv)
  *
  * Hvilke kalendere som vises kan hver bruker velge i «Tilpass oppsett» (lagres i HA-brukerdata 'kd_kalender' = { kalendere: [id…] }).
  * Kildene (serier, filmer, plex_serier, plex_filmer, post, post_kalender, bursdager) kan også velges der
  * ('kd_kalender'.kilder = { serier: 'calendar.sonarr', post: '' (= ingen) … }); config er reserve.
- * Serier/filmer kan være en upcoming_media-sensor (attributtet data) eller en kalender (f.eks. Sonarr/Radarr-kalenderen).
+ * Serier/filmer kan være en upcoming_media-sensor (attributtet data), en kalender (calendar.radarr fra HA core,
+ * calendar.sonarr fra community-integrasjoner: «Serie - 1x03 - Episode» / «Serie S01E03») eller Sonarr-sensoren
+ * sensor.sonarr_upcoming (attributtene «Serie» → «S01E03» eller «Serie S01E03» → sendetid).
  * Farger: kalendere som heter som en person (Rune, Cybele, Sebastian) eller «Familie» får designets farger.
- * Hytta leser KI Hyttebesøk (sensor.<sted>_oversikt: her_naa, dager, opphold, kommende, per_maaned …).
+ * Hytta leser KI Hyttebesøk: sensor.ki_hyttebesok_<sted>_oversikt (integrasjon: ki_hyttebesok, ki_type: oversikt –
+ * her_naa, personer, dager, opphold, kommende, per_maaned, feil, sist_lest), sensor.ki_hyttebesok_<hjem>_helger
+ * (ki_type: helger), knappene button.…_synk_kalenderen_na / …_lagre_pagaende_opphold og tjenestene
+ * ki_hyttebesok.les_kalender / ki_hyttebesok.registrer_opphold. Hvilke steder som vises velges i «Tilpass oppsett»
+ * ('kd_kalender'.hytter = [id…]).
  * Pakker finnes i entitetsregisteret (Norwegian Parcel Tracker).
  */
 (() => {
@@ -58,6 +67,29 @@
     ['post_kalender', 'Posten · kalender', 'local_post_office', /posten|post/i, ['calendar'], 'Kalender med leveringsdager'],
     ['bursdager', 'Bursdager', 'cake', /birthday|bursdag|f[oø]dsel/i, ['calendar'], 'Kalender med bursdager'],
   ];
+  /* Sonarr/Radarr: kandidater når config-kilden ikke finnes (HA core + community-integrasjoner) */
+  const UP_AUTO = {
+    serier: [['calendar.sonarr', 'sensor.sonarr_upcoming', 'sensor.sonarr_sonarr_upcoming_media', 'sensor.sonarr_upcoming_media'], /sonarr/i],
+    filmer: [['calendar.radarr', 'sensor.radarr_upcoming', 'sensor.radarr_radarr_upcoming_media', 'sensor.radarr_upcoming_media'], /radarr/i],
+  };
+  /* attributter som ikke er episoder/filmer på en «upcoming»-sensor */
+  const META_AT = new Set(['friendly_name', 'unit_of_measurement', 'icon', 'device_class', 'state_class', 'attribution', 'entity_picture', 'data', 'restored', 'supported_features', 'integrasjon', 'ki_type', 'assumed_state', 'options', 'last_reset']);
+  /* «Serie - 1x03 - Episode», «Serie S01E03 Episode», «Serie - S01E03» → { title, number: 'S01E03', episode } */
+  const epParse = str => {
+    const t = String(str || '').trim(), m = t.match(/\b(?:S(\d{1,3})\s?E(\d{1,4})(?:\s?-?\s?E?\d{1,4})?|(\d{1,3})x(\d{1,4}))\b/i);
+    if (!m) return { title: t, number: '', episode: '' };
+    const sn = m[1] || m[3], en = m[2] || m[4];
+    return { title: t.slice(0, m.index).replace(/[\s\-–—:·|]+$/, '').trim(), number: `S${pad(+sn)}E${pad(+en)}`, episode: t.slice(m.index + m[0].length).replace(/^[\s\-–—:·|]+/, '').replace(/^["«]|["»]$/g, '').trim() };
+  };
+  /* Radarr-kalender: «Film (Cinemas)», «Film - Digital release» → { title, rel: 'Kino'|'Digital'|'Fysisk'|'' } */
+  const REL = [[/cinema|kino|theat|premiere/i, 'Kino'], [/digital|stream/i, 'Digital'], [/physical|fysisk|blu-?ray|dvd/i, 'Fysisk']];
+  const filmParse = str => {
+    let t = String(str || '').trim(), rel = '';
+    const m = t.match(/\s*(?:\(([^)]*)\)|[-–:·]\s*((?:in\s+)?(?:cinemas?|kino|theatrical|digital|physical|fysisk)(?:\s+release)?))\s*$/i);
+    if (m) { const w = m[1] || m[2]; const r = REL.find(x => x[0].test(w)); if (r || m[2]) { rel = r ? r[1] : ''; t = t.slice(0, m.index).trim(); } }
+    return { title: t, rel };
+  };
+  const isDateStr = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v);
   const bdName = s => String(s || '').replace(/\(\s*\d{4}\s*\)/g, '').replace(/[_-]+/g, ' ').replace(/\b(bursdag|birthday|fodselsdag|fødselsdag)\b/gi, '').replace(/[’']\s*s\b/gi, '').replace(/\s{2,}/g, ' ').replace(/^[\s.,·-]+|[\s.,·-]+$/g, '').replace(/^./, c => c.toUpperCase());
 
   class KDKalenderCard extends KD.KDSheet {
@@ -83,8 +115,15 @@
     /** Valgte kilder: brukerens valg ('kd_kalender'.kilder; '' = ingen) → config */
     _src() {
       const u = (KD.ud(this, 'kd_kalender') || {}).kilder || {}, c = this.config, out = {};
-      for (const [k] of SRC) out[k] = Object.prototype.hasOwnProperty.call(u, k) ? (u[k] || null) : (c[k] || null);
+      for (const [k] of SRC) out[k] = Object.prototype.hasOwnProperty.call(u, k) ? (u[k] || null) : (c[k] && this.st(c[k]) ? c[k] : this._auto(k) || c[k] || null);
       return out;
+    }
+    /** Første Sonarr/Radarr-kilde som finnes (calendar.radarr, sensor.sonarr_upcoming …), ellers null */
+    _auto(k) {
+      const A = UP_AUTO[k]; if (!A) return null;
+      const S0 = this.all(), hit = A[0].find(id => S0[id]); if (hit) return hit;
+      const ids = Object.keys(S0).filter(id => A[1].test(id));
+      return ids.find(id => id.startsWith('calendar.')) || ids.find(id => id.startsWith('sensor.') && /upcoming|kommende/i.test(id)) || null;
     }
     _allCals() {
       const c = this.config, src = this._src(), ex = new Set([...(c.ekskluder || []), ...['serier', 'filmer', 'post_kalender'].map(k => src[k]).filter(id => id && id.startsWith('calendar.'))]), hut = this._hutCalIds(), out = [];
@@ -113,12 +152,34 @@
     }
     _time(ev) { if (ev.allDay) return 'Hele dagen'; const s = hm(ev.start); return ev.end && ev.end - ev.start > 60e3 ? `${s}–${hm(ev.end)}` : s; }
 
-    _hutSensors() {
-      const c = this.config;
-      if (Array.isArray(c.hytter) && c.hytter.length) return c.hytter.filter(id => this.st(id));
-      const S0 = this.all(); return Object.keys(S0).filter(id => id.startsWith('sensor.') && S0[id].attributes && S0[id].attributes.integrasjon === 'ki_hyttebesok' && S0[id].attributes.type === 'oversikt');
+    /** Alle KI Hyttebesøk-oversikter: sensor.ki_hyttebesok_<sted>_oversikt (integrasjon: ki_hyttebesok, ki_type: oversikt).
+        Reserve: entitetsregisteret (platform ki_hyttebesok) og eldre/omdøpte sensor.<sted>_oversikt med sted + dager/opphold. */
+    _hutAll() {
+      const S0 = this.all(), R = (this._hass && this._hass.entities) || {}, c = this.config;
+      const ok = id => { const a = S0[id] && S0[id].attributes; if (!a || !id.startsWith('sensor.')) return false;
+        if (a.integrasjon === 'ki_hyttebesok') return (a.ki_type || a.type) === 'oversikt';
+        return (R[id] && R[id].platform === 'ki_hyttebesok' && /_oversikt$/.test(id)) || (/_oversikt$/.test(id) && a.sted != null && (a.dager || a.opphold) != null); };
+      const out = Object.keys(S0).filter(ok);
+      for (const id of Array.isArray(c.hytter) ? c.hytter : []) if (S0[id] && !out.includes(id)) out.push(id);
+      return out;
     }
-    _hutCalIds() { return this._hutSensors().map(id => this.at(id, 'kalender', '')).filter(Boolean); }
+    /** Valgte steder: brukerens valg ('kd_kalender'.hytter) → config hytter → alle */
+    _hutSensors() {
+      const u = (KD.ud(this, 'kd_kalender') || {}).hytter, c = this.config;
+      if (Array.isArray(u)) return u.filter(id => this.st(id));
+      if (Array.isArray(c.hytter) && c.hytter.length) return c.hytter.filter(id => this.st(id));
+      return this._hutAll();
+    }
+    _hutCalIds() { return this._hutAll().map(id => this.at(id, 'kalender', '')).filter(Boolean); }
+    /** Søsken-entitet av en gitt ki_type (synk, lagre_naa, neste, helger …) for et sted: samme enhet i registeret, ellers samme prefiks */
+    _hutRel(ovId, type) {
+      const S0 = this.all(), R = (this._hass && this._hass.entities) || {}, dev = R[ovId] && R[ovId].device_id;
+      const pre = ovId ? ovId.split('.')[1].replace(/_oversikt$/, '') + '_' : '';
+      const is = id => { const a = S0[id].attributes || {}; return a.integrasjon === 'ki_hyttebesok' && (a.ki_type || a.type) === type; };
+      const ids = Object.keys(S0).filter(is);
+      if (!ovId) return ids[0] || null;
+      return ids.find(id => dev && R[id] && R[id].device_id === dev) || ids.find(id => id.split('.')[1].startsWith(pre)) || null;
+    }
     _places() {
       let fi = 0;
       const ps = this._hutSensors().map(id => {
@@ -130,24 +191,52 @@
     }
     _pcol(name) { const p = PERSC.find(x => x[0].test(name)); if (p) return p[1]; this._pc = this._pc || {}; if (!this._pc[name]) this._pc[name] = PERS_FALL[Object.keys(this._pc).length % PERS_FALL.length]; return this._pc[name]; }
 
+    /** Framover: [{type, src, title, episode, number, when: Date|null, allDay, studio, kino, rel, plex}]. this._upInfo = kildene som ble lest. */
     _upcoming() {
-      const c = this._src();
-      const read = (id, type) => {
-        const st = this.st(id); if (!st) return [];
-        if (id.startsWith('calendar.')) { // Sonarr/Radarr-kalender: «Serie - 1x03 - Episode» / «Film (Kino)»
-          return this._events([{ id, navn: type, col: C.blue }], 60, day0(new Date()), 'src-' + type).map(ev => {
-            const m = String(ev.summary || '').match(/^(.+?)\s+-\s+(S?\d+[xE]\d+)\s+-\s+(.+)$/i), kino = /\(?(kino|cinema|theatrical)\)?/i.test(ev.summary || '');
-            return { type, src: id, title: (m ? m[1] : String(ev.summary || '').replace(/\s*\((kino|cinema|theatrical|physical|digital)[^)]*\)\s*$/i, '')).trim(), episode: m ? m[3] : '', number: m ? m[2].toUpperCase().replace(/^(\d+)X(\d+)$/, (x, a1, b1) => `S${pad(a1)}E${pad(b1)}`) : '', when: ev.start, studio: '', kino };
-          }).filter(x => x.title);
+      const c = this._src(), days = Number(this.config.framover_dager) || 30, t0 = day0(new Date());
+      const info = [];
+      const read = (id, type, meta) => {
+        const st = this.st(id); if (!st) { if (id && meta) info.push({ id, type, kind: 'mangler', n: 0 }); return []; }
+        let out = [], kind = 'sensor', loading = false;
+        if (id.startsWith('calendar.')) { // Radarr (core): summary = filmtittel · Sonarr-kalender: «Serie - 1x03 - Episode»
+          kind = 'kalender';
+          const raw = this.cached(`kd-kal-src-${id}-${isoL(t0)}-${days}`, 10 * 60e3, () => this.calendar([id], days, t0), null);
+          loading = raw === null;
+          out = (raw || []).map(ev => {
+            const base = { type, src: id, when: ev.start, allDay: ev.allDay, studio: '', plex: false };
+            if (type === 'serie') { const p = epParse(ev.summary); return { ...base, title: p.title || p.episode, episode: p.episode, number: p.number, kino: false, rel: '' }; }
+            const f = filmParse(ev.summary), rel = f.rel || (REL.find(x => x[0].test(ev.description || '') && /release|premiere|kino|cinema/i.test(ev.description || '')) || [])[1] || '';
+            return { ...base, title: f.title, episode: '', number: '', kino: rel === 'Kino', rel };
+          });
+        } else {
+          const A = st.attributes || {};
+          let d = A.data; if (typeof d === 'string') { try { d = JSON.parse(d); } catch (x) { d = null; } }
+          if (Array.isArray(d)) { // upcoming_media-sensor
+            kind = 'upcoming_media';
+            out = d.filter(x => x && (x.airdate || x.aired) && x.title).map(x => ({ type, src: id, title: x.title, episode: x.episode && x.episode !== 'TBA' ? x.episode : '', number: x.number || '', when: new Date(x.airdate || x.aired), allDay: false, studio: x.studio || '', kino: !!x.flag, rel: x.flag ? 'Kino' : '' }));
+          } else { // Sonarr/Radarr (core): «Serie» → «S01E03» eller «Serie S01E03» → sendetid
+            for (const [k, v] of Object.entries(A)) {
+              if (META_AT.has(k) || v == null || typeof v === 'object') continue;
+              const vs = String(v), p = type === 'serie' ? epParse(k) : filmParse(k), pv = type === 'serie' ? epParse(vs) : null;
+              const when = isDateStr(vs) ? parseD(vs) : null;
+              if (!when && !(pv && pv.number)) continue; // f.eks. radarr_movies «Film» → «Downloaded» er ikke kommende
+              const f = type === 'film' ? p : null;
+              out.push({ type, src: id, title: p.title || k, episode: (pv && pv.number ? pv.episode : '') || p.episode || '', number: p.number || (pv && pv.number) || '', when, allDay: !!when && vs.length === 10, studio: '', kino: !!(f && f.rel === 'Kino'), rel: f ? f.rel : '' });
+            }
+          }
         }
-        let d = st.attributes.data; if (typeof d === 'string') { try { d = JSON.parse(d); } catch (x) { d = null; } }
-        if (!Array.isArray(d)) return [];
-        return d.filter(x => x && (x.airdate || x.aired) && x.title).map(x => ({ type, src: id, title: x.title, episode: x.episode && x.episode !== 'TBA' ? x.episode : '', number: x.number || '', when: new Date(x.airdate || x.aired), studio: x.studio || '', kino: !!x.flag }));
+        out = out.filter(x => x.title && (!x.when || (!isNaN(x.when) && x.when >= t0)));
+        if (meta) info.push({ id, type, kind, n: out.length, loading });
+        return out;
       };
       const key = x => { const r = String(x.title).toLowerCase().replace(/\(\d{4}\)/g, '').replace(/[^a-z0-9æøå]+/g, ''); return x.type === 'serie' ? (x.number ? `s|${r}|${String(x.number).toUpperCase().replace(/[^SE0-9]/g, '')}` : '') : `f|${r}`; };
       const plex = new Set([...read(c.plex_serier, 'serie'), ...read(c.plex_filmer, 'film')].map(key).filter(Boolean));
-      const t0 = day0(new Date());
-      return [...read(c.serier, 'serie'), ...read(c.filmer, 'film')].filter(x => !isNaN(x.when) && x.when >= t0).map(x => ({ ...x, plex: plex.has(key(x)) })).sort((p, q) => p.when - q.when);
+      const seen = new Set(), all = [];
+      for (const x of [...(c.serier ? read(c.serier, 'serie', true) : []), ...(c.filmer ? read(c.filmer, 'film', true) : [])]) {
+        const k = key(x) + '|' + (x.when ? isoL(x.when) : ''); if (seen.has(k)) continue; seen.add(k); all.push({ ...x, plex: plex.has(key(x)) });
+      }
+      this._upInfo = { info, days };
+      return all.sort((p, q) => (p.when ? p.when.getTime() : 0) - (q.when ? q.when.getTime() : 0) || p.title.localeCompare(q.title, 'nb'));
     }
     _bdays() {
       const id = this._src().bursdager; if (!id || !this.st(id)) return [];
@@ -217,7 +306,7 @@
             ${sel ? `<span class="ms" style="font-size:18px;flex:none;color:oklch(0.82 0.1 350)">check</span>` : ''}</button>`;
           list = `<div style="display:flex;flex-direction:column;gap:2px;padding:4px 0 6px;min-width:0">
           <div style="display:flex;align-items:center;gap:8px;height:40px;margin:2px 4px 4px;padding:0 14px;border-radius:20px;background:#1c1c1f;min-width:0"><span class="ms" style="font-size:18px;color:#8e8d89">search</span><input data-on-input="srcQ" value="${e(s.srcQ || '')}" placeholder="Søk i ${doms.map(d => d + '.*').join(' og ')}" style="flex:1;min-width:0;border:0;outline:none;background:transparent;color:#f2f1ee;font:inherit;font-size:13px"></div>
-          ${this.config[k] ? opt('*', 'Standard', this.config[k], !own, 'restart_alt') : ''}
+          ${(() => { const c0 = this.config[k], std = c0 && this.st(c0) ? c0 : this._auto(k) || c0; return std ? opt('*', std === c0 ? 'Standard' : 'Automatisk', std, !own, 'restart_alt') : ''; })()}
           ${opt('', 'Ingen', 'Skjul denne delen', own && !u[k], 'block')}
           ${cand.map(id => opt(id, name(id), id, own && u[k] === id, id.startsWith('calendar.') ? 'calendar_month' : 'sensors')).join('')}
           ${!cand.length ? `<div style="padding:10px 12px;font-size:12px;color:#6d6c69">Fant ingen${q ? ` som matcher «${e(q)}»` : ` – søk etter ${doms.join('/')}`}</div>` : ''}
@@ -232,12 +321,41 @@
       }).join('');
       return `<div style="padding:10px 12px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">Kilder</div>${rows}`;
     }
+    /* ----- «Tilpass oppsett» → Hyttebesøk: hvilke KI Hyttebesøk-steder Hytta-fanen viser ----- */
+    _setHut(ids) { this.haptic('selection'); const u = { ...(KD.ud(this, 'kd_kalender') || {}) }; if (ids) u.hytter = ids; else delete u.hytter; KD.udSave(this, 'kd_kalender', u); }
+    hutTog(ev, id) { const all = this._hutAll(), on = new Set(this._hutSensors()); if (on.has(id)) on.delete(id); else on.add(id); this._setHut(all.filter(x => on.has(x))); }
+    hutAlle(ev, k) { this._setHut(k === 'alle' ? this._hutAll() : k === 'ingen' ? [] : null); }
+    hutSync(ev, id) {
+      const b = id && id !== '*' ? this._hutRel(id, 'synk') : null;
+      (b ? this.press(b) : this.call('ki_hyttebesok', 'les_kalender', {})).then(() => this.toast('Leser hyttekalenderen på nytt'));
+    }
+    hutLagre(ev, id) { if (id) this.press(id).then(() => this.toast('Pågående opphold lagres i kalenderen')); }
+    _hutCfgHTML() {
+      const all = this._hutAll(), H = '<div style="padding:10px 12px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">Hyttebesøk</div>';
+      if (!all.length) return `${H}<div style="display:flex;gap:10px;padding:6px 12px 10px;font-size:12px;line-height:1.45;color:#a9a7a2"><span class="ms" style="font-size:20px;color:#8e8d89;flex:none">cottage</span><span>Fant ingen KI Hyttebesøk-sensorer. Integrasjonen lager <b style="font-weight:600;color:#d9d6d0">sensor.ki_hyttebesok_&lt;sted&gt;_oversikt</b> for hvert sted (Innstillinger → Enheter og tjenester → Legg til integrasjon → KI Hyttebesøk). Når de finnes, dukker Hytta-fanen opp her.</span></div>`;
+      const on = new Set(this._hutSensors()), user = Array.isArray((KD.ud(this, 'kd_kalender') || {}).hytter);
+      const pill = (k, l, act) => `<button data-on-click="hutAlle" data-arg="${k}" style="height:30px;padding:0 12px;border-radius:15px;font-size:12px;font-weight:500;background:${act ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.06)'};color:${act ? '#f4f3ef' : '#a9a7a2'}">${l}</button>`;
+      const rows = all.map(id => {
+        const a = (this.st(id) || {}).attributes || {}, v = on.has(id), name = a.sted || this.fname(id).replace(/\s*oversikt\s*$/i, '');
+        const sub = [a.rolle === 'hjem' ? 'Hjemme' : 'Hytte', `${Number(a.netter_i_aar) || 0} netter i år`, a.skriver ? 'registrerer her' : 'leser kalenderen', a.kalender || ''].filter(Boolean).join(' · ');
+        return `<button data-key="kd-hut-${e(id)}" data-on-click="hutTog" data-arg="${e(id)}" style="min-height:52px;padding:4px 12px;border-radius:14px;display:flex;align-items:center;gap:10px;width:100%;text-align:left">
+      <span class="ms" style="font-size:20px;flex:none;color:${v ? 'oklch(0.82 0.1 350)' : '#6d6c69'}">${a.rolle === 'hjem' ? 'home' : 'cottage'}</span>
+      <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px"><span style="font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:${v ? '#f4f3ef' : '#8e8d89'}">${e(name)}</span><span style="font-size:11px;color:#6d6c69;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(id)}</span><span style="font-size:11px;color:${a.feil ? 'oklch(0.72 0.15 25)' : '#8e8d89'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(a.feil ? 'Feil: ' + a.feil : sub)}</span></span>
+      <span style="position:relative;width:44px;height:26px;border-radius:13px;flex:none;background:${v ? 'oklch(0.78 0.13 350)' : '#3a3a3d'};transition:background .2s"><span style="position:absolute;top:3px;left:${v ? 21 : 3}px;width:20px;height:20px;border-radius:10px;background:#f4f3ef;box-shadow:0 1px 3px rgba(0,0,0,0.35);transition:left .2s"></span></span>
+    </button>`;
+      }).join('');
+      return `${H}<div style="display:flex;align-items:center;gap:6px;padding:2px 8px 6px 12px">
+      <span style="flex:1;font-size:12px;color:#8e8d89">${on.size} av ${all.length} steder vises${user ? '' : ' · standard'}</span>
+      ${pill('alle', 'Alle', all.every(x => on.has(x)))}${pill('ingen', 'Ingen', !on.size)}${user ? pill('std', 'Standard', false) : ''}
+    </div>${rows}
+    <button data-on-click="hutSync" data-arg="*" style="min-height:44px;padding:0 12px;border-radius:14px;display:flex;align-items:center;gap:10px;width:100%;text-align:left;color:#c9c7c2"><span class="ms" style="font-size:20px;color:#8e8d89">sync</span><span style="flex:1;font-size:13px">Les hyttekalenderen på nytt</span><span style="font-size:11px;color:#6d6c69">ki_hyttebesok.les_kalender</span></button>`;
+    }
     tilpassHTML() {
-      const all = this._allCals(); if (!all.length) return this._srcHTML();
+      const all = this._allCals(); if (!all.length) return this._srcHTML() + this._hutCfgHTML();
       const on = new Set(this._cals().map(x => x.id)), user = !!this._userCals();
       const pill = (k, l, act) => `<button data-on-click="kalAlle" data-arg="${k}" style="height:30px;padding:0 12px;border-radius:15px;font-size:12px;font-weight:500;background:${act ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.06)'};color:${act ? '#f4f3ef' : '#a9a7a2'}">${l}</button>`;
       const allOn = all.every(x => on.has(x.id)), noneOn = !on.size;
-      return `${this._srcHTML()}<div style="padding:10px 12px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">Kalendere</div>
+      return `${this._srcHTML()}${this._hutCfgHTML()}<div style="padding:10px 12px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">Kalendere</div>
     <div style="display:flex;align-items:center;gap:6px;padding:2px 8px 6px 12px">
       <span style="flex:1;font-size:12px;color:#8e8d89">${on.size} av ${all.length} vises${user ? '' : ' · standard'}</span>
       ${pill('alle', 'Alle', allOn)}${pill('ingen', 'Ingen', noneOn)}${user ? pill('std', 'Standard', false) : ''}
@@ -257,6 +375,15 @@
     goFilter(ev, k) { this.setState({ filter: k }); }
     goSub(ev, k) { this.setState({ hsub: k }); }
     goPlace(ev, k) { this.setState({ hplace: k }); }
+    regTog() { this.setState(s => ({ reg: !s.reg })); this.haptic('selection'); }
+    regSet(ev, k) { const v = ev.target.value; this.setState(k === 'rs' ? { rs: v, rp: '' } : { [k]: v }); }
+    regSend(ev, arg) {
+      const [person, stedId, fra, til] = String(arg).split('|'), sted = this.at(stedId, 'sted', '');
+      if (!person || !fra) { this.toast('Velg person og fra-dato'); return; }
+      if (til && til < fra) { this.toast('Til-dato er før fra-dato'); return; }
+      const data = { person, fra, ...(til ? { til } : {}), ...(sted ? { sted } : {}) };
+      this.call('ki_hyttebesok', 'registrer_opphold', data).then(() => { this.toast(`Registrerte ${person}${sted ? ' på ' + sted : ''} fra ${fra}${til ? ' til ' + til : ''}`); this.setState({ reg: false, rf: '', rt: '' }); });
+    }
     toggleSearch() { this.setState(s => ({ search: !s.search, q: '', hsub: s.search ? s.hsub : 'stays' })); }
     setQ(ev) { this.setState({ q: ev.target.value, hsub: 'stays' }); }
     hutScroll(ev, a0, el) { el = el || ev.target; const w = el.firstElementChild ? el.firstElementChild.offsetWidth + 10 : 1; const i = Math.round(el.scrollLeft / w); if (i !== this.state.hut && i >= 0 && i < (this._nPages || 1)) this.setState({ hut: i }); }
@@ -323,7 +450,9 @@
         let nights, visits, who;
         if (pg.k === 'alle') { nights = places.reduce((t, p) => t + (Number(p.at.netter_i_aar) || 0), 0); visits = places.reduce((t, p) => t + (Number(p.at.besok_i_aar) || 0), 0); who = places.filter(p => p.rolle !== 'hjem').flatMap(p => here(p).map(n => ({ n, col: p.col }))); }
         else { nights = Number(pg.p.at.netter_i_aar) || 0; visits = Number(pg.p.at.besok_i_aar) || 0; who = here(pg.p).map(n => ({ n, col: this._pcol(n) })); }
-        return { title: pg.title, nights, visits, here: who.length ? `${names(who.map(w => w.n))} er her` : 'Ingen her nå',
+        const nx = (pg.k === 'alle' ? places : [pg.p]).flatMap(p => (p.at.kommende || []).map(o => ({ o, p, d: parseD(o.start) }))).filter(x => x.d && x.d >= TODAY).sort((p1, p2) => p1.d - p2.d)[0];
+        const next = nx ? `Neste: ${nx.o.person || 'Planlagt'}${pg.k === 'alle' ? ' · ' + nx.p.name : ''} · ${dmon(nx.d)}` : '';
+        return { title: pg.title, nights, visits, next, here: who.length ? `${names(who.map(w => w.n))} er her` : 'Ingen her nå',
           who: who.map(w => ({ i: w.n[0], style: { width: 28, height: 28, borderRadius: 14, display: 'grid', placeItems: 'center', fontSize: 12, fontWeight: 700, background: w.col, color: '#1a1a1c', boxShadow: '0 0 0 2px rgba(255,255,255,0.25)' } })),
           chips: pg.k === 'alle' ? places.map(p => ({ label: `${p.name} ${Number(p.at.netter_i_aar) || 0}`, dot: { width: 8, height: 8, borderRadius: 4, background: p.col } })) : [],
           card: { position: 'relative', overflow: 'hidden', flex: 'none', width: '100%', scrollSnapAlign: 'center', boxSizing: 'border-box', minHeight: 190, padding: 18, borderRadius: 28, display: 'flex', flexDirection: 'column', gap: 6, background: pg.bg, boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08)' } };
@@ -344,11 +473,42 @@
       const mSum = Array.from({ length: 12 }, (_, i) => places.map(p => Number(((p.at.per_maaned || [])[i] || {}).netter) || 0));
       const mMax = Math.max(1, ...mSum.map(r => r.reduce((t, v) => t + v, 0)));
       const lest = (() => { const ts = (pk === 'alle' ? places : [byId[pk]]).map(p => parseD(p.at.sist_lest)).filter(Boolean).sort((x, y2) => y2 - x)[0]; return ts ? ` · lest ${hm(ts)}` : ''; })();
+      // personer (gjester): netter og besøk i år per person, fra oversiktens «personer»
+      const pmap = new Map();
+      for (const p of pk === 'alle' ? places : [byId[pk]]) for (const x of p.at.personer || []) {
+        if (!x || !x.navn) continue; const r = pmap.get(x.navn) || { name: x.navn, nights: 0, visits: 0, here: false, last: null };
+        r.nights += Number(x.netter_i_aar) || 0; r.visits += Number(x.besok_i_aar) || 0; r.here = r.here || !!x.her;
+        const ls = x.siste && parseD(x.siste.slutt || x.siste.start); if (ls && (!r.last || ls > r.last)) r.last = ls; pmap.set(x.navn, r);
+      }
+      const pl = [...pmap.values()].sort((p1, p2) => p2.nights - p1.nights), pMax = Math.max(1, ...pl.map(x => x.nights));
+      const persons = pl.map(r => ({ name: r.name, i: r.name[0], nights: r.nights, sub: `${r.visits} besøk i år${r.here ? ' · her nå' : r.last ? ` · sist ${dmon(r.last)}` : ''}`,
+        avatar: { width: 28, height: 28, borderRadius: 14, flex: 'none', display: 'grid', placeItems: 'center', fontSize: 12, fontWeight: 700, background: this._pcol(r.name), color: '#1a1a1c', boxShadow: r.here ? '0 0 0 2px #f2f1ee' : 'none' },
+        bar: { width: `${r.nights / pMax * 100}%`, height: '100%', borderRadius: 3, background: this._pcol(r.name) } }));
+      // helger (sensor.ki_hyttebesok_<hjem>_helger)
+      const helgId = this._hutRel(null, 'helger'), HA = helgId ? this.st(helgId).attributes : {};
+      const colOf = sted => { const p = places.find(x => String(sted).split(' → ').pop().toLowerCase() === x.name.toLowerCase()); return p ? p.col : '#8e8d89'; };
+      const weeks = (HA.helger || []).slice(0, 16).map((w, i) => { const l = parseD(w.lordag), so = parseD(w.sondag);
+        return { title: `Uke ${w.uke}`, dates: l ? `${dmon(l)}${so ? ' – ' + dmon(so) : ''}` : '', tag: w.sammen ? 'Samlet' : '',
+          row: { display: 'flex', flexDirection: 'column', gap: 6, padding: '12px 16px', borderTop: i ? '1px solid rgba(255,255,255,0.06)' : 'none' },
+          places: Object.entries(w.steder || {}).map(([sted, ps]) => ({ label: `${sted}: ${(ps || []).join(', ')}`, dot: { width: 7, height: 7, borderRadius: 4, flex: 'none', background: colOf(sted) } })) }; });
+      const naa = Object.entries(HA.hvor_er_vi_naa || {}).map(([n, sted]) => ({ label: `${n} · ${sted}`, dot: { width: 7, height: 7, borderRadius: 4, background: colOf(sted) } }));
+      // handlinger: synk, lagre pågående, registrer opphold (ki_hyttebesok.registrer_opphold)
+      const aps = pk === 'alle' ? places : [byId[pk]];
+      const lagre = aps.map(p => here(p).length ? this._hutRel(p.id, 'lagre_naa') : null).filter(Boolean);
+      const feil = aps.filter(p => p.at.feil).map(p => `${p.name}: ${p.at.feil}`);
+      const skr = aps.filter(p => p.at.skriver).map(p => p.name);
+      const regPlace = s.rs && byId[s.rs] ? byId[s.rs] : (pk !== 'alle' ? byId[pk] : places.find(p => p.at.skriver) || places[0]);
+      const regPeople = regPlace ? [...new Set([...(regPlace.at.kjente_personer || []), ...(regPlace.at.personer || []).map(x => x && x.navn)].filter(Boolean))] : [];
+      const actions = { syncArg: pk === 'alle' ? '*' : pk, lagre: lagre[0] || '', feil: feil.join(' · '),
+        status: [skr.length ? `Registrerer opphold: ${skr.join(', ')}` : 'Leser oppholdene fra kalenderen', ...(pk !== 'alle' && byId[pk].at.kalender ? [byId[pk].at.kalender] : [])].join(' · '),
+        reg: !!s.reg, regPlace: regPlace ? regPlace.id : '', places: places.map(p => ({ id: p.id, name: p.name, sel: regPlace && p.id === regPlace.id })),
+        people: regPeople.map(n => ({ n, sel: (s.rp || regPeople[0]) === n })), fra: s.rf || isoL(TODAY), til: s.rt || '' };
       const people = pk === 'alle' ? [] : ((byId[pk].at.kjente_personer && byId[pk].at.kjente_personer.length ? byId[pk].at.kjente_personer : (byId[pk].at.personer || []).map(x => x.navn)).filter(Boolean));
       return {
         heroes, dots: pages.map((_, i) => ({ i, style: { width: i === hi ? 18 : 7, height: 7, borderRadius: 4, background: i === hi ? '#f2f1ee' : '#48474a', transition: 'width .3s, background .3s' } })),
-        subs: [sub('cal', 'Kalender'), sub('stays', 'Opphold'), sub('stats', 'Statistikk')],
-        isCal: s.hsub === 'cal', isStays: s.hsub === 'stays', isStats: s.hsub === 'stats', searching: s.search, q: s.q,
+        subs: [sub('cal', 'Kalender'), sub('stays', 'Opphold'), sub('stats', 'Statistikk'), ...(helgId ? [sub('weeks', 'Helger')] : [])],
+        isCal: s.hsub === 'cal', isStays: s.hsub === 'stays', isStats: s.hsub === 'stats', isWeeks: s.hsub === 'weeks' && !!helgId, searching: s.search, q: s.q,
+        persons, weeks, naa, actions,
         searchBtn: { width: 46, height: 46, borderRadius: 23, display: 'grid', placeItems: 'center', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.12)', background: s.search ? PINK : 'transparent', color: s.search ? '#2a1720' : '#f2f1ee' },
         week: `Uke ${wk}`, lest,
         cells: cells.map(d => { const inM = d.getMonth() === m, cs = codesOf(d), planned = d > TODAY && cs.length, isT = d.toDateString() === TODAY.toDateString();
