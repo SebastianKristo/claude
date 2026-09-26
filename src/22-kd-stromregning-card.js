@@ -78,7 +78,7 @@
       // designets fanevelger har innholdsbredde – legg glassboblen over valgt knapp
       const seg = this.shadowRoot.querySelector('[data-seg="periode"]'); if (!seg) return;
       const b = seg.querySelectorAll('[data-seg-b]')[+seg.getAttribute('data-seg-i')], th = seg.querySelector('[data-seg-thumb]');
-      if (b && th && b.offsetWidth) { th.style.left = b.offsetLeft + 'px'; th.style.width = b.offsetWidth + 'px'; }
+      if (b && th && b.offsetWidth) { const r = b.getBoundingClientRect(), r0 = seg.getBoundingClientRect(); th.style.left = (r.left - r0.left) + 'px'; th.style.width = r.width + 'px'; }
       if (!this._fontsHooked && document.fonts) { this._fontsHooked = true; document.fonts.ready.then(() => this.afterRender()); }
     }
 
@@ -190,7 +190,7 @@
     _bill(kind, prev) {
       const c = this.config, now = this.now().getTime(), [s, e] = this._range(kind, prev), est = !prev;
       const end = Math.min(e, now);
-      const hours = this._hours(s, end);
+      const hours = this._hours(s, e);
       if (!hours || !hours.length) return null;
       const PM = this._prisModus();
       const spot = PM.spot ? new Map() : null;
