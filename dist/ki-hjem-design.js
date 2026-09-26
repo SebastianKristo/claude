@@ -1,4 +1,4 @@
-/* KI Hjem Design – pikselkopi av Claude Design «Home Assistant sikkerhetspanel». Bygget 2026-09-26T00:43Z. */
+/* KI Hjem Design – pikselkopi av Claude Design «Home Assistant sikkerhetspanel». Bygget 2026-09-26T07:16Z. */
 
 /* ===== 00-kd-base.js ===== */
 try {
@@ -1223,6 +1223,7 @@ try {
       const HU = { ...KD.ud(this, 'kd_hjem') }; if (v === undefined) delete HU[k]; else HU[k] = v;
       this.haptic('selection'); KD.udSave(this, 'kd_hjem', HU);
     }
+    hjemHilsen(ev, arg, el) { const HU = { ...KD.ud(this, 'kd_hjem') }; const v = String(el.value || '').trim(); if (v) HU.hilsen = v; else delete HU.hilsen; KD.udSave(this, 'kd_hjem', HU); }
     hjemPers(ev, arg) {
       const [id, op] = String(arg).split('|'), HU = { ...KD.ud(this, 'kd_hjem') };
       const list = this.persons.map(p => p.id), i = list.indexOf(id);
@@ -1462,6 +1463,7 @@ try {
       const GREEN = 'oklch(0.8 0.12 150)', BLUE = 'oklch(0.75 0.12 245)', AMBER = 'oklch(0.8 0.12 70)', PURP = 'oklch(0.68 0.2 285)';
       const badge = p => ({ show: !p.home || p.sleep, icon: p.sleep ? 'bedtime' : 'logout', style: { fontSize: 15, color: p.sleep ? 'oklch(0.75 0.12 275)' : PURP, fontVariationSettings: "'FILL' 1" } });
       const meS = this.personState(me), meB = badge(meS);
+      const FAM = (KD.ud(this, 'kd_hjem').topp || c.topp) === 'familie';
       const HUP = KD.ud(this, 'kd_hjem'), PNAVN = HUP.person_navn !== false, PSTED = HUP.person_sted !== false && PNAVN, PIKON = !!HUP.person_ikon;
       const meRing = HUP.person_ring === false ? 'none' : `0 0 0 3px #141416,0 0 0 4.5px ${meS.home ? 'oklch(0.8 0.12 150 / 0.7)' : 'oklch(0.68 0.2 285 / 0.7)'}`;
       const people = PERS.filter(p => p.id !== meId).map(p => { const ps = this.personState(p); return { p, ps, b: badge(ps), avatar: { width: 46, height: 46, borderRadius: 23, display: 'grid', placeItems: 'center', fontSize: 16, fontWeight: 600, background: p.farge, opacity: ps.home ? 1 : 0.6, transition: 'opacity .3s' } }; });
@@ -1685,6 +1687,8 @@ try {
       <div style="display:flex;align-items:center;gap:8px;padding:6px 6px 6px 14px"><span style="flex:1;font-size:16px;font-weight:600">Tilpass Hjem</span>
         <button class="kd-hov8" data-on-click="hjemReset" style="height:34px;padding:0 12px;border-radius:17px;font-size:12px;color:#a9a7a2">Nullstill</button>
         <button data-on-click="hjemEditClose" style="height:34px;padding:0 14px;border-radius:17px;font-size:13px;font-weight:600;background:linear-gradient(135deg, oklch(0.78 0.13 350), oklch(0.9 0.05 20));color:#2a1720">Ferdig</button></div>
+      ${head('Topp-oppsett')}<div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 10px 6px">${[['standard', 'Standard', 'view_agenda'], ['familie', 'Familie', 'family_restroom']].map(([v, l, ic]) => chipH((HU.topp || c.topp || 'standard') === v, 'topp|' + v, 'hjemSet', l, ic)).join('')}</div>
+      ${(HU.topp || c.topp) === 'familie' ? `<div style="display:flex;flex-direction:column;gap:4px;padding:2px 10px 8px"><input data-key="he-hilsen" data-keep="1" data-on-change="hjemHilsen" value="${e(HU.hilsen || c.hilsen || '👋 {navn}!')}" placeholder="👋 {navn}!" autocomplete="off" style="height:38px;padding:0 14px;border-radius:19px;border:none;outline:none;background:#262629;color:#f2f1ee;font:inherit;font-size:13px"><span style="font-size:11px;color:#6d6c69;padding-left:6px">{navn} = ditt fornavn, {server} = servernavnet</span></div>` : ''}
       ${head('Tittel øverst')}<div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 10px 6px">${[['server', 'Servernavn', 'dns'], ['person', 'Mitt navn', 'person']].map(([v, l, ic]) => chipH(((HU.tittel || c.tittel || 'server') === v), 'tittel|' + v, 'hjemSet', l, ic)).join('')}</div>
       ${head('Seksjoner')}${rows('sek', norm(HU.seksjoner, SEK_KEYS), HLABEL.sek, 'sek')}
       ${head('Personer på toppen')}<div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 10px 6px">
@@ -1819,7 +1823,7 @@ try {
       const [COLV0, COLH0] = this.hjemCols(HU);
       const COLV = COLV0.filter(k => !HSKJUL.has('flis:' + k)), COLH = COLH0.filter(k => !HSKJUL.has('flis:' + k));
       const SEK = {
-        personer: () => `    <div data-key="h-personer" style="display:flex;gap:14px;flex-wrap:wrap;margin-top:-6px">
+        personer: () => FAM ? '' : `    <div data-key="h-personer" style="display:flex;gap:14px;flex-wrap:wrap;margin-top:-6px">
       ${people.map(({ p, avatar }) => { const pl = this.placeOf(p); return `<button data-key="pers-${e(p.id)}" data-on-click="quickPerson" data-hold="openPerson" data-arg="${e(p.id)}" title="${e(p.navn)} · ${e(pl.navn)}" style="position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;max-width:72px">
           <span style="${S(avatar)}${this.pic(p)}">${e(p.navn[0])}</span>
           <span style="position:absolute;left:30px;top:-5px;width:24px;height:24px;border-radius:12px;background:#232326;box-shadow:0 0 0 2px #141416;display:grid;place-items:center">${this.placeIcon(pl, 15)}</span>
@@ -1901,9 +1905,7 @@ try {
       const SECS = norm(HU.seksjoner, SEK_KEYS).filter(k => !HSKJUL.has('sek:' + k)).map(k => SEK[k]()).join('\n\n');
 
 
-      return `<div style="position:relative;box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;--kd-dokk-h:${MB - 10}px;padding:20px var(--kd-kant,10px) calc(${MB + 24}px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:22px">
-
-  <header style="display:flex;flex-direction:column;gap:16px">
+      const stdHead = () => `  <header style="display:flex;flex-direction:column;gap:16px">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
       <div style="display:flex;flex-direction:column;gap:6px;min-width:0">
         <button data-on-click="toggleServer" data-no-haptic="1" style="display:flex;align-items:center;gap:4px;max-width:100%;font-size:36px;font-weight:600;letter-spacing:-0.03em;line-height:1;white-space:nowrap"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis">${e(KD.ud(this, 'kd_hjem').tittel === 'person' || c.tittel === 'person' ? me.navn : (CUR.navn || 'Hjem'))}</span><span class="ms" style="${S(serverChev)}">arrow_drop_down</span></button>
@@ -1911,7 +1913,27 @@ try {
       </div>
       <button data-on-click="quickPerson" data-hold="openMe" title="${e(me.navn)} · ${e(this.placeOf(me).navn)}" style="position:relative;width:60px;height:60px;border-radius:30px;flex:none;display:grid;place-items:center;font-size:22px;font-weight:600;background:${e(me.farge)};box-shadow:${meRing};${this.pic(me)}">${e(me.navn[0])}<span style="position:absolute;right:-6px;top:-4px;width:24px;height:24px;border-radius:12px;background:#232326;box-shadow:0 0 0 2px #141416;display:grid;place-items:center">${this.placeIcon(this.placeOf(me), 15)}</span></button>
     </div>
-  </header>
+  </header>`;
+      /* Familie-oppsett (som familiekortet i ki-cards): «👋 Navn!» + serverpil til venstre, profilbildene med stedsmerke til høyre */
+      const famHead = () => {
+        const HUF = KD.ud(this, 'kd_hjem'), navn = (me.navn || '').split(' ')[0];
+        const txt = String(HUF.hilsen || c.hilsen || '👋 {navn}!').replace(/\{navn\}/g, navn).replace(/\{server\}/g, CUR.navn || '');
+        const alle = [me, ...PERS.filter(p => p.id !== me.id)];
+        return `<header data-key="h-fam" style="display:flex;flex-direction:column;gap:6px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0">
+      <button data-on-click="toggleServer" data-no-haptic="1" style="display:flex;align-items:center;gap:6px;min-width:0;font-size:clamp(22px, 6.6vw, 34px);font-weight:600;letter-spacing:-0.03em;line-height:1.1;white-space:nowrap"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis">${e(txt)}</span><span class="ms" style="${S(serverChev)};flex:none">arrow_drop_down</span></button>
+      <div style="display:flex;gap:8px;flex:none">
+        ${alle.map(p => { const pl = this.placeOf(p); return `<button data-key="fam-${e(p.id)}" data-on-click="quickPerson" data-hold="openPerson" data-arg="${e(p.id)}" title="${e(p.navn)} · ${e(pl.navn)}" style="position:relative;width:50px;height:50px;border-radius:25px;flex:none;display:grid;place-items:center;font-size:18px;font-weight:600;background:${e(p.farge || '#2a2a2d')};opacity:${this.personState(p).home ? 1 : 0.75};${this.pic(p)}">${e((p.navn || '?')[0])}
+          <span style="position:absolute;right:-4px;top:-4px;width:22px;height:22px;border-radius:11px;display:grid;place-items:center;background:${pl.col};box-shadow:0 0 4px rgba(0,0,0,0.3)">${pl.mdi ? `<ha-icon icon="${e(pl.mdi)}" style="--mdc-icon-size:13px;width:13px;height:13px;display:flex;color:#fff"></ha-icon>` : `<span class="ms" style="font-size:13px;color:#fff;font-variation-settings:'FILL' 1">${pl.ms}</span>`}</span>
+        </button>`; }).join('')}
+      </div>
+    </div>
+    <button data-on-click="openWeather" style="font-size:15px;color:#8e8d89;white-space:nowrap;text-align:left;padding-left:2px">${W.head != null ? Math.round(W.head) : '–'} °C · ${e(W.cond)}</button>
+  </header>`;
+      };
+      return `<div style="position:relative;box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;--kd-dokk-h:${MB - 10}px;padding:20px var(--kd-kant,10px) calc(${MB + 24}px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:22px">
+
+  ${FAM ? famHead() : stdHead()}
 
   ${SECS}
 
