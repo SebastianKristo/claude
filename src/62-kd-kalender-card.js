@@ -533,13 +533,13 @@
     body() {
       const s = this.state, c = { ...this.config, ...this._src() }, TODAY = day0(new Date());
       const cals = this._cals(), places = this._places();
-      const has = { cal: true, cabin: places.length > 0, up: !!(this.st(c.serier) || this.st(c.filmer)), bday: !!(c.bursdager && this.st(c.bursdager)), post: !!(this.st(c.post) || this.st(c.post_kalender)) };
+      const has = { cal: true, cabin: places.length > 0 || this._hutAll().length > 0, up: !!(this.st(c.serier) || this.st(c.filmer)), bday: !!(c.bursdager && this.st(c.bursdager)), post: !!(this.st(c.post) || this.st(c.post_kalender)) };
       const tabDefs = [['cal', 'Kalender', 'event'], ['cabin', 'Hytta', 'cottage'], ['up', 'Framover', 'movie'], ['bday', 'Bursdager', 'cake'], ['post', 'Posten', 'mail']].filter(t => has[t[0]]);
       const tabK = tabDefs.some(t => t[0] === s.tab) ? s.tab : 'cal';
       const tabs = tabDefs.map(([k, l, icon]) => ({ k, label: l, icon, style: { flex: 'none', height: 38, padding: '0 12px', borderRadius: 16, display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', background: tabK === k ? PINK : 'transparent', color: tabK === k ? '#2a1720' : '#a9a7a2' } }));
       const isCalTab = tabK === 'cal', isCal = isCalTab && s.view === 'list', isMonth = isCalTab && s.view === 'month';
       const CV = isCalTab ? this._calTab(cals) : null;
-      const H = tabK === 'cabin' ? this._hutVals(places) : null;
+      const H = tabK === 'cabin' ? this._hutVals(places) : null, noPlaces = !places.length;
       const [y, m] = s.month;
       const monthLabel = cap(new Date(y, m, 1).toLocaleDateString('nb-NO', { month: 'long', year: 'numeric' }));
       let html = '';
@@ -550,13 +550,19 @@
         const ups = all.filter(u => s.filter === 'alle' || (s.filter === 'plex' ? u.plex : u.type === s.filter));
         const col = u => `oklch(0.45 0.08 ${hash(u.title) % 360})`;
         const dayS = d => { const n = Math.round((day0(d) - TODAY) / DAY); return n < 8 ? cap(d.toLocaleDateString('nb-NO', { weekday: 'short' }).replace('.', '')) : dmon(d); };
-        const subOf = u => (u.type === 'serie' ? [u.episode, u.number, u.plex ? 'på Plex' : u.studio] : [u.kino ? 'Kino' : 'Film', u.plex ? 'på Plex' : u.studio]).filter(Boolean).join(' · ');
+        const subOf = u => (u.type === 'serie' ? [u.episode, u.number, u.plex ? 'på Plex' : u.studio] : [u.rel || (u.kino ? 'Kino' : 'Film'), u.plex ? 'på Plex' : u.studio]).filter(Boolean).join(' · ');
+        const whenOf = u => !u.when ? 'Snart' : u.allDay ? dayS(u.when) : `${dayS(u.when)} kl. ${hm(u.when)}`;
+        const UI = this._upInfo || { info: [], days: 30 }, KIND = { kalender: 'kalender', sensor: 'sensor', upcoming_media: 'upcoming_media', mangler: 'finnes ikke' };
+        const srcs = UI.info.filter(x => s.filter === 'alle' || s.filter === 'plex' || x.type === s.filter);
+        const loading = srcs.some(x => x.loading);
+        const empty = { title: loading ? 'Henter …' : 'Ingenting planlagt', lines: srcs.map(x => `${x.type === 'serie' ? 'Serier' : 'Filmer'}: ${x.id} (${KIND[x.kind] || x.kind}) – ${x.loading ? 'henter' : x.kind === 'mangler' ? 'entiteten finnes ikke' : x.kind === 'kalender' ? `ingen de neste ${UI.days} dagene` : 'ingen kommende'}`) };
         const F = ups[0];
         up = { filters: [['alle', 'Alle'], ['serie', 'Serier'], ['film', 'Filmer'], ['plex', 'Plex']].filter(([k]) => k === 'alle' || (k === 'serie' ? this.st(c.serier) : k === 'film' ? this.st(c.filmer) : this.st(c.plex_serier) || this.st(c.plex_filmer))).map(([k, l]) => ({ k, label: l, style: { height: 34, padding: '0 14px', borderRadius: 17, fontSize: 13, fontWeight: 500, background: s.filter === k ? '#f4f3ef' : '#1c1c1f', color: s.filter === k ? '#1a1a1c' : '#c9c7c2' } })),
-          featured: F ? { title: F.title, sub: subOf(F), when: `${dayS(F.when)} kl. ${hm(F.when)}`, tag: s.filter === 'plex' ? 'Plex' : F.type === 'serie' ? 'Sonarr' : 'Radarr', initials: ini(F.title),
+          empty,
+          featured: F ? { title: F.title, sub: subOf(F), when: whenOf(F), tag: s.filter === 'plex' ? 'Plex' : F.type === 'serie' ? 'Sonarr' : 'Radarr', initials: ini(F.title),
             card: { display: 'flex', gap: 14, alignItems: 'center', padding: 14, borderRadius: 24, background: `linear-gradient(120deg, ${col(F)}, #1c1c1f 85%)` },
             poster: { width: 84, height: 120, borderRadius: 12, flex: 'none', display: 'grid', placeItems: 'center', padding: 8, boxSizing: 'border-box', background: `linear-gradient(160deg, ${col(F)}, #111)`, boxShadow: '0 8px 20px rgba(0,0,0,0.4)' } } : null,
-          list: ups.slice(1, 40).map((u, i) => ({ title: u.title, sub: subOf(u), day: dayS(u.when), time: hm(u.when), initials: ini(u.title),
+          list: ups.slice(1, 40).map((u, i) => ({ title: u.title, sub: subOf(u), day: u.when ? dayS(u.when) : 'Snart', time: !u.when ? '' : u.allDay ? (u.rel || 'hele dagen') : hm(u.when), initials: ini(u.title),
             row: { display: 'flex', alignItems: 'center', gap: 12, padding: '10px 4px', borderTop: i ? '1px solid rgba(255,255,255,0.05)' : 'none' },
             poster: { width: 40, height: 56, borderRadius: 8, flex: 'none', display: 'grid', placeItems: 'center', background: `linear-gradient(160deg, ${col(u)}, #111)` },
             okStyle: { fontSize: 15, color: C.green, fontVariationSettings: "'FILL' 1", display: u.plex ? 'inline' : 'none' } })) };
@@ -668,6 +674,7 @@ ${H ? `
             <button data-on-click="goSub" data-arg="cal" style="width:34px;height:34px;border-radius:17px;background:rgba(255,255,255,0.12);display:grid;place-items:center"><span class="ms" style="font-size:18px">event_available</span></button>
           </div>
           <span style="font-size:13px;color:rgba(242,241,238,0.75)"><span>${e(h.here)}</span></span>
+          ${h.next ? `<span style="font-size:12px;color:rgba(242,241,238,0.6);display:flex;align-items:center;gap:4px"><span class="ms" style="font-size:14px">event_upcoming</span><span>${e(h.next)}</span></span>` : ''}
           <div style="display:flex;gap:26px;padding-top:6px">
             <div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:24px;font-weight:300;letter-spacing:-0.02em;line-height:1"><span>${e(h.nights)}</span></span><span style="font-size:11px;color:rgba(242,241,238,0.7)">netter i år</span></div>
             <div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:24px;font-weight:300;letter-spacing:-0.02em;line-height:1"><span>${e(h.visits)}</span></span><span style="font-size:11px;color:rgba(242,241,238,0.7)">besøk i år</span></div>
@@ -731,7 +738,51 @@ ${H ? `
           <span style="${S(p.avatar)}"><span>${e(p.i)}</span></span>
           <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-size:15px;font-weight:500"><span>${e(p.name)}</span></span><span style="font-size:12px;color:#a9a7a2"><span>${e(p.sub)}</span></span></span>
           <span style="display:flex;flex-direction:column;align-items:flex-end"><span style="font-size:24px;font-weight:300;letter-spacing:-0.02em"><span>${e(p.nights)}</span></span><span style="font-size:11px;color:#8e8d89">netter</span></span>
-        </section>`).join('')}` : ''}` : ''}
+        </section>`).join('')}
+      ${H.persons.length ? `<section style="display:flex;flex-direction:column;gap:12px;padding:16px;border-radius:26px;background:#1c1c1f">
+        <span style="font-size:12px;color:#8e8d89">Personer · netter i år</span>
+        ${H.persons.map(r => `<div style="display:flex;align-items:center;gap:12px">
+            <span style="${S(r.avatar)}"><span>${e(r.i)}</span></span>
+            <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:5px">
+              <div style="display:flex;justify-content:space-between;gap:8px"><span style="font-size:14px;font-weight:500"><span>${e(r.name)}</span></span><span style="font-size:13px;font-weight:600;font-variant-numeric:tabular-nums"><span>${e(r.nights)}</span></span></div>
+              <div style="height:6px;border-radius:3px;background:#262629;overflow:hidden"><span style="${S({ ...r.bar, display: 'block' })}"></span></div>
+              <span style="font-size:11px;color:#8e8d89"><span>${e(r.sub)}</span></span>
+            </div>
+          </div>`).join('')}
+      </section>` : ''}` : ''}
+    ${H.isWeeks ? `${H.naa.length ? `<section style="display:flex;flex-direction:column;gap:8px;padding:14px 16px;border-radius:26px;background:#1c1c1f">
+        <span style="font-size:12px;color:#8e8d89">Hvor er vi nå</span>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${H.naa.map(x => `<span style="height:28px;padding:0 10px 0 8px;border-radius:14px;display:flex;align-items:center;gap:6px;font-size:12px;font-weight:500;background:#262629;white-space:nowrap"><span style="${S(x.dot)}"></span><span>${e(x.label)}</span></span>`).join('')}</div>
+      </section>` : ''}
+      <section style="display:flex;flex-direction:column;border-radius:26px;background:#1c1c1f;overflow:hidden">
+        ${H.weeks.map(w => `<div style="${S(w.row)}">
+            <div style="display:flex;align-items:baseline;gap:8px"><span style="font-size:14px;font-weight:600"><span>${e(w.title)}</span></span><span style="font-size:12px;color:#8e8d89"><span>${e(w.dates)}</span></span>${w.tag ? `<span style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:6px;background:#2a2a2d;color:oklch(0.8 0.12 150)">${e(w.tag)}</span>` : ''}</div>
+            ${w.places.map(x => `<span style="display:flex;align-items:center;gap:6px;font-size:12px;color:#c9c7c2"><span style="${S(x.dot)}"></span><span>${e(x.label)}</span></span>`).join('')}
+          </div>`).join('')}
+        ${!H.weeks.length ? `<div style="padding:24px;text-align:center;font-size:13px;color:#6d6c69">Ingen helger ennå</div>` : ''}
+      </section>` : ''}
+    <section data-lay="hyttebesok" data-lay-navn="Hyttebesøk · handlinger" style="display:flex;flex-direction:column;gap:10px;padding:14px 16px;border-radius:26px;background:#1c1c1f">
+      <div style="display:flex;align-items:center;gap:8px"><span class="ms" style="font-size:18px;color:#8e8d89">cottage</span><span style="flex:1;min-width:0;font-size:12px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">KI Hyttebesøk · ${e(H.actions.status)}${e(H.lest)}</span></div>
+      ${H.actions.feil ? `<span style="font-size:12px;color:oklch(0.72 0.15 25)">${e(H.actions.feil)}</span>` : ''}
+      ${noPlaces ? `<span style="font-size:13px;color:#a9a7a2">Ingen steder er valgt. Velg hvilke KI Hyttebesøk-steder som vises i «Tilpass oppsett».</span>` : ''}
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button data-on-click="regTog" style="height:38px;padding:0 14px;border-radius:19px;display:flex;align-items:center;gap:6px;font-size:13px;font-weight:500;background:${H.actions.reg ? PINK : '#262629'};color:${H.actions.reg ? '#2a1720' : '#f2f1ee'}"><span class="ms" style="font-size:18px">edit_calendar</span>Registrer opphold</button>
+        <button data-on-click="hutSync" data-arg="${e(H.actions.syncArg)}" style="height:38px;padding:0 14px;border-radius:19px;display:flex;align-items:center;gap:6px;font-size:13px;font-weight:500;background:#262629"><span class="ms" style="font-size:18px">sync</span>Synk</button>
+        ${H.actions.lagre ? `<button data-on-click="hutLagre" data-arg="${e(H.actions.lagre)}" style="height:38px;padding:0 14px;border-radius:19px;display:flex;align-items:center;gap:6px;font-size:13px;font-weight:500;background:#262629"><span class="ms" style="font-size:18px">save</span>Lagre pågående</button>` : ''}
+      </div>
+      ${H.actions.reg ? `<div data-key="kd-hut-reg" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-top:4px">
+        <label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:#8e8d89;min-width:0">Person
+          <select data-on-change="regSet" data-arg="rp" style="height:40px;border-radius:12px;border:0;padding:0 10px;background:#262629;color:#f2f1ee;font:inherit;font-size:14px;color-scheme:dark;min-width:0">${H.actions.people.map(x => `<option value="${e(x.n)}"${x.sel ? ' selected' : ''}>${e(x.n)}</option>`).join('')}</select></label>
+        <label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:#8e8d89;min-width:0">Sted
+          <select data-on-change="regSet" data-arg="rs" style="height:40px;border-radius:12px;border:0;padding:0 10px;background:#262629;color:#f2f1ee;font:inherit;font-size:14px;color-scheme:dark;min-width:0">${H.actions.places.map(x => `<option value="${e(x.id)}"${x.sel ? ' selected' : ''}>${e(x.name)}</option>`).join('')}</select></label>
+        <label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:#8e8d89;min-width:0">Fra
+          <input type="date" data-on-change="regSet" data-arg="rf" value="${e(H.actions.fra)}" style="height:40px;box-sizing:border-box;border-radius:12px;border:0;padding:0 10px;background:#262629;color:#f2f1ee;font:inherit;font-size:14px;color-scheme:dark;min-width:0;width:100%"></label>
+        <label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:#8e8d89;min-width:0">Til (siste natt)
+          <input type="date" data-on-change="regSet" data-arg="rt" value="${e(H.actions.til)}" style="height:40px;box-sizing:border-box;border-radius:12px;border:0;padding:0 10px;background:#262629;color:#f2f1ee;font:inherit;font-size:14px;color-scheme:dark;min-width:0;width:100%"></label>
+        <button data-on-click="regSend" data-arg="${e([(H.actions.people.find(x => x.sel) || {}).n || '', H.actions.regPlace, H.actions.fra, H.actions.til].join('|'))}" style="grid-column:1 / -1;height:42px;border-radius:21px;font-size:14px;font-weight:600;background:${PINK};color:#2a1720">Lagre i kalenderen</button>
+        <span style="grid-column:1 / -1;font-size:11px;color:#6d6c69">ki_hyttebesok.registrer_opphold – skrives som «Sted – Navn» i hyttekalenderen</span>
+      </div>` : ''}
+    </section>` : ''}
 ${up ? `
     ${KD.segHTML('kal-upf', up.filters.map(f => [f.k, f.label]), s.filter, 'goFilter', { small: true })}
     ${up.featured ? `<section style="${S(up.featured.card)}">
@@ -757,7 +808,13 @@ ${up ? `
             <span style="font-size:11px;color:#8e8d89;font-variant-numeric:tabular-nums"><span>${e(u.time)}</span></span>
           </div>
         </div>`).join('')}
-      ${!up.featured ? `<div style="padding:30px 0;text-align:center;font-size:14px;color:#6d6c69">Ingenting planlagt</div>` : ''}
+      ${!up.featured ? `<div style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:26px 12px;text-align:center;border-radius:24px;background:#1c1c1f">
+          <span class="ms" style="font-size:30px;color:#6d6c69">${up.empty.title === 'Henter …' ? 'hourglass_top' : 'movie_off'}</span>
+          <span style="font-size:15px;font-weight:500;color:#c9c7c2">${e(up.empty.title)}</span>
+          ${up.empty.lines.map(l => `<span style="font-size:12px;color:#8e8d89;word-break:break-word">${e(l)}</span>`).join('')}
+          <span style="font-size:11px;color:#6d6c69;max-width:300px">Bytt kilde under «Tilpass oppsett» → Kilder (f.eks. calendar.radarr, calendar.sonarr eller sensor.sonarr_upcoming).</span>
+          <button data-on-click="layTog" style="margin-top:4px;height:34px;padding:0 14px;border-radius:17px;font-size:12px;font-weight:500;background:#262629;color:#f2f1ee;display:flex;align-items:center;gap:6px"><span class="ms" style="font-size:16px">tune</span>Velg kilde</button>
+        </div>` : ''}
     </section>` : ''}
 ${bd ? `
     <section style="display:flex;align-items:center;gap:16px;padding:18px;border-radius:24px;background:linear-gradient(135deg, oklch(0.78 0.13 350), oklch(0.9 0.05 20));color:#2a1720">
