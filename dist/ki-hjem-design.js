@@ -1,4 +1,4 @@
-/* KI Hjem Design – pikselkopi av Claude Design «Home Assistant sikkerhetspanel». Bygget 2026-09-26T07:16Z. */
+/* KI Hjem Design – pikselkopi av Claude Design «Home Assistant sikkerhetspanel». Bygget 2026-09-26T07:23Z. */
 
 /* ===== 00-kd-base.js ===== */
 try {
@@ -213,16 +213,24 @@ input,select,textarea{font:inherit;color:inherit}
       fn.call(this, ev, el.getAttribute('data-arg'), el);
     }
     _holdStart(ev) {
-      const el = ev.target && ev.target.closest ? ev.target.closest('[data-hold]') : null;
+      const t = ev.target && ev.target.closest ? ev.target : null;
       clearTimeout(this._holdT); this._holdFired = false;
-      if (!el) return;
+      if (!t) return;
+      // 1) eksplisitt data-hold  2) data-more="entity"  3) knapper med en entitet som data-arg → mer info (hold = more-info overalt)
+      let el = t.closest('[data-hold]'), run = null;
+      if (el) { const fn = this[el.getAttribute('data-hold')]; if (typeof fn === 'function') run = () => fn.call(this, ev, el.getAttribute('data-arg'), el); }
+      else if (!t.closest('[data-no-hold],[data-seg],input,textarea')) {
+        const m = t.closest('[data-more]'), a = m ? null : t.closest('[data-arg]');
+        const id = m ? m.getAttribute('data-more') : a ? a.getAttribute('data-arg') : null;
+        if (id && /^[a-z_]+\.[a-z0-9_]+$/.test(id) && this.st(id)) { el = m || a; run = () => this.more(id); }
+      }
+      if (!run) return;
       const x = ev.clientX, y = ev.clientY;
       const move = e => { if (Math.abs(e.clientX - x) > 10 || Math.abs(e.clientY - y) > 10) { clearTimeout(this._holdT); this.shadowRoot.removeEventListener('pointermove', move, true); } };
       this.shadowRoot.addEventListener('pointermove', move, true);
       this._holdT = setTimeout(() => {
         this.shadowRoot.removeEventListener('pointermove', move, true);
-        const fn = this[el.getAttribute('data-hold')];
-        if (typeof fn === 'function') { this._holdFired = true; this.haptic('heavy'); fn.call(this, ev, el.getAttribute('data-arg'), el); }
+        this._holdFired = true; this.haptic('heavy'); run();
       }, 500);
     }
 
@@ -358,11 +366,30 @@ input,select,textarea{font:inherit;color:inherit}
   ${items.map(([k, label, icon], j) => `<button data-on-click="${KD.e(method)}" data-arg="${KD.e(k)}" data-seg-b="${j}" style="position:relative;z-index:1;height:${h}px;min-width:0;border-radius:${Math.max(4, r - P)}px;display:flex;flex-direction:${o.stack ? 'column' : 'row'};align-items:center;justify-content:center;gap:${o.stack ? 3 : 6}px;padding:0 ${o.stack ? 2 : 6}px;font-size:${o.stack ? 10 : o.small ? 12 : 13}px;font-weight:${j === i ? 600 : 500};white-space:nowrap;color:${j === i ? on : off};transition:color .25s">${icon ? `<span class="ms" style="font-size:${o.stack ? 20 : o.small ? 15 : 17}px;font-variation-settings:'FILL' ${j === i ? 1 : 0}">${KD.e(icon)}</span>` : ''}<span style="min-width:0;overflow:hidden;text-overflow:ellipsis">${KD.e(label)}</span></button>`).join('')}
 </div>`;
   };
+  /** Valg for fanestørrelse (brukes i Tilpass oppsett og Tilpass Hjem) */
+  KD.faneValgHTML = (F, fn) => {
+    const chip = (on, arg, label) => `<button data-on-click="${fn}" data-arg="${arg}" style="${KD.S({ height: 32, padding: '0 12px', borderRadius: 16, fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap', background: on ? 'oklch(0.78 0.13 350 / 0.2)' : 'rgba(255,255,255,0.06)', boxShadow: on ? 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.7)' : 'none', color: on ? '#f2f1ee' : '#a9a7a2' })}">${label}</button>`;
+    return `<div style="padding:10px 12px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">Faner</div>
+    <div style="display:flex;flex-direction:column;gap:8px;padding:2px 10px 8px">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="width:52px;font-size:12px;color:#8e8d89">Bredde</span>${[['', 'Standard'], ['kompakt', 'Kompakt'], ['full', 'Full bredde']].map(([v, l]) => chip((F.bredde || '') === v, 'bredde|' + v, l)).join('')}</div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="width:52px;font-size:12px;color:#8e8d89">Høyde</span>${[['', 'Standard'], ['30', 'Lav'], ['38', 'Middels'], ['46', 'Høy'], ['56', 'Ekstra høy']].map(([v, l]) => chip(String(F.hoyde || '') === v, 'hoyde|' + v, l)).join('')}</div>
+    </div>`;
+  };
   /** Kobler dra-støtte og strekk-animasjon til alle [data-seg] i kortet (kalles etter hver rendring) */
   KD.segInit = (card) => {
     const root = card.shadowRoot; if (!root) return;
+    const F = typeof card.faneOpts === 'function' ? card.faneOpts() || {} : {};
+    card._hasSeg = !!root.querySelector('[data-seg]');
     for (const el of root.querySelectorAll('[data-seg]')) {
       const i = +el.getAttribute('data-seg-i'), th = el.querySelector('[data-seg-thumb]');
+      // fanestørrelse fra Tilpass oppsett: bredde standard|kompakt|full, høyde i px
+      if (F.bredde || F.hoyde) {
+        const bs = [...el.querySelectorAll('[data-seg-b]')], n = bs.length;
+        if (F.bredde === 'kompakt') { el.style.alignSelf = 'flex-start'; el.style.width = 'auto'; el.style.maxWidth = '100%'; el.style.gridTemplateColumns = `repeat(${n}, auto)`; bs.forEach(b => { b.style.padding = '0 16px'; }); }
+        else if (F.bredde === 'full') { el.style.alignSelf = 'stretch'; el.style.width = '100%'; el.style.maxWidth = 'none'; el.style.gridTemplateColumns = `repeat(${n}, minmax(0,1fr))`; }
+        if (F.hoyde) { bs.forEach(b => { b.style.height = F.hoyde + 'px'; b.style.borderRadius = (F.hoyde / 2) + 'px'; }); el.style.borderRadius = (F.hoyde / 2 + 4) + 'px'; if (th) th.style.borderRadius = (F.hoyde / 2) + 'px'; }
+        if (F.bredde === 'kompakt' && th && bs[i]) { th.style.left = bs[i].offsetLeft + 'px'; th.style.width = bs[i].offsetWidth + 'px'; }
+      }
       // strekk («flytende glass») når valget endres
       if (el._segI != null && el._segI !== i && th && th.animate && !el._segDragged) {
         const d = Math.min(3, Math.abs(i - el._segI));
@@ -477,6 +504,12 @@ input,select,textarea{font:inherit;color:inherit}
        Seksjonene er barna til arkets rot-div. De flyttes med CSS order og skjules med display:none (DOM-en røres ikke,
        så morph fungerer som før). Et kort kan legge til egne innstillinger i panelet med tilpassHTML(). */
     layKey() { return this.localName; }
+    faneOpts() { return this._layData().fane || this.config.fane_stil || {}; }
+    faneSet(ev, arg) {
+      const [k, v] = String(arg).split('|'), D = { ...this._layData() }, F = { ...(D.fane || {}) };
+      if (!v) delete F[k]; else F[k] = k === 'hoyde' ? +v : v;
+      D.fane = F; this._laySave(D);
+    }
     _layData() { return (KD.ud(this, 'kd_ark') || {})[this.layKey()] || {}; }
     _laySave(v) { const all = { ...KD.ud(this, 'kd_ark') }; if (v) all[this.layKey()] = v; else delete all[this.layKey()]; this.haptic('selection'); KD.udSave(this, 'kd_ark', all); }
     layTog() { this.setState({ lay: !this.state.lay }); }
@@ -532,8 +565,13 @@ input,select,textarea{font:inherit;color:inherit}
     _layHTML() {
       if (this.constructor.noLayout || this.config.tilpass === false) return '';
       const s = this.state, e = KD.e, SS = KD.S;
-      if (!s.lay) return `<div data-key="kd-lay-btn" data-lay-skip="1" style="display:flex;justify-content:center;padding:4px var(--kd-kant,10px) calc(28px + env(safe-area-inset-bottom))">
-        <button data-on-click="layTog" style="display:flex;align-items:center;gap:8px;height:40px;padding:0 16px;border-radius:20px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05);color:#8e8d89;font-size:12px;font-weight:500"><span class="ms" style="font-size:17px">dashboard_customize</span>Tilpass oppsett</button></div>`;
+      if (!s.lay) {
+        // kortets egen tilpass-knapp (f.eks. «Tilpass rommet») står ved siden av «Tilpass oppsett»
+        const egen = typeof this.tilpassKnapp === 'function' ? this.tilpassKnapp() : '';
+        const bs = 'flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:8px;height:44px;padding:0 14px;border-radius:22px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05);color:#a9a7a2;font-size:13px;font-weight:500;white-space:nowrap';
+        return `<div data-key="kd-lay-btn" data-lay-skip="1" style="display:flex;justify-content:center;gap:8px;padding:4px var(--kd-kant,10px) calc(28px + env(safe-area-inset-bottom))">
+        ${egen ? egen.replace('%STIL%', bs) : ''}<button data-on-click="layTog" style="${egen ? bs : bs.replace('flex:1;', 'flex:none;')}"><span class="ms" style="font-size:18px">dashboard_customize</span>Tilpass oppsett</button></div>`;
+      }
       const secs = this._secs || [];
       const ib = (arg, icon, title, col, dis) => `<button data-on-click="layOp" data-arg="${e(arg)}" title="${title}" style="${SS({ width: 34, height: 34, borderRadius: 17, flex: 'none', display: 'grid', placeItems: 'center', color: col || '#8e8d89', opacity: dis ? 0.25 : 1, pointerEvents: dis ? 'none' : null })}"><span class="ms" style="font-size:20px">${icon}</span></button>`;
       const extra = typeof this.tilpassHTML === 'function' ? this.tilpassHTML() : '';
@@ -544,6 +582,7 @@ input,select,textarea{font:inherit;color:inherit}
       <button data-on-click="layReset" style="height:34px;padding:0 12px;border-radius:17px;font-size:12px;color:#a9a7a2;background:rgba(255,255,255,0.06)">Nullstill</button>
       <button data-on-click="layTog" style="height:34px;padding:0 14px;margin-right:8px;border-radius:17px;font-size:13px;font-weight:600;background:linear-gradient(135deg, oklch(0.78 0.13 350), oklch(0.9 0.05 20));color:#2a1720">Ferdig</button></div>
     ${extra}
+    ${this._hasSeg ? KD.faneValgHTML(this.faneOpts(), 'faneSet') : ''}
     ${this._entHTML()}
     ${secs.length ? `<div style="padding:10px 12px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">Seksjoner</div>` : ''}
     ${secs.map((x, i) => `<div data-key="kd-lay-${e(x.sig)}" style="min-height:44px;padding:0 4px 0 12px;border-radius:14px;display:flex;align-items:center;gap:8px;opacity:${x.hid ? 0.45 : 1}">
@@ -1224,6 +1263,12 @@ try {
       this.haptic('selection'); KD.udSave(this, 'kd_hjem', HU);
     }
     hjemHilsen(ev, arg, el) { const HU = { ...KD.ud(this, 'kd_hjem') }; const v = String(el.value || '').trim(); if (v) HU.hilsen = v; else delete HU.hilsen; KD.udSave(this, 'kd_hjem', HU); }
+    faneOpts() { return KD.ud(this, 'kd_hjem').fane || this.config.fane_stil || {}; }
+    hjemFane(ev, arg) {
+      const [k, v] = String(arg).split('|'), HU = { ...KD.ud(this, 'kd_hjem') }, F = { ...(HU.fane || {}) };
+      if (!v) delete F[k]; else F[k] = k === 'hoyde' ? +v : v;
+      HU.fane = F; this.haptic('selection'); KD.udSave(this, 'kd_hjem', HU);
+    }
     hjemPers(ev, arg) {
       const [id, op] = String(arg).split('|'), HU = { ...KD.ud(this, 'kd_hjem') };
       const list = this.persons.map(p => p.id), i = list.indexOf(id);
@@ -1502,7 +1547,7 @@ try {
         const cards = list.map(r => {
           const iconWrap = { position: 'absolute', right: 6, top: 6, width: 58, height: 58, borderRadius: 29, display: 'grid', placeItems: 'center', background: r.lightsOn ? r.farge : '#2a2a2d', color: r.lightsOn ? '#141416' : '#8e8d89', transition: 'background .25s' };
           const hasSet = r.set != null;
-          return `<div data-key="${e(r.id)}" data-on-click="openRoom" data-arg="${e(r.id)}" style="position:relative;cursor:pointer;flex:none;width:100%;height:${RK[0]}px;box-sizing:border-box;scroll-snap-align:start;border-radius:28px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
+          return `<div data-key="${e(r.id)}" data-on-click="openRoom" data-arg="${e(r.id)}"${r.tempId ? ` data-more="${e(r.tempId)}"` : ''} style="position:relative;cursor:pointer;flex:none;width:100%;height:${RK[0]}px;box-sizing:border-box;scroll-snap-align:start;border-radius:28px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
                 <div style="position:absolute;left:18px;top:18px;right:70px;font-size:15px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(r.navn)}</div>
                 <button data-on-click="roomToggle" data-arg="${e(r.id)}" title="Lys" style="${S(iconWrap)}"><span class="ms" style="font-size:24px;font-variation-settings:'FILL' 1">${e(r.ikon)}</span></button>
                 <div style="position:absolute;left:18px;bottom:16px;display:flex;align-items:baseline;gap:4px;white-space:nowrap">
@@ -1534,7 +1579,7 @@ try {
         iconStyle: { fontSize: 24, color: pink ? '#2a1720' : col || '#f2f1ee', fontVariationSettings: "'FILL' 1" },
         subStyle: { fontSize: 12, color: pink ? 'rgba(42,23,32,0.7)' : '#8e8d89', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
       });
-      const tileHTML = t => `<button data-on-click="${t.tap}" style="${S(t.style)}">
+      const tileHTML = t => `<button data-on-click="${t.tap}"${t.more ? ` data-more="${e(t.more)}"` : ''} style="${S(t.style)}">
             <span style="${S(t.iconWrap)}"><span class="ms" style="${S(t.iconStyle)}">${e(t.icon)}</span></span>
             <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;text-align:left">
               <span style="font-size:15px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(t.title)}</span>
@@ -1552,6 +1597,7 @@ try {
       const alarmTile = tileV('shield', armed ? 'Armert' : 'Av', 'Alarm', 'openSik', null, armed);
       const camTile = tileV('videocam', 'Kamera', motion ? 'Bevegelse nå' : 'Ingen bevegelse', 'openCam', motion ? C.blue : null);
       const todoTile = tileV('handyman', `${nTodo} gjøremål`, `${nDone} ferdige`, 'openTodo', null);
+      lockTile.more = c.las; alarmTile.more = c.alarm || c.alarm_gammel; camTile.more = (c.bevegelse || [])[0]; todoTile.more = c.gjoremal;
 
       /* ----- strømgraf ----- */
       const NOW_H = new Date().getHours();
@@ -1689,6 +1735,7 @@ try {
         <button data-on-click="hjemEditClose" style="height:34px;padding:0 14px;border-radius:17px;font-size:13px;font-weight:600;background:linear-gradient(135deg, oklch(0.78 0.13 350), oklch(0.9 0.05 20));color:#2a1720">Ferdig</button></div>
       ${head('Topp-oppsett')}<div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 10px 6px">${[['standard', 'Standard', 'view_agenda'], ['familie', 'Familie', 'family_restroom']].map(([v, l, ic]) => chipH((HU.topp || c.topp || 'standard') === v, 'topp|' + v, 'hjemSet', l, ic)).join('')}</div>
       ${(HU.topp || c.topp) === 'familie' ? `<div style="display:flex;flex-direction:column;gap:4px;padding:2px 10px 8px"><input data-key="he-hilsen" data-keep="1" data-on-change="hjemHilsen" value="${e(HU.hilsen || c.hilsen || '👋 {navn}!')}" placeholder="👋 {navn}!" autocomplete="off" style="height:38px;padding:0 14px;border-radius:19px;border:none;outline:none;background:#262629;color:#f2f1ee;font:inherit;font-size:13px"><span style="font-size:11px;color:#6d6c69;padding-left:6px">{navn} = ditt fornavn, {server} = servernavnet</span></div>` : ''}
+      ${KD.faneValgHTML(HU.fane || {}, 'hjemFane')}
       ${head('Tittel øverst')}<div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 10px 6px">${[['server', 'Servernavn', 'dns'], ['person', 'Mitt navn', 'person']].map(([v, l, ic]) => chipH(((HU.tittel || c.tittel || 'server') === v), 'tittel|' + v, 'hjemSet', l, ic)).join('')}</div>
       ${head('Seksjoner')}${rows('sek', norm(HU.seksjoner, SEK_KEYS), HLABEL.sek, 'sek')}
       ${head('Personer på toppen')}<div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 10px 6px">
@@ -1815,7 +1862,7 @@ try {
 
       /* ----- Tilpass Hjem: rekkefølge/synlighet (per bruker, 'kd_hjem') ----- */
       const HU = KD.ud(this, 'kd_hjem'), HSKJUL = new Set(HU.skjul || []);
-      const P_UTE = `<button data-on-click="openWeather" style="display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 11px;border-radius:16px;background:#232326;font-weight:500;vertical-align:middle;white-space:nowrap"><span class="ms" style="font-size:18px;color:#bdbbb6">${W.icon}</span>${W.t != null ? nf(W.t, 1) : '–'}°</button>`, P_PRIS = `<button data-on-click="goPower" style="${S(pricePill)}"><span style="${S(priceDot)}"></span><span>${pNow != null ? nf(pNow) : '–'}</span> kr</button>`, P_WATT = `<span style="display:inline-flex;align-items:center;height:32px;padding:0 11px;border-radius:16px;background:#232326;font-weight:500;vertical-align:middle;white-space:nowrap;font-variant-numeric:tabular-nums"><span>${watt}</span> W</span>`, P_LYS = `<button data-on-click="showLights" style="display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 11px;border-radius:16px;background:oklch(0.86 0.12 95 / 0.16);box-shadow:inset 0 0 0 1px oklch(0.86 0.12 95 / 0.4);font-weight:500;vertical-align:middle;white-space:nowrap"><span class="ms" style="font-size:18px;color:oklch(0.86 0.12 95);font-variation-settings:'FILL' 1">lightbulb</span><span>${lightsOn}</span> lys</button>`, P_CAL = `<button data-on-click="openCal" style="display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 11px;border-radius:16px;background:#232326;font-weight:500;vertical-align:middle;white-space:nowrap"><span class="ms" style="font-size:18px;color:oklch(0.8 0.12 250)">event</span>${nEv == null ? '–' : nEv} ${nEv === 1 ? 'hendelse' : 'hendelser'}</button>`;
+      const P_UTE = `<button data-on-click="openWeather" data-more="${e(c.vaer || '')}" style="display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 11px;border-radius:16px;background:#232326;font-weight:500;vertical-align:middle;white-space:nowrap"><span class="ms" style="font-size:18px;color:#bdbbb6">${W.icon}</span>${W.t != null ? nf(W.t, 1) : '–'}°</button>`, P_PRIS = `<button data-on-click="goPower" data-more="${e(this.sp().pris || '')}" style="${S(pricePill)}"><span style="${S(priceDot)}"></span><span>${pNow != null ? nf(pNow) : '–'}</span> kr</button>`, P_WATT = `<span style="display:inline-flex;align-items:center;height:32px;padding:0 11px;border-radius:16px;background:#232326;font-weight:500;vertical-align:middle;white-space:nowrap;font-variant-numeric:tabular-nums"><span>${watt}</span> W</span>`, P_LYS = `<button data-on-click="showLights" data-more="${e(c.lys_totalt || '')}" style="display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 11px;border-radius:16px;background:oklch(0.86 0.12 95 / 0.16);box-shadow:inset 0 0 0 1px oklch(0.86 0.12 95 / 0.4);font-weight:500;vertical-align:middle;white-space:nowrap"><span class="ms" style="font-size:18px;color:oklch(0.86 0.12 95);font-variation-settings:'FILL' 1">lightbulb</span><span>${lightsOn}</span> lys</button>`, P_CAL = `<button data-on-click="openCal" data-more="${e(c.kalender_sensor || '')}" style="display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 11px;border-radius:16px;background:#232326;font-weight:500;vertical-align:middle;white-space:nowrap"><span class="ms" style="font-size:18px;color:oklch(0.8 0.12 250)">event</span>${nEv == null ? '–' : nEv} ${nEv === 1 ? 'hendelse' : 'hendelser'}</button>`;
       const PROSA_DEL = { ute: () => `Ute er det ${P_UTE}.`, strom: () => `Strømmen koster ${P_PRIS}.`, effekt: () => `Vi bruker ${P_WATT}.`, lys: () => `Det er ${P_LYS} på.`, hendelser: () => `Vi har ${P_CAL} i dag.` };
       const PR = norm(HU.prosa, PROSA_KEYS), prVis = PR.filter(k => !HSKJUL.has('prosa:' + k));
       const prosaTxt = prVis.join() === PROSA_KEYS.join() ? `Ute er det ${P_UTE}. Strømmen koster ${P_PRIS} og vi bruker ${P_WATT} med ${P_LYS} på. Vi har ${P_CAL} i dag.` : prVis.map(k => PROSA_DEL[k]()).join(' ');
@@ -11845,6 +11892,8 @@ try {
     moreInfo(ev, id) { if (this.state.edit && id && id.includes('.')) return this.hideTog(ev, id); this.more(id); }
     devTog(ev, id) { if (this.state.edit) return this.hideTog(ev, id); this.toggle(id); }
     /* ----- tilpass rommet (skjul/vis i UI) ----- */
+    /** «Tilpass rommet» ved siden av «Tilpass oppsett» (base setter inn stilen) */
+    tilpassKnapp() { return this.state.edit ? '' : `<button class="kdr-a97" data-key="kd-edit-btn" data-on-click="editTog" style="%STIL%"><span class="ms" style="font-size:18px">tune</span>Tilpass rommet</button>`; }
     editTog() { this.setState({ edit: !this.state.edit }); }
     hideTog(ev, id) {
       if (!id) return;
@@ -12307,7 +12356,7 @@ try {
     </svg>
   </section>
   ${s.edit ? this._sensorPicker(r, L) : ''}
-  ${s.edit ? '' : `<button class="kdr-a97" data-key="kd-edit-btn" data-on-click="editTog" style="display:flex;align-items:center;justify-content:center;gap:8px;height:48px;border-radius:24px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);color:#a9a7a2;font-size:13px;font-weight:500"><span class="ms" style="font-size:18px">tune</span>Tilpass rommet</button>`}
+
 </div>`;
     }
   }

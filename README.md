@@ -144,6 +144,11 @@ antall lys på faller tilbake til å telle `light.*`; hendelser i dag faller til
 
 Hjem og popupene bruker full bredde (Pixel Fold, iPad). `bredde`-variabelen `--kd-bredde` kan begrense den via kortets `card_mod`/tema om ønskelig.
 
+### Hold for mer info og fanestørrelse
+- **Hold inne** på et hvilket som helst element som hører til en entitet åpner mer info (også flisene, romkortene og ordene i setningen på Hjem).
+- **Faner**: Tilpass oppsett (popups) og Tilpass Hjem har valg for bredde (standard, kompakt, full bredde) og høyde (lav–ekstra høy) på fanevelgerne.
+- I rom står «Tilpass rommet» og «Tilpass oppsett» ved siden av hverandre.
+
 ### Familie-toppen
 «Mer» → Tilpass Hjem → **Topp-oppsett: Familie** gir samme topp som familiekortet i ki-cards: «👋 Navn!» med serverpil til venstre
 og alle profilbildene med stedsmerke (hjemme, sover, sone eller borte) til høyre. Hilsenen kan endres (`{navn}`, `{server}`), også i config: `topp: familie`, `hilsen: '👋 {navn}!'`.
