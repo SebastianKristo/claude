@@ -1,4 +1,4 @@
-/* KI Hjem Design – pikselkopi av Claude Design «Home Assistant sikkerhetspanel». Bygget 2026-09-25T23:34Z. */
+/* KI Hjem Design – pikselkopi av Claude Design «Home Assistant sikkerhetspanel». Bygget 2026-09-26T00:04Z. */
 
 /* ===== 00-kd-base.js ===== */
 try {
@@ -188,6 +188,7 @@ input,select,textarea{font:inherit;color:inherit}
       this._root.className = 'kd-root' + (this.config.header === false || this.config.embedded ? ' kd-embedded' : '');
       KD.morph(this._root, html);
       if (this.afterRender) this.afterRender();
+      KD.segInit(this);
     }
     /** Finn element i kortet */
     $(sel) { return this.shadowRoot.querySelector(sel); }
@@ -195,6 +196,7 @@ input,select,textarea{font:inherit;color:inherit}
 
     /* ----- hendelser ----- */
     _dispatch(type, ev) {
+      if (type === 'click') { const p0 = ev.composedPath ? ev.composedPath()[0] : ev.target, sg = p0 && p0.closest && p0.closest('[data-seg]'); if (sg && performance.now() - (sg._segDragEnd || 0) < 350) return; } // klikk etter dra i fanevelger
       if (type === 'click' && this._holdFired) { this._holdFired = false; ev.stopPropagation(); ev.preventDefault(); return; }
       const attr = 'data-on-' + type;
       let el = ev.composedPath ? ev.composedPath()[0] : ev.target;
@@ -335,6 +337,69 @@ input,select,textarea{font:inherit;color:inherit}
 .kd-sheet-top{position:sticky;top:0;left:0;right:0;z-index:3;padding:8px 12px 18px;display:flex;flex-direction:column;align-items:center;gap:8px;background:linear-gradient(180deg,#141416 0,#141416 72%,rgba(20,20,22,0) 100%);pointer-events:none;box-sizing:border-box}
 .kd-sheet-top .kd-grip{width:36px;height:4px;border-radius:2px;background:rgba(255,255,255,0.22)}
 `;
+  /* ----- Liquid glass-fanevelger (felles for alle kort) -----
+     KD.segHTML(key, items, cur, method, opts) → HTML. items: [[verdi, tekst, ikon?], …]. Trykk kaller this[method](ev, verdi).
+     Glassboblen glir og strekkes når valget endres, og kan dras med fingeren mellom valgene (slipp velger).
+     opts: { pink: true (rosa boble, mørk tekst), h: høyde (38), r: radius, bg, gap, style: ekstra stil på rammen, small: true } */
+  KD.segHTML = (key, items, cur, method, o = {}) => {
+    const n = Math.max(1, items.length), i = Math.max(0, items.findIndex(x => x[0] === cur)), h = o.h || (o.stack ? 54 : o.small ? 32 : 38), P = 4;
+    const r = o.r != null ? o.r : Math.round((h + 2 * P) / 2);
+    const cell = `((100% - ${2 * P}px) / ${n})`;
+    const thumbBg = o.pink ? KD.PINK : 'linear-gradient(180deg, rgba(255,255,255,0.26), rgba(255,255,255,0.10))';
+    const thumbSh = o.pink ? '0 4px 14px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.35)' : 'inset 0 1px 0 rgba(255,255,255,0.45), inset 0 -1px 1px rgba(255,255,255,0.10), 0 4px 14px rgba(0,0,0,0.28)';
+    const on = o.pink ? '#2a1720' : '#f2f1ee', off = '#a9a7a2';
+    return `<div data-key="seg-${KD.e(key)}" data-seg="${KD.e(key)}" data-seg-on="${KD.e(method)}" data-seg-i="${i}" data-seg-n="${n}" style="position:relative;display:grid;grid-template-columns:repeat(${n},minmax(0,1fr));padding:${P}px;border-radius:${r}px;background:${o.bg || '#1c1c1f'};box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);touch-action:pan-y;user-select:none;-webkit-user-select:none;isolation:isolate;${o.style || ''}">
+  <span data-seg-thumb="1" style="position:absolute;z-index:0;top:${P}px;bottom:${P}px;left:calc(${P}px + ${i} * ${cell});width:calc(${cell});border-radius:${Math.max(4, r - P)}px;background:${thumbBg};box-shadow:${thumbSh};backdrop-filter:blur(8px) saturate(180%);-webkit-backdrop-filter:blur(8px) saturate(180%);transition:left .5s cubic-bezier(.34,1.35,.64,1), transform .35s cubic-bezier(.34,1.8,.64,1);pointer-events:none"></span>
+  ${items.map(([k, label, icon], j) => `<button data-on-click="${KD.e(method)}" data-arg="${KD.e(k)}" data-seg-b="${j}" style="position:relative;z-index:1;height:${h}px;min-width:0;border-radius:${Math.max(4, r - P)}px;display:flex;flex-direction:${o.stack ? 'column' : 'row'};align-items:center;justify-content:center;gap:${o.stack ? 3 : 6}px;padding:0 ${o.stack ? 2 : 6}px;font-size:${o.stack ? 10 : o.small ? 12 : 13}px;font-weight:${j === i ? 600 : 500};white-space:nowrap;color:${j === i ? on : off};transition:color .25s">${icon ? `<span class="ms" style="font-size:${o.stack ? 20 : o.small ? 15 : 17}px;font-variation-settings:'FILL' ${j === i ? 1 : 0}">${KD.e(icon)}</span>` : ''}<span style="min-width:0;overflow:hidden;text-overflow:ellipsis">${KD.e(label)}</span></button>`).join('')}
+</div>`;
+  };
+  /** Kobler dra-støtte og strekk-animasjon til alle [data-seg] i kortet (kalles etter hver rendring) */
+  KD.segInit = (card) => {
+    const root = card.shadowRoot; if (!root) return;
+    for (const el of root.querySelectorAll('[data-seg]')) {
+      const i = +el.getAttribute('data-seg-i'), th = el.querySelector('[data-seg-thumb]');
+      // strekk («flytende glass») når valget endres
+      if (el._segI != null && el._segI !== i && th && th.animate && !el._segDragged) {
+        const d = Math.min(3, Math.abs(i - el._segI));
+        th.animate([{ transform: 'scale(1,1)' }, { transform: `scale(${1 + 0.14 * d},${1 - 0.06 * d})`, offset: 0.35 }, { transform: 'scale(0.98,1.02)', offset: 0.7 }, { transform: 'scale(1,1)' }], { duration: 520, easing: 'ease-out' });
+      }
+      el._segI = i; el._segDragged = false;
+      if (el._segInit) continue; el._segInit = true;
+      let d = null;
+      const btns = () => [...el.querySelectorAll('[data-seg-b]')];
+      const idxAt = x => { let best = 0, bd = 1e9; btns().forEach((b, j) => { const r = b.getBoundingClientRect(), dd = Math.abs(x - (r.left + r.width / 2)); if (dd < bd) { bd = dd; best = j; } }); return best; };
+      el.addEventListener('pointerdown', ev => { if (ev.button > 0) return; d = { x0: ev.clientX, y0: ev.clientY, id: ev.pointerId, moved: false, j: -1 }; });
+      el.addEventListener('pointermove', ev => {
+        if (!d || ev.pointerId !== d.id) return;
+        const t = el.querySelector('[data-seg-thumb]'); if (!t) return;
+        if (!d.moved) {
+          if (Math.abs(ev.clientY - d.y0) > 10 && Math.abs(ev.clientY - d.y0) > Math.abs(ev.clientX - d.x0)) { d = null; return; }
+          if (Math.abs(ev.clientX - d.x0) < 8) return;
+          d.moved = true; try { el.setPointerCapture(ev.pointerId); } catch (e) { }
+          t.style.transition = 'left .12s cubic-bezier(.3,1.3,.6,1), transform .3s cubic-bezier(.34,1.8,.64,1)';
+          t.style.transform = 'scale(1.08,1.12)';
+        }
+        const r = el.getBoundingClientRect(), w = t.offsetWidth, first = btns()[0].getBoundingClientRect(), last = btns()[btns().length - 1].getBoundingClientRect();
+        t.style.left = KD.clamp(ev.clientX - r.left - w / 2, first.left - r.left, last.left - r.left) + 'px';
+        const j = idxAt(ev.clientX);
+        if (j !== d.j) { d.j = j; card.haptic && card.haptic('selection'); btns().forEach((b, k) => { b.style.color = k === j ? '' : ''; }); }
+      });
+      const end = ev => {
+        if (!d || ev.pointerId !== d.id) return;
+        const dd = d; d = null;
+        if (!dd.moved) return;
+        el._segDragEnd = performance.now(); el._segDragged = true;
+        const t = el.querySelector('[data-seg-thumb]');
+        if (t) { t.style.transition = ''; t.style.transform = ''; }
+        const j = ev.type === 'pointercancel' ? -1 : idxAt(ev.clientX), b = btns()[j];
+        const fn = card[el.getAttribute('data-seg-on')];
+        if (b && typeof fn === 'function') fn.call(card, ev, b.getAttribute('data-arg'), b);
+        card._force = true; card._queue && card._queue();
+      };
+      el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
+    }
+  };
+
   /** HTML for topp-pillen. Bruk KD.sheetTopHTML(ikon, tittel, sub) og KD.animateSheetTop(root) */
   KD.sheetTopHTML = (icon, title, sub, closeHandler = 'closeSheet', extraStyle = '') => `
 <div class="kd-sheet-top" style="${extraStyle}">
@@ -1351,7 +1416,8 @@ try {
       const GREEN = 'oklch(0.8 0.12 150)', BLUE = 'oklch(0.75 0.12 245)', AMBER = 'oklch(0.8 0.12 70)', PURP = 'oklch(0.68 0.2 285)';
       const badge = p => ({ show: !p.home || p.sleep, icon: p.sleep ? 'bedtime' : 'logout', style: { fontSize: 15, color: p.sleep ? 'oklch(0.75 0.12 275)' : PURP, fontVariationSettings: "'FILL' 1" } });
       const meS = this.personState(me), meB = badge(meS);
-      const meRing = `0 0 0 3px #141416,0 0 0 4.5px ${meS.home ? 'oklch(0.8 0.12 150 / 0.7)' : 'oklch(0.68 0.2 285 / 0.7)'}`;
+      const HUP = KD.ud(this, 'kd_hjem'), PNAVN = HUP.person_navn !== false, PSTED = HUP.person_sted !== false && PNAVN, PIKON = !!HUP.person_ikon;
+      const meRing = HUP.person_ring === false ? 'none' : `0 0 0 3px #141416,0 0 0 4.5px ${meS.home ? 'oklch(0.8 0.12 150 / 0.7)' : 'oklch(0.68 0.2 285 / 0.7)'}`;
       const people = PERS.filter(p => p.id !== meId).map(p => { const ps = this.personState(p); return { p, ps, b: badge(ps), avatar: { width: 46, height: 46, borderRadius: 23, display: 'grid', placeItems: 'center', fontSize: 16, fontWeight: 600, background: p.farge, opacity: ps.home ? 1 : 0.6, transition: 'opacity .3s' } }; });
 
       const W = this.weather();
@@ -1575,7 +1641,12 @@ try {
         <button data-on-click="hjemEditClose" style="height:34px;padding:0 14px;border-radius:17px;font-size:13px;font-weight:600;background:linear-gradient(135deg, oklch(0.78 0.13 350), oklch(0.9 0.05 20));color:#2a1720">Ferdig</button></div>
       ${head('Tittel øverst')}<div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 10px 6px">${[['server', 'Servernavn', 'dns'], ['person', 'Mitt navn', 'person']].map(([v, l, ic]) => chipH(((HU.tittel || c.tittel || 'server') === v), 'tittel|' + v, 'hjemSet', l, ic)).join('')}</div>
       ${head('Seksjoner')}${rows('sek', norm(HU.seksjoner, SEK_KEYS), HLABEL.sek, 'sek')}
-      ${head('Personer på toppen')}${persRows}
+      ${head('Personer på toppen')}<div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 10px 6px">
+        ${chipH(HU.person_navn !== false, 'person_navn|' + (HU.person_navn === false), 'hjemSet', 'Navn', 'badge')}
+        ${chipH(HU.person_sted !== false, 'person_sted|' + (HU.person_sted === false), 'hjemSet', 'Sted', 'location_on')}
+        ${chipH(!!HU.person_ikon, 'person_ikon|' + !HU.person_ikon, 'hjemSet', 'Ikon foran navn', 'home_pin')}
+        ${chipH(HU.person_ring !== false, 'person_ring|' + (HU.person_ring === false), 'hjemSet', 'Ring rundt meg', 'radio_button_unchecked')}
+      </div>${persRows}
       ${head('Etasjer')}${etgRows}
       ${head('Romkort')}<div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 10px 6px">${[['stor', 'Stor'], ['middels', 'Middels'], ['liten', 'Liten']].map(([v, l]) => chipH((HU.romkort || c.romkort || 'stor') === v, 'romkort|' + v, 'hjemSet', l)).join('')}
         ${chipH(HU.klimaknapp != null ? HU.klimaknapp !== false : c.klimaknapp !== false, 'klimaknapp|' + (HU.klimaknapp != null ? HU.klimaknapp === false : c.klimaknapp === false), 'hjemSet', 'Klimaknapp', 'thermostat')}</div>
@@ -1703,20 +1774,18 @@ try {
       const COLV = COLV0.filter(k => !HSKJUL.has('flis:' + k)), COLH = COLH0.filter(k => !HSKJUL.has('flis:' + k));
       const SEK = {
         personer: () => `    <div data-key="h-personer" style="display:flex;gap:14px;flex-wrap:wrap;margin-top:-6px">
-      ${people.map(({ p, avatar }) => { const pl = this.placeOf(p); return `<button data-key="pers-${e(p.id)}" data-on-click="openPerson" data-hold="quickPerson" data-arg="${e(p.id)}" title="${e(p.navn)} · ${e(pl.navn)}" style="position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;max-width:72px">
+      ${people.map(({ p, avatar }) => { const pl = this.placeOf(p); return `<button data-key="pers-${e(p.id)}" data-on-click="quickPerson" data-hold="openPerson" data-arg="${e(p.id)}" title="${e(p.navn)} · ${e(pl.navn)}" style="position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;max-width:72px">
           <span style="${S(avatar)}${this.pic(p)}">${e(p.navn[0])}</span>
           <span style="position:absolute;left:30px;top:-5px;width:24px;height:24px;border-radius:12px;background:#232326;box-shadow:0 0 0 2px #141416;display:grid;place-items:center">${this.placeIcon(pl, 15)}</span>
-          <span style="font-size:11px;color:#c9c7c2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:72px">${e(p.navn)}</span>
-          <span style="margin-top:-3px;font-size:10px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:72px">${e(pl.navn)}</span>
+          ${PNAVN ? `<span style="display:flex;align-items:center;gap:3px;font-size:11px;color:#c9c7c2;white-space:nowrap;max-width:72px">${PIKON ? this.placeIcon(pl, 12) : ''}<span style="min-width:0;overflow:hidden;text-overflow:ellipsis">${e(p.navn)}</span></span>` : ''}
+          ${PSTED ? `<span style="margin-top:-3px;font-size:10px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:72px">${e(pl.navn)}</span>` : ''}
         </button>`; }).join('')}
     </div>`,
         prosa: () => prVis.length ? `<div data-key="h-prosa" style="font-size:22px;font-weight:400;line-height:1.75;letter-spacing:-0.01em;text-wrap:pretty;margin-top:-6px">
       ${prosaTxt}
     </div>` : '',
         rom: () => `  <section data-key="h-rom" style="display:flex;flex-direction:column;gap:12px">
-    <div style="display:flex;gap:2px;padding:4px;border-radius:22px;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.14);align-self:flex-start">
-      ${FL.map(([k, label]) => `<button data-on-click="goFloor" data-arg="${k}" style="${S({ height: 38, padding: '0 16px', borderRadius: 19, fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', background: floor === k ? PINK : 'transparent', color: floor === k ? '#2a1720' : '#c9c7c2' })}">${e(label)}</button>`).join('')}
-    </div>
+    ${KD.segHTML('etg', FL.map(([k, label]) => [k, label]), floor, 'goFloor', { pink: true, bg: 'transparent', style: 'align-self:flex-start;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.14);max-width:100%' })}
     <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:start">
       <div style="display:flex;flex-direction:column;gap:8px;min-width:0">${COLV.map(k => TILE[k]()).join('')}</div>
       <div style="display:flex;flex-direction:column;gap:8px;min-width:0">${COLH.map(k => TILE[k]()).join('')}</div>
@@ -1736,10 +1805,7 @@ try {
   </section>` : ''}`,
         strom: () => `  <section data-key="h-strom" style="display:flex;flex-direction:column;gap:12px;margin-bottom:${+(HUR.gap_strom || c.gap_strom || 0)}px">
     <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:0 4px">Strømpriser</div>
-    <div data-key="pc-seg" style="position:relative;display:grid;grid-template-columns:repeat(${MODES.length},minmax(0,1fr));padding:4px;border-radius:20px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
-      <span style="position:absolute;top:4px;bottom:4px;left:calc(4px + ${Math.max(0, MODES.findIndex(m => m[0] === mode))} * ((100% - 8px) / ${MODES.length}));width:calc((100% - 8px) / ${MODES.length});border-radius:16px;background:${PINK};box-shadow:0 4px 12px rgba(0,0,0,0.25);transition:left .4s cubic-bezier(.34,1.3,.64,1)"></span>
-      ${MODES.map(([k, label]) => { const on = k === mode, ic = { total: 'receipt_long', spot: 'show_chart', norges: 'verified' }[k]; return `<button data-on-click="pcMode" data-arg="${k}" style="position:relative;height:38px;border-radius:16px;display:flex;align-items:center;justify-content:center;gap:6px;min-width:0;font-size:13px;font-weight:600;white-space:nowrap;color:${on ? '#2a1720' : '#a9a7a2'};transition:color .25s"><span class="ms" style="font-size:17px;font-variation-settings:'FILL' ${on ? 1 : 0}">${ic}</span><span style="overflow:hidden;text-overflow:ellipsis">${e(label)}</span></button>`; }).join('')}
-    </div>
+    ${KD.segHTML('pris', MODES.map(([k, label]) => [k, label, { total: 'receipt_long', spot: 'show_chart', norges: 'verified' }[k]]), mode, 'pcMode', { pink: true })}
     <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:12px;padding:0 4px">
       <div style="display:flex;flex-direction:column;gap:3px">
         <div style="font-size:12px;color:#8e8d89">${e(priceHead.label)}</div>
@@ -1797,7 +1863,7 @@ try {
         <button data-on-click="toggleServer" data-no-haptic="1" style="display:flex;align-items:center;gap:4px;max-width:100%;font-size:36px;font-weight:600;letter-spacing:-0.03em;line-height:1;white-space:nowrap"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis">${e(KD.ud(this, 'kd_hjem').tittel === 'person' || c.tittel === 'person' ? me.navn : (CUR.navn || 'Hjem'))}</span><span class="ms" style="${S(serverChev)}">arrow_drop_down</span></button>
         <button data-on-click="openWeather" style="font-size:16px;color:#8e8d89;white-space:nowrap;text-align:left">${W.head != null ? Math.round(W.head) : '–'} °C · ${e(W.cond)}</button>
       </div>
-      <button data-on-click="openMe" data-hold="quickPerson" title="${e(me.navn)} · ${e(this.placeOf(me).navn)}" style="position:relative;width:60px;height:60px;border-radius:30px;flex:none;display:grid;place-items:center;font-size:22px;font-weight:600;background:${e(me.farge)};box-shadow:${meRing};${this.pic(me)}">${e(me.navn[0])}<span style="position:absolute;right:-6px;top:-4px;width:24px;height:24px;border-radius:12px;background:#232326;box-shadow:0 0 0 2px #141416;display:grid;place-items:center">${this.placeIcon(this.placeOf(me), 15)}</span></button>
+      <button data-on-click="quickPerson" data-hold="openMe" title="${e(me.navn)} · ${e(this.placeOf(me).navn)}" style="position:relative;width:60px;height:60px;border-radius:30px;flex:none;display:grid;place-items:center;font-size:22px;font-weight:600;background:${e(me.farge)};box-shadow:${meRing};${this.pic(me)}">${e(me.navn[0])}<span style="position:absolute;right:-6px;top:-4px;width:24px;height:24px;border-radius:12px;background:#232326;box-shadow:0 0 0 2px #141416;display:grid;place-items:center">${this.placeIcon(this.placeOf(me), 15)}</span></button>
     </div>
   </header>
 
@@ -1960,9 +2026,11 @@ try {
       min_w: 3,                                                            // under dette regnes enheten som av
       logg_antall: 5,
     };
-    static sheetCss = `.kd-sv-dev{cursor:pointer}`;
+    static sheetCss = `.kd-sv-dev{cursor:pointer;-webkit-user-select:none;user-select:none}.kd-sv-dev:active{transform:scale(.985)}
+.kd-sv-seg [data-seg-thumb]{background:linear-gradient(180deg, oklch(0.82 0.12 75 / 0.30), oklch(0.82 0.12 75 / 0.14)) !important;box-shadow:inset 0 0 0 1px oklch(0.82 0.12 75 / 0.45), inset 0 1px 0 rgba(255,255,255,0.25), 0 4px 14px rgba(0,0,0,0.3) !important}
+.kd-sv-seg [data-seg-b] .ms{transition:color .25s}.kd-sv-seg [data-seg-b][style*="font-weight:600"] .ms{color:oklch(0.82 0.12 75)}`;
 
-    constructor() { super(); this.state = { view: 'pris', sel: null }; }
+    constructor() { super(); this.state = { view: 'pris', sel: null, open: {} }; }
     now() { return new Date(window.__kdMockNowStrom || Date.now()); }
 
     /* ---------- data ---------- */
@@ -2106,10 +2174,10 @@ try {
               }), null);
             if (kwh != null) { const pr = NORGES != null ? NORGES : (today && today[s0.getHours()] != null ? today[s0.getHours()] : null); w = `${nf(kwh, 1)} kWh${pr != null ? ` · ${nf(kwh * pr)} kr` : ''}`; }
           }
-          ev.push({ t, text: `${name} ferdig`, who: w, kind: 'ok' });
+          ev.push({ t, text: `${name} ferdig`, who: w, kind: 'ok', icon: d.icon });
           continue;
         }
-        ev.push({ t, text: e.state === 'on' ? `${name} slått på` : `${name}${room} av`, who, kind: e.state });
+        ev.push({ t, text: e.state === 'on' ? `${name} slått på` : `${name}${room} av`, who, kind: e.state, icon: d ? d.icon : null });
       }
       // Spotpris over varselgrensen (siste gang den krysset i dag)
       const lim = Number(c.spot_varsel);
@@ -2128,7 +2196,8 @@ try {
 
     /* ---------- handlinger ---------- */
     pick(e, h) { h = Number(h); this.setState({ sel: this.state.sel === h ? null : h }); }
-    go(e, k) { this.setState({ view: k, sel: null }); }
+    go(e, k) { if (k && k !== this.state.view) this.setState({ view: k, sel: null }); }
+    openRoom(e, r) { const o = { ...(this.state.open || {}) }; o[r] = !o[r]; this.setState({ open: o }); }
     tapDev(e, id) {
       const d = (this._devs || []).find((x) => x.id === id); if (!d) return;
       if (d.ctl && /^(switch|fan|light|input_boolean)\./.test(d.ctl)) this.toggle(d.ctl); else this.more(d.ctl || d.pow);
@@ -2199,15 +2268,7 @@ try {
       }).join('');
       const ringLabels = [['00', 50, 1], ['06', 99, 50], ['12', 50, 99], ['18', 1, 50]].map(([t, x, y]) => `<span style="${KD.S({ position: 'absolute', left: `${x}%`, top: `${y}%`, transform: 'translate(-50%,-50%)', fontSize: 10, color: '#6d6c69', fontVariantNumeric: 'tabular-nums', pointerEvents: 'none' })}">${E(t)}</span>`).join('');
 
-      const views = VIEWS.map(([k, l, ic]) => {
-        const act = s.view === k;
-        const st = { height: 60, borderRadius: 17, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 5, background: act ? a(C.amber, 0.16) : 'transparent', boxShadow: act ? `inset 0 0 0 1px ${a(C.amber, 0.45)}` : 'none', color: act ? '#f2f1ee' : '#a9a7a2', transition: 'background .25s' };
-        const ist = { fontSize: 21, color: act ? C.amber : '#a9a7a2', fontVariationSettings: `'FILL' ${act ? 1 : 0}` };
-        return `<button data-on-click="go" data-arg="${k}" style="${KD.S(st)}">
-        <span class="ms" style="${KD.S(ist)}">${E(ic)}</span>
-        <span style="font-size:12px;font-weight:500;white-space:nowrap">${E(l)}</span>
-      </button>`;
-      }).join('');
+      const views = KD.segHTML('view', VIEWS, s.view, 'go', { h: 44, r: 22, style: 'margin:0' });
 
       const stats = [
         ...(NORGES != null || this.P.fast ? [[FAST, NORGES != null ? `${nf(NORGES)} kr` : '–', '#f2f1ee'], ['Spart i dag', saved != null ? `${nf(saved, 0)} kr` : '–', C.green]]
@@ -2219,47 +2280,97 @@ try {
       </div>`).join('');
 
       const devices = this._devs = this._devices();
-      const roomNames = [...new Set(devices.map((d) => d.room))];
-      const roomsHtml = roomNames.map((room, i) => {
-        const list = devices.filter((d) => d.room === room);
-        const w = list.filter((d) => d.on).reduce((t, d) => t + (d.w || 0), 0);
-        const rowStyle = { display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 4px', borderTop: i ? '1px solid rgba(255,255,255,0.05)' : 'none' };
-        const dot = { width: 7, height: 7, borderRadius: 4, flex: 'none', background: w >= 800 ? C.amber : w ? a(C.amber, 0.5) : '#48474a' };
-        const devs = list.map((d) => {
-          const st = { height: 32, padding: '0 11px 0 8px', borderRadius: 16, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap', background: d.on ? a(C.amber, 0.14) : '#1f1f22', color: d.on ? '#f2f1ee' : '#8e8d89', boxShadow: d.on ? `inset 0 0 0 1px ${a(C.amber, 0.35)}` : 'inset 0 0 0 1px rgba(255,255,255,0.04)', transition: 'background .2s' };
-          const ist = { fontSize: 16, color: d.on ? C.amber : '#6d6c69', fontVariationSettings: `'FILL' ${d.on ? 1 : 0}` };
-          const label = d.on && d.w != null ? `${d.name} · ${intl(d.w)} W` : d.name;
-          return `<button class="kd-sv-dev" data-on-click="tapDev" data-hold="holdDev" data-arg="${KD.e(d.id)}" style="${KD.S(st)}"><span class="ms" style="${KD.S(ist)}">${E(d.icon)}</span>${E(label)}</button>`;
-        }).join('');
-        return `<div style="${KD.S(rowStyle)}">
-        <div style="display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;padding-top:6px">
-          <div style="display:flex;align-items:center;gap:8px">
-            <span style="${KD.S(dot)}"></span>
-            <span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(room)}</span>
+      const minW = Number(c.min_w) || 0;
+      const canSw = (d) => !!d.ctl && /^(switch|fan|light|input_boolean)\./.test(d.ctl);
+      const onW = (d) => (d.on && d.w != null ? d.w : 0);
+      const rooms = [...new Set(devices.map((d) => d.room))].map((room, i) => {
+        const list = devices.filter((d) => d.room === room).map((d, j) => [d, j]).sort((x, y) => (onW(y[0]) - onW(x[0])) || ((y[0].on ? 1 : 0) - (x[0].on ? 1 : 0)) || (x[1] - y[1])).map((x) => x[0]);
+        return { room, i, list, w: list.reduce((t, d) => t + onW(d), 0), on: list.filter((d) => d.on).length };
+      }).sort((x, y) => (y.w - x.w) || (y.on - x.on) || (x.i - y.i));
+      const devSum = rooms.reduce((t, r) => t + r.w, 0);
+      const houseW = Math.max(devSum, watt != null ? watt : 0);
+      const restW = Math.max(0, houseW - devSum);
+      const roomCol = (k) => a(C.amber, [1, 0.72, 0.52, 0.38, 0.28, 0.22][Math.min(5, k)]);
+      const litRooms = rooms.filter((r) => r.w > 0);
+      const mixBar = houseW > 0 ? `<div style="display:flex;gap:3px;height:10px;border-radius:5px;overflow:hidden">
+        ${litRooms.map((r, k) => `<span title="${KD.e(r.room)}" style="flex:${r.w} 1 0;min-width:4px;background:${roomCol(k)};transition:flex .5s"></span>`).join('')}
+        ${restW > 0 ? `<span title="Annet" style="flex:${restW} 1 0;min-width:4px;background:#3a3a3e"></span>` : ''}
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px 14px;font-size:11.5px;color:#8e8d89;min-width:0">
+        ${litRooms.slice(0, 5).map((r, k) => `<span style="display:inline-flex;align-items:center;gap:6px;min-width:0;white-space:nowrap"><span style="width:8px;height:8px;border-radius:3px;background:${roomCol(k)};flex:none"></span>${E(r.room)}<span style="color:#6d6c69;font-variant-numeric:tabular-nums">${E(Math.round(r.w / houseW * 100) + ' %')}</span></span>`).join('')}
+        ${restW > 0 ? `<span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap"><span style="width:8px;height:8px;border-radius:3px;background:#3a3a3e;flex:none"></span>${E('Annet')}<span style="color:#6d6c69;font-variant-numeric:tabular-nums">${E(Math.round(restW / houseW * 100) + ' %')}</span></span>` : ''}
+      </div>` : '';
+
+      const devRow = (d, roomW) => {
+        const sw = canSw(d), isOn = !!d.on, w = d.w, swOn = sw && this.v(d.ctl) === 'on';
+        const val = w != null && (isOn || w > 0 || swOn) ? intl(w) : isOn ? 'På' : 'Av';
+        const sub = isOn && w != null && roomW > 0 ? `${Math.round(w / roomW * 100)} % av rommet` : isOn ? (w != null && w < minW ? 'Standby' : 'På') : swOn ? (w ? `Standby · ${intl(w)} W` : 'Standby') : w != null && w > 0 ? `Standby · ${intl(w)} W` : (/^climate\./.test(d.ctl || '') ? 'Varmer ikke' : 'Av');
+        const tg = sw ? `<span style="position:relative;flex:none;width:40px;height:24px;border-radius:12px;background:${swOn ? C.amber : '#3a3a3e'};transition:background .25s;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05)">
+            <span style="position:absolute;top:3px;left:${swOn ? 19 : 3}px;width:18px;height:18px;border-radius:9px;background:${swOn ? '#161618' : '#a9a7a2'};box-shadow:0 1px 3px rgba(0,0,0,0.35);transition:left .3s cubic-bezier(.34,1.4,.64,1),background .25s"></span></span>`
+          : `<span class="ms" style="flex:none;width:40px;text-align:center;font-size:20px;color:#6d6c69">chevron_right</span>`;
+        return `<div class="kd-sv-dev" data-key="dev-${KD.e(d.id)}" data-on-click="tapDev" data-hold="holdDev" data-arg="${KD.e(d.id)}" role="button" style="display:flex;align-items:center;gap:12px;min-width:0;padding:9px 10px 9px 8px;border-radius:16px;background:${isOn ? '#232326' : 'transparent'};transition:background .25s">
+          <span style="flex:none;width:36px;height:36px;border-radius:12px;display:grid;place-items:center;background:${isOn ? a(C.amber, 0.16) : '#232326'}">
+            <span class="ms" style="font-size:19px;color:${isOn ? C.amber : '#6d6c69'};font-variation-settings:'FILL' ${isOn ? 1 : 0}">${E(d.icon)}</span>
+          </span>
+          <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
+            <span style="font-size:14px;font-weight:500;color:${isOn ? '#f2f1ee' : '#a9a7a2'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(d.name)}</span>
+            <span style="font-size:11.5px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(sub)}</span>
+          </span>
+          <span style="flex:none;font-size:14px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap;color:${isOn && w ? '#f2f1ee' : '#6d6c69'}">${E(val)}${w != null && (isOn || w > 0 || swOn) ? `<span style="font-size:11px;color:#8e8d89;font-weight:400"> W</span>` : ''}</span>
+          ${tg}
+        </div>`;
+      };
+      const roomsHtml = rooms.map((r, k) => {
+        const open = !!(s.open || {})[r.room], TOP = 3;
+        const shown = open ? r.list : r.list.slice(0, TOP);
+        const pct = houseW > 0 ? r.w / houseW * 100 : 0;
+        const lit = r.w > 0;
+        return `<div data-key="room-${KD.e(r.room)}" style="display:flex;flex-direction:column;gap:10px;min-width:0;padding:14px 10px 10px;border-radius:24px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
+          <div style="display:flex;align-items:center;gap:10px;min-width:0;padding:0 6px">
+            <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+              <div style="font-size:16px;font-weight:500;letter-spacing:-0.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(r.room)}</div>
+              <div style="font-size:11.5px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(`${r.on} av ${r.list.length} på${lit && houseW ? ` · ${Math.round(pct)} % av huset` : ''}`)}</div>
+            </div>
+            <div style="flex:none;font-size:22px;font-weight:500;letter-spacing:-0.02em;font-variant-numeric:tabular-nums;white-space:nowrap;color:${lit ? '#f2f1ee' : '#6d6c69'}">${E(lit ? intl(r.w) : '0')}<span style="font-size:12px;color:#8e8d89;font-weight:400"> W</span></div>
           </div>
-          <span style="font-size:12px;color:#8e8d89;padding-left:15px;font-variant-numeric:tabular-nums;white-space:nowrap">${E(w ? `${intl(w)} W` : 'Av')}</span>
-        </div>
-        <div style="flex:none;max-width:64%;display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end">${devs}</div>
-      </div>`;
+          <div style="margin:0 6px;height:6px;border-radius:3px;background:#2a2a2d;overflow:hidden">
+            <div style="height:100%;width:${lit ? Math.max(2, pct).toFixed(1) : 0}%;border-radius:3px;background:linear-gradient(90deg, ${a(C.amber, 0.55)}, ${roomCol(k < litRooms.length ? k : 5)});box-shadow:0 0 12px ${a(C.amber, 0.35)};transition:width .6s cubic-bezier(.3,1,.4,1)"></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:2px;min-width:0">${shown.map((d) => devRow(d, r.w)).join('')}</div>
+          ${r.list.length > TOP ? `<button data-on-click="openRoom" data-arg="${KD.e(r.room)}" style="align-self:stretch;height:36px;border-radius:14px;background:#232326;display:flex;align-items:center;justify-content:center;gap:6px;font-size:12.5px;font-weight:500;color:#c9c7c2">
+            ${E(open ? 'Vis færre' : `Vis alle ${r.list.length}`)}<span class="ms" style="font-size:18px;transition:transform .3s;transform:rotate(${open ? 180 : 0}deg)">expand_more</span></button>` : ''}
+        </div>`;
       }).join('');
 
       const spot = this._series(this.P.spotpris, 'today');
       const log = this._log(devices, spot, NOW_H, today);
+      const rel = (t) => {
+        const m = Math.round((now - t) / 60e3);
+        if (m < 1) return 'nå'; if (m < 60) return `${m} min siden`;
+        const h = Math.floor(m / 60), r = m % 60;
+        return h < 6 && r ? `${h} t ${r} min siden` : `${h} t siden`;
+      };
       const logHtml = log.map((e, i, arr) => {
         const col = e.kind === 'alert' ? C.red : e.kind === 'on' ? C.amber : e.kind === 'off' ? C.blue : C.green;
-        const dot = { width: 9, height: 9, borderRadius: 5, marginTop: 5, background: col, flex: 'none' };
-        const line = { flex: 1, width: 1, background: i < arr.length - 1 ? 'rgba(255,255,255,0.1)' : 'transparent', marginTop: 4 };
-        return `<div style="display:flex;gap:14px;align-items:stretch">
-          <div style="display:flex;flex-direction:column;align-items:center;width:10px;flex:none">
-            <span style="${KD.S(dot)}"></span>
-            <span style="${KD.S(line)}"></span>
+        const ic = e.kind === 'alert' ? 'trending_up' : e.kind === 'ok' ? 'check_circle' : (e.icon || (e.kind === 'on' ? 'power' : 'power_off'));
+        const badge = e.kind === 'on' ? 'Slått på' : e.kind === 'off' ? 'Slått av' : e.kind === 'ok' ? 'Ferdig' : 'Pris';
+        const last = i === arr.length - 1;
+        return `<div data-key="ev-${i}" style="display:flex;gap:12px;align-items:stretch;min-width:0">
+          <div style="display:flex;flex-direction:column;align-items:center;width:34px;flex:none">
+            <span style="width:34px;height:34px;border-radius:12px;flex:none;display:grid;place-items:center;background:${a(col, 0.14)};box-shadow:inset 0 0 0 1px ${a(col, 0.3)}">
+              <span class="ms" style="font-size:18px;color:${col};font-variation-settings:'FILL' 1">${E(ic)}</span>
+            </span>
+            <span style="flex:1;width:2px;min-height:10px;margin:4px 0;border-radius:1px;background:${last ? 'transparent' : `linear-gradient(${a(col, 0.35)}, rgba(255,255,255,0.06))`}"></span>
           </div>
-          <div style="flex:1;display:flex;justify-content:space-between;gap:12px;padding-bottom:14px">
-            <div style="display:flex;flex-direction:column;gap:2px">
-              <div style="font-size:14px">${E(e.text)}</div>
-              <div style="font-size:12px;color:#8e8d89">${E(e.who)}</div>
+          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;padding:2px 0 ${last ? 0 : 14}px">
+            <div style="display:flex;align-items:baseline;gap:10px;min-width:0">
+              <div style="flex:1;min-width:0;font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(e.text)}</div>
+              <div style="flex:none;font-size:11.5px;color:#8e8d89;font-variant-numeric:tabular-nums;white-space:nowrap">${E(KD.hm(e.t))}</div>
             </div>
-            <div style="font-size:12px;color:#8e8d89;font-variant-numeric:tabular-nums">${E(KD.hm(e.t))}</div>
+            <div style="display:flex;align-items:center;gap:8px;min-width:0;font-size:12px;color:#8e8d89">
+              <span style="flex:none;padding:1px 7px;border-radius:7px;font-size:10.5px;font-weight:600;letter-spacing:0.02em;color:${col};background:${a(col, 0.12)}">${E(badge)}</span>
+              <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E([rel(e.t), e.who].filter(Boolean).join(' · '))}</span>
+            </div>
           </div>
         </div>`;
       }).join('');
@@ -2287,9 +2398,9 @@ try {
     </div>
   </section>
 
-  <section style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:5px;border-radius:22px;background:#1c1c1f">${views}</section>
+  <section class="kd-sv-seg">${views}</section>
 
-  <section style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">${stats}</section>
+  <section style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">${stats}</section>
 
   ${alerts.length ? `<section style="display:flex;flex-direction:column;gap:8px">
       <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:oklch(0.82 0.12 75);padding:0 4px">Krever oppmerksomhet</div>
@@ -2303,17 +2414,23 @@ try {
         </div>`).join('')}
     </section>` : ''}
 
-  ${devices.length ? `<section data-kd-rom style="display:flex;flex-direction:column;gap:2px">
-    <div style="display:flex;justify-content:space-between;align-items:baseline;padding:0 4px 8px">
-      <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Rom</div>
-      <div style="font-size:12px;color:#6d6c69;white-space:nowrap">${E(`${devices.filter((d) => d.on).length} av ${devices.length} på`)}</div>
+  ${devices.length ? `<section data-kd-rom style="display:flex;flex-direction:column;gap:10px;min-width:0">
+    <div style="display:flex;flex-direction:column;gap:10px;padding:0 4px 4px;min-width:0">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
+        <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Rom</div>
+        <div style="font-size:12px;color:#8e8d89;white-space:nowrap;font-variant-numeric:tabular-nums">${E(`${devices.filter((d) => d.on).length} av ${devices.length} på${houseW ? ` · ${intl(houseW)} W` : ''}`)}</div>
+      </div>
+      ${mixBar}
     </div>
     ${roomsHtml}
   </section>` : ''}
 
-  ${log.length ? `<section style="display:flex;flex-direction:column;gap:8px">
-    <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:0 4px">Siste hendelser</div>
-    <div style="display:flex;flex-direction:column;padding-left:4px">${logHtml}</div>
+  ${log.length ? `<section style="display:flex;flex-direction:column;gap:10px;min-width:0">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;padding:0 4px">
+      <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Siste hendelser</div>
+      <div style="font-size:12px;color:#6d6c69;white-space:nowrap">Siste døgn</div>
+    </div>
+    <div style="display:flex;flex-direction:column;padding:16px 14px;border-radius:24px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);min-width:0">${logHtml}</div>
   </section>` : ''}
 </div>`;
     }
@@ -2759,7 +2876,7 @@ try {
 
   <section data-hscroll="1" style="display:flex;gap:12px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:2px var(--kd-kant,10px)">${modesHtml}</section>
 
-  <nav style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;padding:4px;border-radius:24px;background:#1c1c1f">${tabs}</nav>
+  ${KD.segHTML('fane', T, tabK, 'tab', { pink: true, stack: true })}
   ${main}
   ${this.extras(tabK)}
 </div>`;
@@ -3590,6 +3707,10 @@ try {
  * frigate: auto                     # true/false, eller instans-ID
  * lagring: null                     # auto: sensor.*_recording_capacity (sek) → «7 d»
  * fane: null                        # navn på fane 2 (auto: «Frigate» med Frigate, ellers «Hendelser»)
+ * oppsett: liste                    # standardvisning: liste | rutenett | masonry | oversikt | fokus | 2x2 | 3kol
+ *
+ * Per bruker (HA-brukerdata 'kd_kamera'): { liste: [camera.*…], oppsett: 'masonry', bilde: { 'camera.x_high…': 'camera.x_low…' } }
+ * «bilde» = egen entitet for stillbildene i oversikten (f.eks. lav oppløsning); strømmen/enkeltvisningen bruker hovedentiteten.
  */
 (() => {
   const KD = window.KD;
@@ -3617,6 +3738,9 @@ try {
   const UD = 'kd_kamera';
   const PINK_GRAD = 'linear-gradient(135deg, oklch(0.78 0.13 350), oklch(0.9 0.05 20))';
   const RED_E = 'oklch(0.72 0.15 25)', GREEN_E = 'oklch(0.8 0.12 150)';
+  const LAYOUTS = [['liste', 'Liste', 'view_agenda'], ['rutenett', 'Rutenett', 'grid_view'], ['masonry', 'Masonry', 'dashboard'], ['oversikt', 'Oversikt', 'view_quilt'], ['fokus', 'Fokus', 'crop_free'], ['2x2', '2×2', 'grid_on'], ['3kol', '3 kolonner', 'view_week']];
+  const QUAL = id => /_high|_ultra_high/.test(id) ? 'Høy' : /_medium/.test(id) ? 'Middels' : /_low/.test(id) ? 'Lav' : /_insecure/.test(id) ? 'Usikret' : /_package/.test(id) ? 'Pakke' : '';
+  const devOf = obj => obj.replace(/_(ultra_)?(high|medium|low)(_resolution_channel|_resolution|_res)?$/, '').replace(/_insecure$/, '').replace(/_package(_camera)?$/, '');
   const dayStart = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
 
   class KDKameraCard extends KD.KDSheet {
@@ -3664,7 +3788,7 @@ try {
     }
     /** Beriker kameraoppføringer med navn, ikon og deteksjonssensorer. dedupe: én per enhet (auto-lista). */
     _camInfo(list, dedupe) {
-      const cfg = this.config, seen = new Set();
+      const cfg = this.config, seen = new Set(), bild = (KD.ud(this, UD) || {}).bilde || {};
       return list.map(c => {
         const id = c.entity, obj = id.split('.')[1];
         const pkg = /_package(_camera)?$/.test(obj) || /pakke|package/i.test(c.frigate || '');
@@ -3686,7 +3810,8 @@ try {
         const motion = c.bevegelse || (pkg ? null : devs.map(d => `binary_sensor.${d}_motion`).find(x => this.st(x)) || null);
         const key = dedupe ? dev + (pkg ? '_pkg' : '') : id;
         if (seen.has(key)) return null; seen.add(key);
-        return { ...c, id, obj, dev, pkg, name, icon, det, motion, frigate: c.frigate || null, key: obj };
+        const snap = bild[id] && bild[id] !== id && this.st(bild[id]) ? bild[id] : null;
+        return { ...c, id, obj, dev, pkg, name, icon, det, motion, snap, frigate: c.frigate || null, key: obj };
       }).filter(Boolean).map((c, i, all) => {
         // pakke-deteksjonen hører til pakkekameraet når enheten har et
         if (!c.pkg && c.det.package && all.some(x => x.pkg && x.dev === c.dev)) { const det = { ...c.det }; delete det.package; return { ...c, det }; }
@@ -3707,7 +3832,7 @@ try {
       return v == null ? '–' : `${Math.round((this.unit(id) === 'd' ? v * 86400 : this.unit(id) === 'h' ? v * 3600 : v) / 86400)} d`;
     }
     img(c, which) {
-      const st = this.st(c.id);
+      const st = this.st(which === 0 && c.snap ? c.snap : c.id);
       if (!st || KD.BAD.has(st.state)) return null;
       const p = st.attributes.entity_picture;
       if (!p) return null;
@@ -3801,6 +3926,91 @@ try {
       this.toggle(id);
     }
     open(ev, id) { this.setState({ view: id }); }
+    goTab(ev, v) { this.go(ev, 'tab:' + v); }
+
+    /* ---------- visningsoppsett (per bruker) ---------- */
+    layout() { const u = (KD.ud(this, UD) || {}).oppsett || this.config.oppsett; return LAYOUTS.some(x => x[0] === u) ? u : 'liste'; }
+    setLayout(ev, v) { if (!LAYOUTS.some(x => x[0] === v) || v === this.layout()) return; KD.udSave(this, UD, { ...KD.ud(this, UD), oppsett: v }); this.setState({ pg: 0, fi: 0 }); this.haptic('selection'); }
+    feat(ev, k) { if (this.state.feat === k) return; this.setState({ feat: k }); this.haptic('selection'); }
+    pageGo(ev, d) { this.setState(s => ({ pg: Math.max(0, (s.pg || 0) + Number(d)) })); this.haptic('selection'); }
+    fokScroll(ev, a0, el) {
+      el = el || ev.target; const w = el.clientWidth || 1, i = Math.round(el.scrollLeft / w);
+      if (i !== (this.state.fi || 0) && i >= 0 && i < el.children.length) this.setState({ fi: i });
+    }
+    fokGo(ev, d) {
+      const el = this.$('[data-kd-fokus]'), n = el ? el.children.length : 0; if (!n) return;
+      const i = Math.max(0, Math.min(n - 1, typeof d === 'string' && d[0] === '=' ? Number(d.slice(1)) : (this.state.fi || 0) + Number(d)));
+      el.scrollTo({ left: i * el.clientWidth, behavior: 'smooth' }); this.setState({ fi: i }); this.haptic('selection');
+    }
+    layoutPickHTML() {
+      const cur = this.layout(), L = LAYOUTS.find(x => x[0] === cur);
+      return `<div data-key="kam-lay" data-lay="Visning" data-lay-navn="Visning (oppsett)" style="display:flex;flex-direction:column;gap:6px;min-width:0">
+    <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:0 4px;min-width:0">
+      <span style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Visning</span>
+      <span style="font-size:12px;color:#c9c7c2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(L[1])}</span>
+    </div>
+    ${KD.segHTML('kam-oppsett', LAYOUTS.map(([k, , icon]) => [k, '', icon]), cur, 'setLayout', { small: true })}
+  </div>`;
+    }
+    /** Én kameraflis. sz: lg | md | sm. tap: 'feat' gjør hele flisa til knapp som løfter kameraet fram. */
+    tileHTML(f, o = {}) {
+      const sz = o.sz || 'lg', lg = sz === 'lg', sm = sz === 'sm';
+      const box = o.h ? `height:${o.h}` : `aspect-ratio:${o.ar || '16/9'}`;
+      const badge = sm ? `<span style="display:flex;align-items:center;gap:4px">${f.act ? `<span style="width:18px;height:18px;border-radius:9px;display:grid;place-items:center;background:${a(C.pink, 0.95)};color:#2a1720"><span class="ms" style="font-size:12px;font-variation-settings:'FILL' 1">${e(f.motionIcon)}</span></span>` : `<span style="width:7px;height:7px;border-radius:4px;background:${f.avail ? C.red : '#6d6c69'};box-shadow:0 0 0 2px rgba(0,0,0,0.35)"></span>`}</span>`
+        : `<span style="${S({ ...f.live, ...(lg ? {} : { fontSize: 9, padding: '2px 6px' }) })}">${t(f.liveT)}</span>
+            <span style="${S({ ...f.motion, ...(lg ? {} : { fontSize: 9, padding: '2px 6px' }) })}"><span class="ms" style="font-size:${lg ? 13 : 11}px;font-variation-settings:'FILL' 1">${t(f.motionIcon)}</span>${lg ? t(f.motionT) : ''}</span>`;
+      const tap = o.tap === 'feat' ? ` data-on-click="feat" data-arg="${e(f.key)}"` : '';
+      return `<div data-key="${e((o.kp || '') + f.key)}"${tap} style="position:relative;${box};border-radius:${sm ? 14 : lg ? 20 : 18}px;overflow:hidden;background:#0c0c0d;min-width:0;${tap ? 'cursor:pointer;' : ''}${o.style || ''}">
+          ${this.slotHTML(f.src, sm ? '' : f.ph)}
+          ${o.live ? `<div data-keep data-cam-live="${e(f.id)}" style="position:absolute;inset:0"></div>` : ''}
+          <div style="position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(0,0,0,0.35),transparent 30%,transparent 62%,rgba(0,0,0,0.55))"></div>
+          <div style="position:absolute;left:${sm ? 7 : lg ? 12 : 10}px;top:${sm ? 7 : lg ? 10 : 9}px;display:flex;align-items:center;gap:${lg ? 6 : 4}px;pointer-events:none">${badge}</div>
+          ${sm ? '' : `<button data-on-click="open" data-arg="${e(f.key)}" title="Åpne" style="position:absolute;right:${lg ? 10 : 8}px;top:${lg ? 8 : 6}px;width:${lg ? 34 : 30}px;height:${lg ? 34 : 30}px;border-radius:${lg ? 17 : 15}px;background:rgba(20,20,22,0.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:grid;place-items:center"><span class="ms" style="font-size:${lg ? 18 : 16}px">open_in_full</span></button>`}
+          <span style="position:absolute;left:${sm ? 8 : lg ? 12 : 10}px;right:${lg ? '45%' : sm ? '6px' : '10px'};bottom:${sm ? 6 : lg ? 10 : 8}px;font-size:${sm ? 11 : lg ? 13 : 12}px;font-weight:600;pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t(f.name)}</span>
+          ${lg ? `<span style="position:absolute;right:12px;bottom:10px;max-width:42%;font-size:11px;color:#c9c7c2;pointer-events:none;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t(f.meta)}</span>` : ''}
+          ${o.ring ? `<div style="position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 2px oklch(0.78 0.13 350 / 0.9);pointer-events:none"></div>` : ''}
+        </div>`;
+    }
+    /** Alle-visningen i valgt oppsett */
+    gridHTML(feeds) {
+      const s = this.state, L = this.layout(), n = feeds.length;
+      const empty = `<div style="padding:24px 0;text-align:center;font-size:13px;color:#6d6c69">Ingen kameraer funnet</div>`;
+      if (!n) return `<section data-lay="Kameraer" style="display:grid;grid-template-columns:minmax(0,1fr)">${empty}</section>`;
+      const grid = (cols, html) => `<section data-lay="Kameraer" data-key="kam-grid-${L}" style="display:grid;grid-template-columns:repeat(${cols},minmax(0,1fr));gap:8px;min-width:0">${html}</section>`;
+      const nav = (btn, mid) => `<div style="display:flex;align-items:center;gap:8px;min-width:0">${btn('-1', 'chevron_left')}<div style="flex:1;min-width:0;display:flex;justify-content:center;align-items:center;gap:6px">${mid}</div>${btn('1', 'chevron_right')}</div>`;
+      if (L === 'rutenett') return grid(2, feeds.map(f => this.tileHTML(f, { sz: 'md', ar: '4/3' })).join(''));
+      if (L === '3kol') return grid(3, feeds.map(f => this.tileHTML(f, { sz: 'sm', ar: '16/9' })).join(''));
+      if (L === 'masonry') {
+        const col = c => `<div style="display:flex;flex-direction:column;gap:8px;min-width:0">${feeds.map((f, i) => [f, i]).filter(([, i]) => i % 2 === c).map(([f, i]) => this.tileHTML(f, { sz: 'md', ar: i % 4 === 0 || i % 4 === 3 ? '3/4' : '4/3' })).join('')}</div>`;
+        return `<section data-lay="Kameraer" data-key="kam-grid-${L}" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:start;min-width:0">${col(0)}${col(1)}</section>`;
+      }
+      if (L === '2x2') {
+        const pages = Math.ceil(n / 4), pg = Math.min(s.pg || 0, pages - 1);
+        const btn = (d, icon) => { const dis = d < 0 ? pg === 0 : pg >= pages - 1; return `<button class="kd-cam-ed" data-on-click="pageGo" data-arg="${d}" ${dis ? 'disabled' : ''} style="width:40px;height:40px;border-radius:20px;background:#1c1c1f;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:22px">${icon}</span></button>`; };
+        return `<section data-lay="Kameraer" data-key="kam-grid-${L}" style="display:flex;flex-direction:column;gap:8px;min-width:0">
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;min-width:0">${feeds.slice(pg * 4, pg * 4 + 4).map(f => this.tileHTML(f, { sz: 'md', ar: '16/10' })).join('')}</div>
+      ${pages > 1 ? nav(btn, Array.from({ length: pages }, (_, i) => `<span style="width:${i === pg ? 18 : 7}px;height:7px;border-radius:4px;background:${i === pg ? '#f2f1ee' : '#48474a'};transition:width .3s"></span>`).join('') + `<span style="font-size:12px;color:#8e8d89;margin-left:6px;font-variant-numeric:tabular-nums">${pg * 4 + 1}–${Math.min(n, pg * 4 + 4)} av ${n}</span>`) : ''}
+    </section>`;
+      }
+      if (L === 'oversikt') {
+        const F = feeds.find(f => f.key === s.feat) || feeds[0], rest = feeds.filter(f => f !== F);
+        return `<section data-lay="Kameraer" data-key="kam-grid-${L}" style="display:flex;flex-direction:column;gap:8px;min-width:0">
+      ${this.tileHTML(F, { sz: 'lg', ar: '16/10', live: true, kp: 'feat-' })}
+      ${rest.length ? `<div style="display:grid;grid-template-columns:repeat(${rest.length > 4 ? 4 : 3},minmax(0,1fr));gap:6px;min-width:0">${rest.map(f => this.tileHTML(f, { sz: 'sm', ar: '16/10', tap: 'feat' })).join('')}</div>` : ''}
+    </section>`;
+      }
+      if (L === 'fokus') {
+        const fi = Math.min(s.fi || 0, n - 1), F = feeds[fi];
+        const btn = (d, icon) => { const dis = d < 0 ? fi === 0 : fi >= n - 1; return `<button class="kd-cam-ed" data-on-click="fokGo" data-arg="${d}" ${dis ? 'disabled' : ''} style="width:44px;height:44px;border-radius:22px;background:#1c1c1f;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:24px">${icon}</span></button>`; };
+        return `<section data-lay="Kameraer" data-key="kam-grid-${L}" style="display:flex;flex-direction:column;gap:10px;min-width:0">
+      <div data-hscroll="1" data-kd-fokus="1" data-on-scroll="fokScroll" style="display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;border-radius:24px;min-width:0">
+        ${feeds.map((f, i) => `<div data-key="fok-${e(f.key)}" style="flex:none;width:100%;scroll-snap-align:center;scroll-snap-stop:always">${this.tileHTML(f, { sz: 'lg', ar: '3/4', live: i === fi, kp: 'fk-', style: 'border-radius:24px' })}</div>`).join('')}
+      </div>
+      ${nav(btn, `<span style="display:flex;flex-direction:column;align-items:center;min-width:0;gap:4px"><span style="font-size:14px;font-weight:500;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t(F.name)}</span><span style="display:flex;gap:5px">${feeds.map((f, i) => `<button data-on-click="fokGo" data-arg="=${i}" title="${e(f.name)}" style="width:${i === fi ? 18 : 7}px;height:7px;border-radius:4px;background:${i === fi ? '#f2f1ee' : f.act ? C.pink : '#48474a'};transition:width .3s"></button>`).join('')}</span></span>`)}
+    </section>`;
+      }
+      return grid(1, feeds.map(f => this.tileHTML(f, { sz: 'lg' })).join(''));
+    }
 
     /* ---------- tilpass kameraer (per bruker) ---------- */
     editTog() { this.setState({ edit: !this.state.edit, pickFor: null, tab: 'live', view: 'alle' }); this.haptic('selection'); }
@@ -3809,7 +4019,18 @@ try {
       const l = this.userList() || this.cams().map(c => c.id);
       return l.filter((x, i) => l.indexOf(x) === i);
     }
-    _saveList(l) { KD.udSave(this, UD, { liste: l }); this.haptic('selection'); }
+    _saveList(l) { KD.udSave(this, UD, { ...KD.ud(this, UD), liste: l }); this.haptic('selection'); }
+    /** Andre camera.* for samme enhet (høy/middels/lav oppløsning, usikret …) – kandidater til stillbilde-entitet */
+    siblings(id) {
+      const h = this._hass, R = (h && h.entities) || {}, dv = R[id] && R[id].device_id, d0 = devOf(id.split('.')[1]);
+      return this.find(/^camera\./).filter(x => x !== id && !/_package(_camera)?$/.test(x) && (dv ? R[x] && R[x].device_id === dv : devOf(x.split('.')[1]) === d0));
+    }
+    camSnap(ev, arg) {
+      const k = arg.indexOf('|'), id = arg.slice(0, k), snap = arg.slice(k + 1), u = KD.ud(this, UD) || {}, b = { ...(u.bilde || {}) };
+      if (!snap || snap === id) delete b[id]; else b[id] = snap;
+      KD.udSave(this, UD, { ...u, bilde: b }); this.haptic('selection');
+    }
+    edSearch(ev) { this.setState({ edQ: ev.target.value }); }
     camMove(ev, arg) {
       const [i0, d] = arg.split('|'), i = Number(i0), j = i + (d === 'up' ? -1 : 1), l = this.editList();
       if (j < 0 || j >= l.length) return;
@@ -3818,7 +4039,7 @@ try {
     }
     camDel(ev, i) { const l = this.editList(); l.splice(Number(i), 1); this.setState({ pickFor: null }); this._saveList(l); }
     camAdd(ev, id) { const l = this.editList(); if (!l.includes(id)) l.push(id); this._saveList(l); }
-    camPick(ev, i) { this.setState({ pickFor: this.state.pickFor === String(i) ? null : String(i) }); this.haptic('selection'); }
+    camPick(ev, i) { this.setState({ pickFor: this.state.pickFor === String(i) ? null : String(i), edQ: '' }); this.haptic('selection'); }
     camSet(ev, arg) {
       const k = arg.indexOf('|'), i = Number(arg.slice(0, k)), id = arg.slice(k + 1), l = this.editList();
       const j = l.indexOf(id);
@@ -3826,7 +4047,7 @@ try {
       l[i] = id;
       this.setState({ pickFor: null }); this._saveList(l);
     }
-    editReset() { KD.udSave(this, UD, {}); this.setState({ pickFor: null }); this.haptic('selection'); }
+    editReset() { const u = KD.ud(this, UD) || {}; KD.udSave(this, UD, u.oppsett ? { oppsett: u.oppsett } : {}); this.setState({ pickFor: null }); this.haptic('selection'); }
     editHTML() {
       const s = this.state, cfg = this.config, ids = this.editList();
       const cfgE = (Array.isArray(cfg.kameraer) ? cfg.kameraer : []).map(x => typeof x === 'string' ? { entity: x } : { ...x }).filter(Boolean);
@@ -3838,6 +4059,16 @@ try {
       });
       const ico = (icon, col) => `<span class="ms" style="font-size:20px;color:${col || '#f2f1ee'}">${icon}</span>`;
       const sq = 'width:36px;height:36px;border-radius:18px;display:grid;place-items:center;flex:none;background:rgba(255,255,255,0.06)';
+      // stillbilde-entitet: bare når enheten har flere camera.* (f.eks. høy/lav oppløsning)
+      const sibs = c => {
+        const sb = c.pkg ? [] : this.siblings(c.id); if (!sb.length) return '';
+        const cur = c.snap || c.id;
+        const chip = (id, label) => { const sel = id === cur; return `<button class="kd-cam-ed" data-on-click="camSnap" data-arg="${e(c.id + '|' + id)}" title="${e(id)}" style="${S({ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0, maxWidth: '100%', height: 30, padding: '0 11px', borderRadius: 15, fontSize: 12, fontWeight: 500, background: sel ? 'oklch(0.78 0.13 350 / 0.2)' : 'rgba(255,255,255,0.06)', boxShadow: sel ? 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.7)' : 'none', color: sel ? '#f2f1ee' : '#c9c7c2' })}"><span style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(label)}</span></button>`; };
+        return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:0 2px 2px;min-width:0">
+          <span style="display:flex;align-items:center;gap:4px;font-size:11px;color:#8e8d89;flex:none"><span class="ms" style="font-size:14px">photo_library</span>Stillbilde</span>
+          ${chip(c.id, 'Samme' + (QUAL(c.id) ? ' · ' + QUAL(c.id) : ''))}${sb.map(id => chip(id, QUAL(id) || this.fname(id))).join('')}
+        </div>`;
+      };
       const rows = info.map((c, i) => {
         const open = s.pickFor === String(i), src = this.img(c, 0), ok = !!this.st(c.id);
         return `<div data-key="ed-${e(c.id)}" style="display:flex;flex-direction:column;gap:10px;padding:8px;border-radius:20px;background:#1c1c1f;box-shadow:${open ? 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.55)' : 'none'};min-width:0">
@@ -3846,7 +4077,7 @@ try {
           <button class="kd-cam-ed" data-on-click="camPick" data-arg="${i}" title="Velg kamera" style="min-width:0;display:flex;align-items:center;gap:6px;text-align:left;padding:2px 0">
             <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
               <span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(c.name)}</span>
-              <span style="font-size:11px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ok ? e(c.id) : 'Utilgjengelig · ' + e(c.id)}</span>
+              <span style="display:flex;align-items:flex-start;gap:4px;min-width:0;font-size:11px;color:${ok ? '#8e8d89' : RED_E}"><span class="ms" style="font-size:13px;flex:none">videocam</span><span style="min-width:0;overflow:hidden;word-break:break-all;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.35;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">${ok ? '' : 'Utilgjengelig · '}${e(c.id)}</span></span>
             </span>
             <span class="ms" style="font-size:18px;color:#8e8d89;flex:none">${open ? 'expand_less' : 'expand_more'}</span>
           </button>
@@ -3856,15 +4087,19 @@ try {
             <button class="kd-cam-ed" data-on-click="camDel" data-arg="${i}" title="Fjern" style="${sq}"><span class="ms" style="font-size:20px;color:${RED_E};font-variation-settings:'FILL' 1">remove_circle</span></button>
           </span>
         </div>
-        ${open ? `<div style="display:flex;flex-wrap:wrap;gap:6px;padding:2px 2px 4px;min-width:0">${all.map(id => {
+        ${sibs(c)}
+        ${open ? `<div style="display:flex;flex-direction:column;gap:8px;min-width:0">
+          <div style="display:flex;align-items:center;gap:8px;height:40px;padding:0 14px;border-radius:20px;background:#232326;min-width:0"><span class="ms" style="font-size:18px;color:#8e8d89">search</span><input data-on-input="edSearch" value="${e(s.edQ || '')}" placeholder="Søk etter camera.*" style="flex:1;min-width:0;border:0;outline:none;background:transparent;color:#f2f1ee;font:inherit;font-size:13px"></div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;padding:2px 2px 4px;min-width:0">${all.filter(id => { const q = String(s.edQ || '').trim().toLowerCase(); return !q || id.toLowerCase().includes(q) || String(this.fname(id)).toLowerCase().includes(q); }).map(id => {
           const sel = id === c.id, used = !sel && ids.includes(id);
           return `<button class="kd-cam-ed" data-on-click="camSet" data-arg="${e(i + '|' + id)}" title="${e(id)}" style="${S({ display: 'flex', alignItems: 'center', gap: 6, maxWidth: '100%', minWidth: 0, height: 34, padding: '0 12px', borderRadius: 17, fontSize: 12, fontWeight: 500, background: sel ? 'oklch(0.78 0.13 350 / 0.2)' : 'rgba(255,255,255,0.06)', boxShadow: sel ? 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.7)' : 'none', color: sel ? '#f2f1ee' : used ? '#6d6c69' : '#c9c7c2' })}">${used ? '<span class="ms" style="font-size:14px">swap_vert</span>' : ''}<span style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(this.fname(id))}</span></button>`;
-        }).join('')}</div>` : ''}
+        }).join('')}</div></div>` : ''}
       </div>`;
       }).join('');
       const add = all.filter(id => !ids.includes(id));
       const head = x => `<div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:6px 4px 0">${x}</div>`;
-      return `${head('Kameraer som vises')}
+      return `${this.layoutPickHTML()}
+  ${head('Kameraer som vises')}
   <section style="display:flex;flex-direction:column;gap:8px;min-width:0">
     ${rows || `<div style="padding:24px 0;text-align:center;font-size:13px;color:#6d6c69">Ingen kameraer valgt</div>`}
   </section>
@@ -3944,12 +4179,11 @@ try {
       const ctrlStyle = (on, col, ok = true) => ({
         style: { height: 72, borderRadius: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, background: on ? a(col, 0.18) : '#1c1c1f', boxShadow: on ? `inset 0 0 0 1px ${a(col, 0.5)}` : 'none', transition: 'background .2s', opacity: ok ? 1 : 0.45 },
         iconStyle: { fontSize: 24, color: on ? col : '#f2f1ee', fontVariationSettings: `'FILL' ${on ? 1 : 0}` } });
-      const tabs = [['live', 'Direkte'], ['frigate', cfg.fane || (fr ? 'Frigate' : 'Hendelser')]].map(([k, label]) => ({ k, label,
-        style: { height: 44, borderRadius: 18, fontSize: 14, fontWeight: 500, background: s.tab === k ? PINK : 'transparent', color: s.tab === k ? '#2a1720' : '#a9a7a2', transition: 'background .25s' } }));
+      const tabs = [['live', 'Direkte'], ['frigate', cfg.fane || (fr ? 'Frigate' : 'Hendelser')]].map(([k, label]) => ({ k, label }));
       const chips = [chip('alle', 'Alle', 'grid_view'), ...CAMS.map(c => chip(c.key, c.name, c.icon, !!this.active(c))), ...(isLive ? [chip('logg', 'Logg', 'list')] : [])];
       const feeds = CAMS.map(c => {
         const act = this.active(c), avail = this.ok(c.id), o = act && act !== 'motion' ? OBJ[act] : null;
-        return { key: c.key, name: c.name, src: this.img(c, 0), ph: avail ? `Stillbilde fra ${c.name}` : `${c.name} er utilgjengelig`, liveT: avail ? (this.v(c.id) === 'recording' ? '● OPPTAK' : 'LIVE') : 'AV', live: live(avail),
+        return { key: c.key, id: c.id, act: !!act, avail, name: c.name, src: this.img(c, 0), ph: avail ? `Stillbilde fra ${c.name}` : `${c.name} er utilgjengelig`, liveT: avail ? (this.v(c.id) === 'recording' ? '● OPPTAK' : 'LIVE') : 'AV', live: live(avail),
           motionT: act ? (o ? o[0] : 'Bevegelse') : '', motionIcon: o ? o[1] : 'directions_run',
           motion: { display: act ? 'flex' : 'none', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 600, padding: '3px 7px', borderRadius: 7, background: a(C.pink, 0.9), color: '#2a1720' },
           meta: act ? 'Bevegelse nå' : this.model(c) };
@@ -3992,28 +4226,13 @@ try {
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
   </header>
 ${s.edit ? this.editHTML() : `
-  <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:2px;padding:4px;border-radius:22px;background:#1c1c1f">
-    ${tabs.map(x => `<button data-on-click="go" data-arg="tab:${x.k}" style="${S(x.style)}">${t(x.label)}</button>`).join('')}
-  </div>
+  ${KD.segHTML('kam-fane', tabs.map(x => [x.k, x.label, x.k === 'live' ? 'videocam' : 'history']), s.tab, 'goTab', { pink: true, h: 40 })}
 
   <nav data-hscroll style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:0 var(--kd-kant,10px)">
     ${chips.map(c => `<button data-on-click="go" data-arg="view:${e(c.k)}" style="${S(c.style)}"><span class="ms" style="font-size:16px">${t(c.icon)}</span>${t(c.label)}<span style="${S(c.dot)}"></span></button>`).join('')}
   </nav>
 
-  ${isLive && s.view === 'alle' ? `<section style="display:grid;grid-template-columns:minmax(0,1fr);gap:8px">
-      ${feeds.map(f => `<div data-key="${e(f.key)}" style="position:relative;aspect-ratio:16/9;border-radius:20px;overflow:hidden;background:#0c0c0d">
-          ${this.slotHTML(f.src, f.ph)}
-          <div style="position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(0,0,0,0.35),transparent 30%,transparent 70%,rgba(0,0,0,0.45))"></div>
-          <div style="position:absolute;left:12px;top:10px;display:flex;align-items:center;gap:6px;pointer-events:none">
-            <span style="${S(f.live)}">${t(f.liveT)}</span>
-            <span style="${S(f.motion)}"><span class="ms" style="font-size:13px;font-variation-settings:'FILL' 1">${t(f.motionIcon)}</span>${t(f.motionT)}</span>
-          </div>
-          <button data-on-click="open" data-arg="${e(f.key)}" title="Åpne" style="position:absolute;right:10px;top:8px;width:34px;height:34px;border-radius:17px;background:rgba(20,20,22,0.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:grid;place-items:center"><span class="ms" style="font-size:18px">open_in_full</span></button>
-          <span style="position:absolute;left:12px;bottom:10px;font-size:13px;font-weight:600;pointer-events:none">${t(f.name)}</span>
-          <span style="position:absolute;right:12px;bottom:10px;font-size:11px;color:#c9c7c2;pointer-events:none;font-variant-numeric:tabular-nums;white-space:nowrap">${t(f.meta)}</span>
-        </div>`).join('')}
-      ${!n ? `<div style="padding:24px 0;text-align:center;font-size:13px;color:#6d6c69">Ingen kameraer funnet</div>` : ''}
-    </section>` : ''}
+  ${isLive && s.view === 'alle' ? this.layoutPickHTML() + this.gridHTML(feeds) : ''}
 
   ${isLive && single ? `<section data-key="one-${e(one.id)}" style="position:relative;aspect-ratio:4/3;border-radius:24px;overflow:hidden;background:#0c0c0d">
       ${this.slotHTML(one.src, one.ph)}
@@ -4921,9 +5140,7 @@ try {
         const maxR = Math.max(1, ...rows.map(r => Math.max(r.u, r.e)));
         const stack = rows.filter(r => r.u).map((r, i) => ({ width: `${r.u / Math.max(usedSum, estSum, 1) * 100}%`, background: al(B, 1 - i * 0.08) })).concat(estSum ? [{ width: `${estSum / Math.max(usedSum, estSum) * 100}%`, background: al(B, 0.18) }] : []);
         html += `
-    <div style="display:flex;padding:3px;border-radius:14px;background:#1c1c1f;gap:2px;align-self:flex-start">
-      ${[['dag', 'I dag'], ['uke', 'Uke'], ['maned', 'Måned'], ['ar', 'År']].map(([k, label]) => `<button data-on-click="period" data-arg="${k}" style="${S({ height: 32, padding: '0 14px', borderRadius: 11, fontSize: 13, fontWeight: 500, background: s.period === k ? '#323235' : 'transparent', color: s.period === k ? '#f2f1ee' : '#8e8d89' })}"><span>${label}</span></button>`).join('')}
-    </div>
+    ${KD.segHTML('periode', [['dag', 'I dag'], ['uke', 'Uke'], ['maned', 'Måned'], ['ar', 'År']], s.period, 'period', { small: true })}
     <div style="background:#1c1c1f;border:1px solid rgba(255,255,255,0.05);border-radius:24px;padding:18px;display:flex;flex-direction:column;gap:14px">
       <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:12px">
         <div style="flex:none;display:flex;flex-direction:column;gap:4px;white-space:nowrap">
@@ -5042,9 +5259,7 @@ try {
       </button>`).join('')}
   </section>
 
-  <nav style="display:grid;grid-template-columns:repeat(5,1fr);padding:4px;border-radius:18px;background:#1c1c1f;gap:2px;position:sticky;top:8px;z-index:2;box-shadow:0 8px 20px rgba(0,0,0,0.35)">
-    ${tabs.map(t => `<button data-on-click="tab" data-arg="${t.k}" style="${S(t.style)}"><span class="ms" style="${S(t.iconStyle)}"><span>${t.icon}</span></span><span>${t.label}</span></button>`).join('')}
-  </nav>
+  ${KD.segHTML('fane', [['now', 'Nå', 'water_drop'], ['zones', 'Soner', 'sprinkler'], ['prog', 'Program', 'event_repeat'], ['use', 'Forbruk', 'bar_chart'], ['hist', 'Historikk', 'calendar_month']], s.tab, 'tab', { stack: true, style: 'position:sticky;top:8px;z-index:2;box-shadow:0 8px 20px rgba(0,0,0,0.35)' })}
   ${html}
 </div>`;
     }
@@ -5211,9 +5426,7 @@ try {
     <div style="font-size:14px;color:#8e8d89">${subHtml}</div>
   </section>
 
-  <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:2px;padding:4px;border-radius:20px;background:#1c1c1f">
-    ${tabs.map(t => `<button data-on-click="tab" data-arg="${t.k}" style="${S(t.style)}"><span>${t.label}</span></button>`).join('')}
-  </div>
+  ${KD.segHTML('fane', [['enkel', 'Enkel'], ['avansert', 'Avansert']], s.tab, 'tab', { pink: true })}
 
   <section style="display:flex;flex-direction:column;gap:8px">
     ${cards || `<div style="padding:16px;border-radius:24px;background:#1c1c1f;font-size:13px;color:#8e8d89">Legg til planter i KI Planter-integrasjonen.</div>`}
@@ -5447,9 +5660,7 @@ try {
     </div>
   </section>
 
-  <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:2px;padding:4px;border-radius:20px;background:#1c1c1f">
-    ${tabs.map(t => `<button data-on-click="tab" data-arg="${t.k}" style="${S(t.style)}"><span>${t.label}</span></button>`).join('')}
-  </div>
+  ${KD.segHTML('fane', [['sleep', 'Søvn'], ['wake', 'Vekking']], s.tab, 'tab', { pink: true })}
 
   ${s.tab === 'sleep' ? `
     <section style="display:flex;flex-direction:column">
@@ -5913,6 +6124,13 @@ try {
   // [nøkkel i designet, tekst] → fan_speed-verdier som godtas (første som finnes i fan_speed_list brukes)
   const SUG = [['quiet', 'Stille', ['quiet', 'silent', 'low']], ['std', 'Standard', ['balanced', 'standard', 'medium', 'normal']],
     ['turbo', 'Turbo', ['turbo', 'strong', 'high']], ['max', 'Maks', ['max', 'max_plus', 'maximum', 'full']]];
+  // norske navn på valg i select-entiteter (moppeintensitet, moppemodus, rengjøringsmodus …)
+  const OPT = { off: 'Av', on: 'På', mild: 'Mild', low: 'Lav', slight: 'Lav', moderate: 'Middels', medium: 'Middels', middle: 'Middels', intense: 'Intens', high: 'Høy',
+    standard: 'Standard', normal: 'Normal', deep: 'Dyp', deep_plus: 'Dyp+', fast: 'Rask', custom: 'Egen', custom_water_flow: 'Egen', smart_mode: 'Smart', extreme: 'Ekstrem',
+    sweeping: 'Støvsug', mopping: 'Mopp', sweeping_and_mopping: 'Begge', mopping_after_sweeping: 'Etter', vacuum: 'Støvsug', mop: 'Mopp', vacuum_and_mop: 'Begge',
+    quiet: 'Stille', silent: 'Stille', balanced: 'Normal', turbo: 'Turbo', max: 'Maks', strong: 'Sterk' };
+  const SNAVN = { mop_intensity: 'Vannmengde', water_box_mode: 'Vannmengde', water_level: 'Vannmengde', water_volume: 'Vannmengde', mop_mode: 'Moppemodus', mop_route: 'Moppemodus',
+    cleaning_mode: 'Rengjøringsmodus', clean_mode: 'Rengjøringsmodus', suction_level: 'Sugenivå', mop_pad_humidity: 'Moppefukt' };
 
   class KDStovsugerCard extends KD.KDSheet {
     static head = ['cleaning_services', 'Støvsuger', 'Sir Sweeps'];
@@ -5953,7 +6171,9 @@ try {
       ],
       mopp_pa: 'moderate',
     };
-    static sheetCss = `.kd-vac-ctl:active{transform:scale(0.95)}`;
+    static sheetCss = `.kd-vac-ctl:active{transform:scale(0.96)}
+@keyframes kdvspin{to{transform:rotate(360deg)}}
+@keyframes kdvpulse{0%,100%{opacity:1}50%{opacity:.35}}`;
 
     constructor() { super(); this.state = { tab: 'clean', zone: null }; }
 
@@ -5978,6 +6198,7 @@ try {
         stille: this.pick('stille', `switch.${b}_do_not_disturb`, `switch.${b}_dnd`),
         stille_fra: this.pick('stille_fra', `time.${b}_do_not_disturb_begin`),
         stille_til: this.pick('stille_til', `time.${b}_do_not_disturb_end`),
+        rom_na: this.pick('rom_na', `sensor.${b}_current_room`, `sensor.${b}_room`),
       };
     }
     rooms() {
@@ -6009,6 +6230,22 @@ try {
         const reset = p.reset || this.find(new RegExp(`^button\\.${b}_reset_.*${k.replace('filter', '(air_)?filter')}`))[0] || null;
         return { navn: p.navn, id, left, life, pct: KD.clamp(Math.round(left / life * 100), 0, 100), reset };
       }).filter(Boolean);
+    }
+    /** select-entiteter for modus (moppeintensitet/-modus, rengjøringsmodus …) – config `valg: [select.x]` legger til egne */
+    selects() {
+      const b = this.base, E = this.ents();
+      const ids = [E.mopp, ...(Array.isArray(this.config.valg) ? this.config.valg : []), ...Object.keys(SNAVN).map(k => `select.${b}_${k}`)];
+      return [...new Set(ids.filter(Boolean))].filter(id => this.ok(id)).map(id => {
+        const k = id.slice(`select.${b}_`.length);
+        return { id, navn: SNAVN[k] || this.fname(id).replace(/^sir sweeps a lot\s*/i, ''), opts: (this.at(id, 'options', []) || []).map(String) };
+      }).filter(x => x.opts.length > 1 && x.opts.length <= 7);
+    }
+    /** kartbilder: image./camera.-entiteter med robotens navn som har et bilde */
+    maps() {
+      const b = this.base;
+      const ids = [...(Array.isArray(this.config.kart) ? this.config.kart : this.config.kart ? [this.config.kart] : []), ...this.find(new RegExp(`^(image|camera)\\.${b}_`))];
+      return [...new Set(ids)].filter(id => this.ok(id) && this.at(id, 'entity_picture')).map(id => ({
+        id, src: this.at(id, 'entity_picture'), navn: this.fname(id).replace(/^sir sweeps a lot\s*/i, '').replace(/_/g, ' ') || 'Kart' }));
     }
     /** total rengjøringstid → timer (støtter «HH:MM:SS», s, min, h) */
     hours(id) {
@@ -6056,6 +6293,10 @@ try {
       } else if (k === 'quiet' && E.stille) this.call('switch', 'toggle', { entity_id: E.stille });
     }
     resetPart(e, id) { if (id) this.press(id); }
+    clearRooms() { this.setState({ zone: null }); for (const r of this.rooms()) if (r.on && r.entity) this.call('input_boolean', 'turn_off', { entity_id: r.entity }); }
+    selOpt(e, arg) { const i = String(arg).lastIndexOf('|'); if (i > 0) this.call('select', 'select_option', { entity_id: arg.slice(0, i), option: arg.slice(i + 1) }); }
+    pickMap(e, id) { this.setState({ map: id }); }
+    openMap(e, id) { this.more(id); }
     openMore() { this.more(this.config.entity); }
 
     status() {
@@ -6070,12 +6311,11 @@ try {
     }
 
     body() {
-      const s = this.state, cf = this.config, E = this.ents(), st = this.status();
+      const s = this.state, cf = this.config, E = this.ents(), st = this.status(), e = KD.e, S = KD.S;
       const vac = cf.entity;
       let bRaw = this.n(cf.batteri); if (bRaw == null) bRaw = parseFloat(this.at(vac, 'battery_level'));
       const hasB = bRaw != null && !isNaN(bRaw);
       const b = hasB ? Math.round(bRaw) : 0;
-      const n = 24, filled = Math.round(b / 100 * n);
       const col = st === 'cleaning' ? C.green : st === 'paused' ? C.amber : st === 'returning' ? C.blue : st === 'error' || st === 'unavailable' ? C.red : C.green;
       const rooms = this.rooms(), zones = this.zones();
       const sel = rooms.filter(r => r.on && r.entity);
@@ -6085,206 +6325,199 @@ try {
       const charging = this.st(cf.lader) ? this.isOn(cf.lader) : (hasB && b < 100);
       const labels = { docked: charging ? 'Lader i dokken' : 'I dokken', cleaning: 'Støvsuger', paused: 'Pause', returning: 'På vei hjem', idle: 'Klar', error: 'Feil', unavailable: 'Utilgjengelig' };
       const errTxt = E.feil && this.ok(E.feil) && !/^(none|no.?error|ingen|0)$/i.test(this.v(E.feil)) ? this.v(E.feil) : this.at(vac, 'error', '');
-      const headline = st === 'cleaning' ? `Støvsuger ${target.join(', ').toLowerCase()}` : st === 'paused' ? 'Satt på pause' : st === 'returning' ? 'Ferdig, kjører hjem'
+      const curRoom = E.rom_na && this.ok(E.rom_na) ? String(this.v(E.rom_na)) : null;
+      const headline = st === 'cleaning' ? (curRoom ? `Støvsuger ${curRoom.toLowerCase()}` : `Støvsuger ${target.join(', ').toLowerCase()}`) : st === 'paused' ? 'Satt på pause' : st === 'returning' ? 'Ferdig, kjører hjem'
         : st === 'error' ? 'Trenger hjelp' : st === 'unavailable' ? 'Ikke tilgjengelig' : 'Klar til å støvsuge';
       const prog = E.fremdrift ? this.n(E.fremdrift) : null;
-      // underlinje
-      let subline = '';
-      if (st === 'cleaning') {
-        const mins = this.n(E.tid); const tidU = E.tid ? this.unit(E.tid) : '';
-        const el = mins == null ? null : tidU === 's' ? mins / 60 : tidU === 'h' ? mins * 60 : mins;
-        if (prog != null) {
-          const rest = el != null && prog > 0 ? Math.max(1, Math.round(el * (100 - prog) / prog)) : null;
-          subline = `${Math.round(prog)} % ferdig` + (rest != null ? ` · ca. ${rest} min igjen` : '');
-        } else {
-          subline = [el != null ? `${Math.round(el)} min` : '', this.ok(E.areal) ? `${Math.round(this.n(E.areal))} m²` : ''].filter(Boolean).join(' · ') || labels.cleaning;
-        }
-      } else if (st === 'error' && errTxt) subline = String(errTxt);
+      const minsOf = id => { const x = this.n(id); if (x == null) return null; const u = this.unit(id); return u === 's' ? x / 60 : u === 'h' ? x * 60 : x; };
+      const elMin = minsOf(E.tid), area = this.ok(E.areal) ? Math.round(this.n(E.areal)) : null;
+      const rest = st === 'cleaning' && prog != null && elMin != null && prog > 0 ? Math.max(1, Math.round(elMin * (100 - prog) / prog)) : null;
+      const endS = E.slutt ? this.v(E.slutt) : '';
+      const end = endS && !KD.BAD.has(endS) ? new Date(endS) : null;
+      const endOk = end && !isNaN(end);
+      let subline;
+      if (st === 'cleaning') subline = [curRoom && sel.length > 1 ? `${sel.length} rom valgt` : '', prog != null ? `${Math.round(prog)} % ferdig` : '', rest != null ? `ca. ${rest} min igjen` : ''].filter(Boolean).join(' · ') || 'I gang';
+      else if (st === 'error') subline = errTxt ? String(errTxt) : 'Sjekk roboten';
       else if (this.isOn(cf.vannmangel)) subline = 'Vanntanken er tom';
-      else {
-        const endS = E.slutt ? this.v(E.slutt) : '';
-        const end = endS && !KD.BAD.has(endS) ? new Date(endS) : null;
-        const parts = [];
-        if (end && !isNaN(end)) parts.push(`Sist støvsuget ${this.dayWord(end)} ${KD.hm(end)}`);
-        if (this.ok(E.areal)) parts.push(`${Math.round(this.n(E.areal))} m²`);
-        subline = parts.join(' · ') || '–';
-      }
-      const tab = (k, l) => ({ k, label: l, style: { height: 38, borderRadius: 16, fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', background: s.tab === k ? PINK : 'transparent', color: s.tab === k ? '#2a1720' : '#a9a7a2' } });
-      const sw = (on) => ({ track: { position: 'relative', width: 46, height: 28, borderRadius: 14, flex: 'none', background: on ? 'oklch(0.72 0.14 150)' : '#3a3a3d', transition: 'background .2s' }, knob: { position: 'absolute', top: 3, left: on ? 21 : 3, width: 22, height: 22, borderRadius: 11, background: '#f4f3ef', transition: 'left .2s' } });
-      const rpRoom = sel.find(r => r.kart) || rooms.find(r => r.kart);
-      const rp = rpRoom ? rpRoom.kart : [4, 4, 44, 34];
-      const t = (prog || 0) / 100;
-      const moving = st === 'cleaning' || st === 'paused';
+      else subline = endOk ? `Sist støvsuget ${this.dayWord(end)} ${KD.hm(end)}` : labels[st];
 
-      const ring = Array.from({ length: n }, (_, i) => ({ position: 'absolute', left: 'calc(50% - 4px)', top: 'calc(50% - 14px)', width: 8, height: 28, borderRadius: 4, transform: `rotate(${i * 15}deg) translateY(-102px)`, background: i < filled ? col : '#2a2a2d', boxShadow: i < filled && st === 'cleaning' ? `0 0 12px ${a(col, 0.6)}` : 'none', transition: 'background .4s' }));
-      const coreIcon = { fontSize: 28, color: col, fontVariationSettings: "'FILL' 1" };
-      const coreIconName = st === 'docked' ? 'battery_charging_full' : st === 'error' ? 'error' : 'robot_2';
-      const tabs = [tab('clean', 'Renhold'), tab('control', 'Kontroll'), tab('info', 'Info'), tab('map', 'Kart')];
-      const selMeta = sel.length ? `${sel.length} valgt` : 'Ingen valgt · hele huset';
-      const roomCards = rooms.filter(r => r.entity).map(r => {
-        const on = r.on;
-        return { ...r, sub: r.areal != null ? `${r.areal} m²` : on ? 'Valgt' : 'Ikke valgt',
-          style: { position: 'relative', height: 104, borderRadius: 22, padding: 16, boxSizing: 'border-box', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', alignItems: 'flex-start', background: on ? a(C.green, 0.14) : '#1c1c1f', boxShadow: on ? `inset 0 0 0 1px ${a(C.green, 0.45)}` : 'inset 0 0 0 1px rgba(255,255,255,0.04)', transition: 'background .2s' },
-          iconStyle: { fontSize: 24, color: on ? C.green : '#a9a7a2', fontVariationSettings: `'FILL' ${on ? 1 : 0}` },
-          check: { position: 'absolute', right: 14, top: 14, fontSize: 20, color: C.green, opacity: on ? 1 : 0, fontVariationSettings: "'FILL' 1", transition: 'opacity .2s' } };
-      });
-      const zoneBtns = zones.map(z => {
-        const on = s.zone === z.entity;
-        return { ...z, style: { flex: 'none', height: 40, padding: '0 14px 0 10px', borderRadius: 20, display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', background: on ? a(C.green, 0.14) : '#1c1c1f', color: on ? '#f2f1ee' : '#c9c7c2', boxShadow: on ? `inset 0 0 0 1px ${a(C.green, 0.45)}` : 'inset 0 0 0 1px rgba(255,255,255,0.04)' } };
-      });
-      const controls = [
-        { icon: st === 'cleaning' ? 'pause' : 'play_arrow', label: st === 'cleaning' ? 'Pause' : 'Start', k: st === 'cleaning' ? 'pause' : 'start' },
-        { icon: 'home', label: 'Dokk', k: 'dock' },
-        { icon: 'location_searching', label: 'Finn', k: 'locate' },
-        { icon: 'delete', label: 'Tøm', k: 'empty' },
-      ];
+      // sugestyrke
       const fanNow = String(this.at(vac, 'fan_speed', '') || '').toLowerCase();
       const fanList = (this.at(vac, 'fan_speed_list', []) || []).map(String);
-      const suction = SUG.map(([k, l, vals]) => {
-        const val = fanList.find(f => vals.includes(f.toLowerCase())) || vals[0];
-        const on = vals.includes(fanNow);
-        return { label: l, val, style: { height: 38, borderRadius: 14, fontSize: 13, fontWeight: 500, background: on ? '#f4f3ef' : 'transparent', color: on ? '#1a1a1c' : '#a9a7a2' } };
-      });
-      const mopOn = E.mopp ? !['off', 'unknown', 'unavailable', ''].includes(this.v(E.mopp)) : false;
-      const mopSub = this.isOn(cf.vannmangel) ? 'Vanntanken er tom' : (this.st(cf.vanntank) && this.v(cf.vanntank) === 'off') ? 'Vanntanken er ikke satt i' : 'Mopper etter støvsuging';
-      const tm = id => { const v = this.v(id); return /^\d{1,2}:\d{2}/.test(v) ? v.slice(0, 5) : null; };
-      const qFrom = tm(E.stille_fra), qTo = tm(E.stille_til);
-      const toggleDefs = [];
-      if (E.mopp) toggleDefs.push(['water_drop', 'Mopp', mopSub, 'mop', mopOn]);
-      if (E.stille) toggleDefs.push(['do_not_disturb_on', 'Stille timer', qFrom && qTo ? `${qFrom}–${qTo}` : this.isOn(E.stille) ? 'På' : 'Av', 'quiet', this.isOn(E.stille)]);
-      const toggles = toggleDefs.map(([icon, title, sub, k, on], i) => ({ icon, title, sub, k, ...sw(on),
-        row: { display: 'flex', alignItems: 'center', gap: 12, padding: '12px 4px', width: '100%', borderTop: i ? '1px solid rgba(255,255,255,0.05)' : 'none' } }));
-      const hrs = this.hours(cf.tid_totalt);
-      const stats = [['Totalt', hrs == null ? '–' : `${Math.round(hrs).toLocaleString('nb-NO')} t`],
-        ['Areal', this.ok(cf.areal_totalt) ? `${Math.round(this.n(cf.areal_totalt)).toLocaleString('nb-NO')} m²` : '–'],
-        ['Turer', this.ok(E.turer) ? Math.round(this.n(E.turer)).toLocaleString('nb-NO') : '–']].map(([label, v]) => ({ label, v }));
-      const parts = this.parts().map((p, i) => {
-        const low = p.pct < 20;
-        return { ...p, low, val: `${p.pct} % · ${Math.round(p.left)} t`,
-          row: { display: 'flex', flexDirection: 'column', gap: 8, padding: '12px 4px', borderTop: i ? '1px solid rgba(255,255,255,0.05)' : 'none' },
-          valStyle: { fontSize: 12, color: low ? C.amber : '#8e8d89', fontVariantNumeric: 'tabular-nums' },
-          bar: { width: `${p.pct}%`, height: '100%', borderRadius: 3, background: low ? C.amber : C.green } };
-      });
-      const mapRooms = rooms.filter(r => Array.isArray(r.kart)).map(r => {
-        const [x, y, w, h] = r.kart, on = r.on;
-        return { ...r, style: { position: 'absolute', left: `${x}%`, top: `${y}%`, width: `${w}%`, height: `${h}%`, borderRadius: 10, display: 'grid', placeItems: 'center', background: on ? a(C.green, 0.3) : '#2a2a2d', boxShadow: on ? `inset 0 0 0 1.5px ${C.green}` : 'none', color: on ? '#f2f1ee' : '#a9a7a2', transition: 'background .2s' } };
-      });
-      const robot = { position: 'absolute', left: `calc(${moving ? rp[0] + rp[2] * (0.15 + 0.7 * ((t * 5) % 1)) : 9}% - 9px)`, top: `calc(${moving ? rp[1] + rp[3] * (0.2 + 0.6 * t) : 82}% - 9px)`, width: 18, height: 18, borderRadius: 9, background: '#f2f1ee', boxShadow: `0 0 0 4px ${a(col, 0.35)}`, transition: 'left .8s linear, top .8s linear' };
-      const main = st === 'cleaning'
-        ? { icon: 'pause', label: 'Pause', style: { height: 64, borderRadius: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontSize: 16, fontWeight: 600, background: a(C.amber, 0.16), color: '#f2f1ee', boxShadow: `inset 0 0 0 1px ${a(C.amber, 0.45)}` } }
-        : { icon: 'play_arrow', label: st === 'paused' ? 'Fortsett' : zone ? `Støvsug ${zone.navn.toLowerCase()}` : sel.length ? `Støvsug ${sel.length} rom` : 'Støvsug alt', style: { height: 64, borderRadius: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontSize: 16, fontWeight: 600, background: C.green, color: '#10231a' } };
-      const e = KD.e, S = KD.S;
+      const FICON = { quiet: 'volume_down', std: 'air', turbo: 'bolt', max: 'rocket_launch' };
+      const suction = SUG.map(([k, l, vals]) => ({ k, l, val: fanList.find(f => vals.includes(f.toLowerCase())) || vals[0], on: vals.includes(fanNow) }));
+      const fanCur = (suction.find(x => x.on) || {}).val || '';
+      const fanLabel = (suction.find(x => x.on) || {}).l || (fanNow ? fanNow.charAt(0).toUpperCase() + fanNow.slice(1) : '–');
 
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:22px">
+      // helt
+      const ringV = st === 'cleaning' && prog != null ? KD.clamp(prog, 0, 100) : hasB ? b : 0;
+      const ringC = st === 'cleaning' || st === 'paused' || st === 'returning' || st === 'error' || st === 'unavailable' ? col : b < 20 ? C.red : b < 40 ? C.amber : C.green;
+      const RL = 2 * Math.PI * 86;
+      const batIcon = charging ? 'battery_charging_full' : b > 90 ? 'battery_full' : b > 65 ? 'battery_5_bar' : b > 40 ? 'battery_4_bar' : b > 20 ? 'battery_2_bar' : 'battery_alert';
+      const heroStats = st === 'cleaning' || st === 'paused'
+        ? [['Fremdrift', prog != null ? `${Math.round(prog)} %` : '–'], ['Areal', area != null ? `${area} m²` : '–'], ['Tid', elMin != null ? `${Math.round(elMin)} min` : '–']]
+        : [['Sugestyrke', fanLabel], ['Siste areal', area != null ? `${area} m²` : '–'], ['Siste tid', elMin != null ? `${Math.round(elMin)} min` : '–']];
+      const moving = st === 'cleaning';
+      const robot = `<svg viewBox="0 0 100 100" style="position:absolute;inset:30px;width:calc(100% - 60px);height:calc(100% - 60px);filter:drop-shadow(0 10px 18px rgba(0,0,0,0.5))">
+        <defs><radialGradient id="kdvBody" cx="38%" cy="28%" r="85%"><stop offset="0" stop-color="#46464c"></stop><stop offset="0.55" stop-color="#2a2a2e"></stop><stop offset="1" stop-color="#1b1b1e"></stop></radialGradient></defs>
+        <circle cx="50" cy="50" r="46" fill="url(#kdvBody)" stroke="rgba(255,255,255,0.10)" stroke-width="1"></circle>
+        <path d="M13 40 A38 38 0 0 1 87 40" fill="none" stroke="rgba(255,255,255,0.16)" stroke-width="3" stroke-linecap="round"></path>
+        <circle cx="50" cy="36" r="13" fill="#232327" stroke="rgba(255,255,255,0.14)" stroke-width="1"></circle>
+        <circle cx="50" cy="36" r="5" fill="${ringC}"${moving ? ' style="animation:kdvpulse 1.4s ease-in-out infinite"' : ''}></circle>
+        <rect x="38" y="64" width="24" height="5" rx="2.5" fill="rgba(255,255,255,0.14)"></rect>
+      </svg>`;
+      const hero = `<section style="position:relative;overflow:hidden;border-radius:30px;padding:16px 16px 14px;background:radial-gradient(120% 70% at 50% 0%, ${a(col, 0.16)} 0%, rgba(28,28,31,0) 62%), #1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05);display:flex;flex-direction:column;align-items:center;gap:12px">
+    <div style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px">
+      <span style="display:inline-flex;align-items:center;gap:8px;height:30px;padding:0 12px;border-radius:15px;background:rgba(255,255,255,0.06);font-size:12px;font-weight:600;min-width:0"><span style="width:8px;height:8px;border-radius:4px;flex:none;background:${col};box-shadow:0 0 10px ${a(col, 0.8)}${moving ? ';animation:kdvpulse 1.4s ease-in-out infinite' : ''}"></span><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(labels[st])}</span></span>
+      <span style="display:inline-flex;align-items:center;gap:4px;height:30px;padding:0 10px 0 8px;border-radius:15px;background:rgba(255,255,255,0.06);font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;color:${b < 20 && hasB ? C.red : '#f2f1ee'}"><span class="ms" style="font-size:17px;transform:rotate(90deg);color:${charging ? C.green : 'inherit'};font-variation-settings:'FILL' 1">${batIcon}</span>${hasB ? b : '–'} %</span>
+    </div>
+    <div data-on-click="openMore" style="position:relative;width:196px;height:196px;cursor:pointer">
+      ${moving ? `<span style="position:absolute;inset:22px;border-radius:50%;background:conic-gradient(from 0deg, ${a(col, 0)} 0deg, ${a(col, 0)} 250deg, ${a(col, 0.32)} 360deg);animation:kdvspin 2.6s linear infinite"></span>` : `<span style="position:absolute;inset:22px;border-radius:50%;background:radial-gradient(circle, ${a(ringC, 0.10)} 0%, rgba(0,0,0,0) 70%)"></span>`}
+      <svg viewBox="0 0 196 196" style="position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg)">
+        <circle cx="98" cy="98" r="86" fill="none" stroke="#2a2a2d" stroke-width="9"></circle>
+        <circle cx="98" cy="98" r="86" fill="none" stroke="${ringC}" stroke-width="9" stroke-linecap="round" stroke-dasharray="${(RL * ringV / 100).toFixed(1)} ${RL.toFixed(1)}" style="transition:stroke-dasharray 1s cubic-bezier(.2,.9,.3,1), stroke .4s;filter:drop-shadow(0 0 6px ${a(ringC, 0.55)})"></circle>
+      </svg>
+      ${robot}
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:5px;text-align:center;max-width:100%;min-width:0">
+      <div style="font-size:23px;font-weight:500;letter-spacing:-0.015em;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e(headline)}</div>
+      <div style="font-size:13px;color:${st === 'error' ? C.red : '#8e8d89'};max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e(subline)}</div>
+    </div>
+    ${st === 'cleaning' && prog != null ? `<div style="width:100%;height:6px;border-radius:3px;background:#2a2a2d;overflow:hidden"><div style="width:${KD.clamp(prog, 0, 100)}%;height:100%;border-radius:3px;background:${col};transition:width 1s"></div></div>` : ''}
+    <div style="width:100%;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-radius:20px;background:rgba(255,255,255,0.035);padding:10px 0">
+      ${heroStats.map(([l, v], i) => `<div style="min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;padding:0 6px;${i ? 'border-left:1px solid rgba(255,255,255,0.06)' : ''}"><span style="font-size:11px;color:#8e8d89;white-space:nowrap">${e(l)}</span><span style="font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">${e(v)}</span></div>`).join('')}
+    </div>
+  </section>`;
+
+      // handlinger
+      const main = st === 'cleaning'
+        ? { icon: 'pause', label: 'Pause', bg: a(C.amber, 0.16), fg: '#f2f1ee', sh: `inset 0 0 0 1px ${a(C.amber, 0.45)}` }
+        : { icon: 'play_arrow', label: st === 'paused' ? 'Fortsett' : zone ? `Støvsug ${zone.navn.toLowerCase()}` : sel.length ? `Støvsug ${sel.length} rom` : 'Støvsug alt', bg: `linear-gradient(135deg, ${C.green}, oklch(0.88 0.09 160))`, fg: '#10231a', sh: `0 10px 26px ${a(C.green, 0.25)}, inset 0 1px 0 rgba(255,255,255,0.35)` };
+      const tile = (k, icon, label, on, c) => `<button class="kd-vac-ctl" data-on-click="ctl" data-arg="${k}" style="min-width:0;height:60px;border-radius:22px;display:flex;align-items:center;justify-content:center;gap:8px;padding:0 8px;background:${on ? a(c, 0.16) : '#1c1c1f'};box-shadow:${on ? `inset 0 0 0 1px ${a(c, 0.45)}` : 'inset 0 0 0 1px rgba(255,255,255,0.04)'};transition:transform .15s, background .2s">
+          <span style="width:34px;height:34px;border-radius:17px;flex:none;display:grid;place-items:center;background:${on ? a(c, 0.25) : '#2a2a2e'};color:${on ? c : '#e4e2dd'}"><span class="ms" style="font-size:19px;font-variation-settings:'FILL' 1">${icon}</span></span>
+          <span style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">${e(label)}</span></button>`;
+      const actions = `<section style="display:flex;flex-direction:column;gap:10px">
+    <button class="kd-vac-ctl" data-on-click="main" data-haptic="medium" style="height:62px;border-radius:31px;display:flex;align-items:center;justify-content:center;gap:10px;padding:0 20px;font-size:16px;font-weight:600;background:${main.bg};color:${main.fg};box-shadow:${main.sh};transition:transform .15s"><span class="ms" style="font-size:26px;font-variation-settings:'FILL' 1">${main.icon}</span><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(main.label)}</span></button>
+    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
+      ${tile('dock', 'home', st === 'returning' ? 'Kjører hjem' : 'Hjem', st === 'returning', C.blue)}${tile('locate', 'location_searching', 'Finn', false, C.blue)}${tile('empty', 'delete_sweep', 'Tøm', false, C.amber)}
+    </div>
+  </section>`;
+
+      const tabs = KD.segHTML('vac-tab', [['clean', 'Rom', 'grid_view'], ['control', 'Modus', 'tune'], ['info', 'Status', 'monitoring'], ['map', 'Kart', 'map']], s.tab, 'tab', { pink: true });
+      const lbl = (t, right = '') => `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 4px;min-height:22px"><div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;white-space:nowrap">${e(t)}</div>${right}</div>`;
+      let tabHTML = '';
+
+      if (s.tab === 'clean') {
+        const selMeta = zone ? `Sone: ${zone.navn}` : sel.length ? `${sel.length} valgt` : 'Ingen valgt · hele huset';
+        const tiles = rooms.filter(r => r.entity).map(r => {
+          const on = r.on;
+          return `<button data-on-click="toggleRoom" data-arg="${e(r.entity)}" style="position:relative;min-width:0;height:104px;border-radius:22px;padding:12px;box-sizing:border-box;display:flex;flex-direction:column;justify-content:space-between;align-items:flex-start;text-align:left;background:${on ? `linear-gradient(160deg, ${a(C.green, 0.24)}, ${a(C.green, 0.08)})` : '#1c1c1f'};box-shadow:${on ? `inset 0 0 0 1.5px ${a(C.green, 0.55)}` : 'inset 0 0 0 1px rgba(255,255,255,0.04)'};transition:background .25s, box-shadow .25s">
+            <span style="width:36px;height:36px;border-radius:18px;display:grid;place-items:center;background:${on ? a(C.green, 0.25) : '#2a2a2e'};color:${on ? C.green : '#c9c7c2'};transition:background .25s"><span class="ms" style="font-size:20px;font-variation-settings:'FILL' ${on ? 1 : 0}">${e(r.ikon)}</span></span>
+            <span style="position:absolute;right:10px;top:10px;width:22px;height:22px;border-radius:11px;display:grid;place-items:center;box-sizing:border-box;background:${on ? C.green : 'transparent'};box-shadow:${on ? 'none' : 'inset 0 0 0 1.5px rgba(255,255,255,0.18)'};color:#10231a;transition:background .2s"><span class="ms" style="font-size:16px;opacity:${on ? 1 : 0};transform:scale(${on ? 1 : 0.4});transition:all .25s cubic-bezier(.34,1.5,.64,1)">check</span></span>
+            <span style="display:flex;flex-direction:column;gap:1px;width:100%;min-width:0">
+              <span style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(r.navn)}</span>
+              <span style="font-size:11px;color:${on ? a(C.green, 0.9) : '#8e8d89'};white-space:nowrap">${e(r.areal != null ? `${r.areal} m²` : on ? 'Valgt' : 'Trykk for å velge')}</span>
+            </span></button>`;
+        }).join('');
+        const any = sel.length || zone;
+        tabHTML = `<section style="display:flex;flex-direction:column;gap:10px">
+    ${lbl('Rom', `<div style="display:flex;align-items:center;gap:8px;min-width:0"><span style="font-size:12px;color:#6d6c69;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(selMeta)}</span>${any ? `<button data-on-click="clearRooms" style="height:26px;padding:0 10px;border-radius:13px;background:rgba(255,255,255,0.07);font-size:11px;font-weight:600;color:#c9c7c2;white-space:nowrap">Nullstill</button>` : ''}</div>`)}
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px">${tiles}</div>
+    ${zones.length ? `<div style="display:flex;flex-direction:column;gap:8px;margin-top:6px">${lbl('Soner')}
+      <div data-hscroll="1" style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:0 var(--kd-kant,10px)">
+        ${zones.map(z => { const on = s.zone === z.entity; return `<button data-on-click="pickZone" data-arg="${e(z.entity)}" style="flex:none;height:40px;padding:0 14px 0 10px;border-radius:20px;display:flex;align-items:center;gap:7px;font-size:13px;font-weight:500;white-space:nowrap;background:${on ? a(C.green, 0.16) : '#1c1c1f'};color:${on ? '#f2f1ee' : '#c9c7c2'};box-shadow:${on ? `inset 0 0 0 1.5px ${a(C.green, 0.55)}` : 'inset 0 0 0 1px rgba(255,255,255,0.04)'}"><span class="ms" style="font-size:17px;color:${on ? C.green : 'inherit'};font-variation-settings:'FILL' ${on ? 1 : 0}">${e(z.ikon || 'table_restaurant')}</span><span>${e(z.navn)}</span></button>`; }).join('')}
+      </div></div>` : ''}
+    ${any ? `<button class="kd-vac-ctl" data-on-click="ctl" data-arg="start" data-haptic="medium" style="margin-top:4px;height:54px;border-radius:27px;display:flex;align-items:center;justify-content:center;gap:8px;font-size:15px;font-weight:600;background:${PINK};color:#2a1720;box-shadow:0 8px 22px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.35);transition:transform .15s"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">cleaning_services</span><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(zone ? `Rengjør ${zone.navn.toLowerCase()}` : `Rengjør valgte · ${sel.length} rom`)}</span></button>`
+      : `<div style="font-size:12px;color:#6d6c69;text-align:center;padding:2px 0">Velg ett eller flere rom, så kan du rengjøre bare dem</div>`}
+  </section>`;
+      }
+
+      if (s.tab === 'control') {
+        const mopOn = E.mopp ? !['off', 'unknown', 'unavailable', ''].includes(this.v(E.mopp)) : false;
+        const warn = this.isOn(cf.vannmangel) ? 'Vanntanken er tom' : (this.st(cf.vanntank) && this.v(cf.vanntank) === 'off') ? 'Vanntanken er ikke satt i' : '';
+        const selects = this.selects().map(x => `<section style="display:flex;flex-direction:column;gap:8px">
+      ${lbl(x.navn, x.id === E.mopp && warn ? `<span style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:${C.amber};white-space:nowrap"><span class="ms" style="font-size:15px;font-variation-settings:'FILL' 1">water_drop</span>${e(warn)}</span>` : x.id === E.mopp && mopOn ? `<span style="font-size:12px;color:#6d6c69">Mopper etter støvsuging</span>` : '')}
+      ${KD.segHTML('sel-' + x.id, x.opts.map(o => [x.id + '|' + o, OPT[String(o).toLowerCase()] || String(o).replace(/_/g, ' ').replace(/^./, c => c.toUpperCase())]), x.id + '|' + this.v(x.id), 'selOpt', { small: x.opts.length > 4 })}
+    </section>`).join('');
+        const tm = id => { const v = this.v(id); return /^\d{1,2}:\d{2}/.test(v) ? v.slice(0, 5) : null; };
+        const qFrom = tm(E.stille_fra), qTo = tm(E.stille_til), qOn = this.isOn(E.stille);
+        tabHTML = `<section style="display:flex;flex-direction:column;gap:8px">
+      ${lbl('Sugestyrke', `<span style="font-size:12px;color:#6d6c69">${e(fanLabel)}</span>`)}
+      ${KD.segHTML('vac-fan', suction.map(x => [x.val, x.l, FICON[x.k]]), fanCur, 'fan', {})}
+    </section>
+    ${selects}
+    ${E.stille ? `<section><button data-on-click="toggleOpt" data-arg="quiet" style="width:100%;display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:22px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);text-align:left">
+      <span style="width:38px;height:38px;border-radius:19px;flex:none;display:grid;place-items:center;background:${qOn ? a(C.blue, 0.2) : '#2a2a2e'};color:${qOn ? C.blue : '#c9c7c2'}"><span class="ms" style="font-size:20px;font-variation-settings:'FILL' 1">bedtime</span></span>
+      <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-size:14px;font-weight:600">Stille timer</span><span style="font-size:12px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(qFrom && qTo ? `Ikke forstyrr ${qFrom}–${qTo}` : qOn ? 'På' : 'Av')}</span></span>
+      ${this.sw(qOn)}</button></section>` : ''}`;
+      }
+
+      if (s.tab === 'info') {
+        const hrs = this.hours(cf.tid_totalt);
+        const last = [['event', 'Når', endOk ? `${this.dayWord(end).replace(/^./, c => c.toUpperCase())} ${KD.hm(end)}` : '–'], ['square_foot', 'Areal', area != null ? `${area} m²` : '–'], ['timer', 'Varighet', elMin != null ? `${Math.round(elMin)} min` : '–']];
+        const tot = [['Tid', hrs == null ? '–' : `${Math.round(hrs).toLocaleString('nb-NO')} t`], ['Areal', this.ok(cf.areal_totalt) ? `${Math.round(this.n(cf.areal_totalt)).toLocaleString('nb-NO')} m²` : '–'], ['Turer', this.ok(E.turer) ? Math.round(this.n(E.turer)).toLocaleString('nb-NO') : '–']];
+        const PICON = { main_brush: 'cleaning_services', side_brush: 'mode_fan', filter: 'filter_alt', sensor: 'sensors' };
+        const parts = this.parts();
+        tabHTML = `<section style="display:flex;flex-direction:column;gap:8px">
+      ${lbl('Siste rengjøring')}
+      <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
+        ${last.map(([ic, l, v]) => `<div style="min-width:0;display:flex;flex-direction:column;gap:8px;padding:14px;border-radius:22px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)"><span class="ms" style="font-size:20px;color:#8e8d89">${ic}</span><span style="display:flex;flex-direction:column;gap:2px;min-width:0"><span style="font-size:11px;color:#8e8d89">${e(l)}</span><span style="font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(v)}</span></span></div>`).join('')}
+      </div>
+    </section>
+    <section style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-radius:22px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);padding:14px 0">
+      ${tot.map(([l, v], i) => `<div style="min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;padding:0 6px;${i ? 'border-left:1px solid rgba(255,255,255,0.06)' : ''}"><span style="font-size:11px;color:#8e8d89">${e(l)} totalt</span><span style="font-size:17px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap">${e(v)}</span></div>`).join('')}
+    </section>
+    ${parts.length ? `<section style="display:flex;flex-direction:column;gap:8px">
+      ${lbl('Slitedeler', parts.some(p => p.pct < 20) ? `<span style="font-size:12px;color:${C.amber}">${parts.filter(p => p.pct < 20).length} bør byttes</span>` : `<span style="font-size:12px;color:#6d6c69">Alt i orden</span>`)}
+      <div style="display:flex;flex-direction:column;border-radius:24px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);padding:4px 14px">
+      ${parts.map((p, i) => { const low = p.pct < 20, c = low ? C.amber : p.pct < 40 ? 'oklch(0.86 0.12 95)' : C.green; const k = ((cf.deler || [])[i] || {}).nokkel; return `<div style="display:flex;align-items:center;gap:12px;padding:12px 0;${i ? 'border-top:1px solid rgba(255,255,255,0.05)' : ''}">
+        <span style="width:38px;height:38px;border-radius:19px;flex:none;display:grid;place-items:center;background:${a(c, 0.14)};color:${c}"><span class="ms" style="font-size:20px">${PICON[k] || 'build'}</span></span>
+        <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:7px">
+          <span style="display:flex;justify-content:space-between;gap:8px;font-size:14px"><span style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(p.navn)}</span><span style="font-size:12px;color:${low ? C.amber : '#8e8d89'};font-variant-numeric:tabular-nums;white-space:nowrap">${Math.round(p.left)} t igjen · ${p.pct} %</span></span>
+          <span style="height:6px;border-radius:3px;background:#2a2a2d;overflow:hidden"><span style="display:block;width:${p.pct}%;height:100%;border-radius:3px;background:${c};transition:width 1s"></span></span>
+        </span>
+        ${low && p.reset ? `<button data-on-click="resetPart" data-arg="${e(p.reset)}" title="Merk som byttet" style="height:32px;padding:0 12px;border-radius:16px;flex:none;background:${C.amber};color:#161618;font-size:12px;font-weight:600;white-space:nowrap">Byttet</button>` : ''}
+      </div>`; }).join('')}
+      </div>
+    </section>` : ''}`;
+      }
+
+      if (s.tab === 'map') {
+        const maps = this.maps();
+        const cur = maps.find(m => m.id === s.map) || maps[0];
+        const rp = (sel.find(r => r.kart) || rooms.find(r => r.kart) || { kart: [4, 4, 44, 34] }).kart;
+        const t = (prog || 0) / 100, mv = st === 'cleaning' || st === 'paused';
+        const dot = `left:calc(${mv ? rp[0] + rp[2] * (0.15 + 0.7 * ((t * 5) % 1)) : 9}% - 9px);top:calc(${mv ? rp[1] + rp[3] * (0.2 + 0.6 * t) : 82}% - 9px)`;
+        tabHTML = `${cur ? `<section style="display:flex;flex-direction:column;gap:10px">
+      ${maps.length > 1 ? KD.segHTML('vac-map', maps.map(m => [m.id, m.navn, 'layers']), cur.id, 'pickMap', { small: true }) : ''}
+      <div data-on-click="openMap" data-arg="${e(cur.id)}" style="position:relative;border-radius:26px;overflow:hidden;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05);aspect-ratio:4 / 3;cursor:pointer">
+        <img src="${e(cur.src)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain">
+        <span style="position:absolute;left:12px;bottom:12px;height:28px;padding:0 10px;border-radius:14px;display:inline-flex;align-items:center;gap:6px;background:rgba(20,20,22,0.7);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);font-size:12px;font-weight:500"><span class="ms" style="font-size:15px">map</span>${e(cur.navn)}</span>
+      </div>
+    </section>` : ''}
+    ${rooms.some(r => Array.isArray(r.kart)) ? `<section style="display:flex;flex-direction:column;gap:8px">
+      ${lbl('Romvelger', `<span style="font-size:12px;color:#6d6c69">Trykk på et rom</span>`)}
+      <div style="position:relative;height:300px;border-radius:26px;background:#1c1c1f;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05)">
+        ${rooms.filter(r => Array.isArray(r.kart)).map(r => { const [x, y, w, h] = r.kart, on = r.on; return `<button data-on-click="toggleRoom" data-arg="${e(r.entity || '')}" style="position:absolute;left:${x}%;top:${y}%;width:${w}%;height:${h}%;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:${on ? a(C.green, 0.28) : '#262629'};box-shadow:${on ? `inset 0 0 0 1.5px ${C.green}` : 'inset 0 0 0 1px rgba(255,255,255,0.04)'};color:${on ? '#f2f1ee' : '#a9a7a2'};transition:background .2s"><span class="ms" style="font-size:16px;color:${on ? C.green : '#6d6c69'}">${e(r.ikon)}</span><span style="font-size:11px;font-weight:500">${e(r.navn)}</span></button>`; }).join('')}
+        <span style="position:absolute;left:8%;top:84%;width:18px;height:12px;border-radius:4px;background:#48474a"></span>
+        <span style="position:absolute;${dot};width:18px;height:18px;border-radius:9px;background:#f2f1ee;box-shadow:0 0 0 4px ${a(col, 0.35)}, 0 0 16px ${a(col, 0.6)};transition:left .8s linear, top .8s linear"></span>
+      </div>
+    </section>` : ''}`;
+      }
+
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:18px">
   <header style="display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89"><span>${e(cf.navn || 'Sir Sweeps')}</span></div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
   </header>
-
-  <section style="display:flex;flex-direction:column;align-items:center;gap:18px">
-    <div data-on-click="openMore" style="position:relative;width:240px;height:240px;cursor:pointer">
-      ${ring.map(r => `<div style="${S(r)}"></div>`).join('')}
-      <div style="position:absolute;inset:40px;border-radius:50%;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px">
-        <span class="ms" style="${S(coreIcon)}"><span>${e(coreIconName)}</span></span>
-        <div style="font-size:34px;font-weight:500;letter-spacing:-0.03em;line-height:1;font-variant-numeric:tabular-nums"><span>${hasB ? b : '–'}</span><span style="font-size:14px;color:#8e8d89;font-weight:400"> %</span></div>
-        <div style="font-size:12px;color:#8e8d89"><span>${e(labels[st])}</span></div>
-      </div>
-    </div>
-    <div style="display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center">
-      <div style="font-size:24px;font-weight:500;letter-spacing:-0.015em"><span>${e(headline)}</span></div>
-      <div style="font-size:14px;color:#8e8d89"><span>${e(subline)}</span></div>
-    </div>
-  </section>
-
-  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:2px;padding:4px;border-radius:20px;background:#1c1c1f">
-    ${tabs.map(t => `<button data-on-click="tab" data-arg="${t.k}" style="${S(t.style)}"><span>${e(t.label)}</span></button>`).join('')}
-  </div>
-
-  ${s.tab === 'clean' ? `
-    <section style="display:flex;flex-direction:column;gap:8px">
-      <div style="display:flex;justify-content:space-between;padding:0 4px">
-        <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89">Rom</div>
-        <div style="font-size:12px;color:#6d6c69"><span>${e(selMeta)}</span></div>
-      </div>
-      <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
-        ${roomCards.map(r => `
-          <button data-on-click="toggleRoom" data-arg="${e(r.entity)}" style="${S(r.style)}">
-            <span class="ms" style="${S(r.iconStyle)}"><span>${e(r.ikon)}</span></span>
-            <div style="display:flex;flex-direction:column;gap:2px;align-items:flex-start">
-              <span style="font-size:15px;font-weight:500"><span>${e(r.navn)}</span></span>
-              <span style="font-size:12px;color:#8e8d89"><span>${e(r.sub)}</span></span>
-            </div>
-            <span class="ms" style="${S(r.check)}">check_circle</span>
-          </button>`).join('')}
-      </div>
-    </section>
-    ${zoneBtns.length ? `<section style="display:flex;flex-direction:column;gap:8px">
-      <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:0 4px">Soner</div>
-      <div data-hscroll="1" style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:0 var(--kd-kant,10px)">
-        ${zoneBtns.map(z => `
-          <button data-on-click="pickZone" data-arg="${e(z.entity)}" style="${S(z.style)}"><span class="ms" style="font-size:17px"><span>${e(z.ikon || 'table_restaurant')}</span></span><span>${e(z.navn)}</span></button>`).join('')}
-      </div>
-    </section>` : ''}` : ''}
-
-  ${s.tab === 'control' ? `
-    <section style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
-      ${controls.map(c => `
-        <button class="kd-vac-ctl" data-on-click="ctl" data-arg="${c.k}" style="height:76px;border-radius:20px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px">
-          <span class="ms" style="font-size:24px;font-variation-settings:'FILL' 1"><span>${e(c.icon)}</span></span>
-          <span style="font-size:12px;font-weight:500;white-space:nowrap"><span>${e(c.label)}</span></span>
-        </button>`).join('')}
-    </section>
-    <section style="display:flex;flex-direction:column;gap:8px">
-      <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:0 4px">Sugestyrke</div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:2px;padding:4px;border-radius:18px;background:#1c1c1f">
-        ${suction.map(p => `<button data-on-click="fan" data-arg="${e(p.val)}" style="${S(p.style)}"><span>${e(p.label)}</span></button>`).join('')}
-      </div>
-    </section>
-    ${toggles.length ? `<section style="display:flex;flex-direction:column">
-      ${toggles.map(t => `
-        <button data-on-click="toggleOpt" data-arg="${t.k}" style="${S(t.row)}">
-          <span class="ms" style="font-size:22px;color:#a9a7a2;width:28px"><span>${e(t.icon)}</span></span>
-          <div style="flex:1;display:flex;flex-direction:column;gap:2px;text-align:left">
-            <span style="font-size:14px;font-weight:500"><span>${e(t.title)}</span></span>
-            <span style="font-size:12px;color:#8e8d89"><span>${e(t.sub)}</span></span>
-          </div>
-          <span style="${S(t.track)}"><span style="${S(t.knob)}"></span></span>
-        </button>`).join('')}
-    </section>` : ''}` : ''}
-
-  ${s.tab === 'info' ? `
-    <section style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
-      ${stats.map(t => `
-        <div style="display:flex;flex-direction:column;gap:4px;padding:12px 14px;border-radius:18px;background:#1c1c1f">
-          <div style="font-size:11px;color:#8e8d89;white-space:nowrap"><span>${e(t.label)}</span></div>
-          <div style="font-size:17px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap"><span>${e(t.v)}</span></div>
-        </div>`).join('')}
-    </section>
-    ${parts.length ? `<section style="display:flex;flex-direction:column;gap:2px">
-      <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:0 4px 8px">Slitedeler</div>
-      ${parts.map(p => `
-        <div style="${S(p.row)}">
-          <div style="display:flex;justify-content:space-between;gap:10px;font-size:14px">
-            <span style="font-weight:500"><span>${e(p.navn)}</span></span>
-            <span style="${S(p.valStyle)}"><span>${e(p.val)}</span></span>
-          </div>
-          <div style="height:5px;border-radius:3px;background:#1f1f22;overflow:hidden"><div style="${S(p.bar)}"></div></div>
-          ${p.low && p.reset ? `<button data-on-click="resetPart" data-arg="${e(p.reset)}" style="align-self:flex-start;height:30px;padding:0 12px;border-radius:15px;background:oklch(0.82 0.12 75);color:#161618;font-size:12px;font-weight:600">Merk som byttet</button>` : ''}
-        </div>`).join('')}
-    </section>` : ''}` : ''}
-
-  ${s.tab === 'map' ? `
-    <section style="position:relative;height:300px;border-radius:24px;background:#1c1c1f;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
-      ${mapRooms.map(m => `
-        <button data-on-click="toggleRoom" data-arg="${e(m.entity || '')}" style="${S(m.style)}"><span style="font-size:11px;font-weight:500"><span>${e(m.navn)}</span></span></button>`).join('')}
-      <span style="position:absolute;left:8%;top:84%;width:18px;height:12px;border-radius:4px;background:#48474a"></span>
-      <span style="${S(robot)}"></span>
-    </section>
-    <div style="font-size:12px;color:#6d6c69;text-align:center">Trykk på et rom for å velge det</div>` : ''}
-
-  <button data-on-click="main" style="${S(main.style)}"><span class="ms" style="font-size:24px;font-variation-settings:'FILL' 1"><span>${e(main.icon)}</span></span><span>${e(main.label)}</span></button>
+  ${hero}
+  ${actions}
+  ${tabs}
+  ${tabHTML}
 </div>`;
     }
+    /** Bryter (spor + knott) */
+    sw(on) { return `<span style="position:relative;width:46px;height:28px;border-radius:14px;flex:none;background:${on ? 'oklch(0.72 0.14 150)' : '#3a3a3d'};transition:background .2s"><span style="position:absolute;top:3px;left:${on ? 21 : 3}px;width:22px;height:22px;border-radius:11px;background:#f4f3ef;box-shadow:0 2px 6px rgba(0,0,0,0.3);transition:left .25s cubic-bezier(.34,1.4,.64,1)"></span></span>`; }
     /** «i dag» / «i går» / «mandag» / «12.9.» */
     dayWord(d) {
       const t0 = new Date(); t0.setHours(0, 0, 0, 0);
@@ -6671,9 +6904,7 @@ try {
     <button data-on-click="${tv ? 'powerTv' : 'powerMusic'}" style="${S(powerBtn)}"><span class="ms" style="font-size:22px">power_settings_new</span></button>
   </section>
 
-  <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:2px;padding:4px;border-radius:20px;background:#1c1c1f">
-    ${tabs.map(t => `<button data-on-click="tab" data-arg="${t.k}" style="${S(t.style)}"><span class="ms" style="font-size:18px"><span>${t.icon}</span></span><span>${e(t.label)}</span></button>`).join('')}
-  </div>
+  ${KD.segHTML('fane', [['tv', 'TV', 'tv'], ['music', 'Musikk', 'music_note']], s.tab, 'tab', { pink: true })}
 
   ${tv ? `
     <section style="display:flex;justify-content:center">
@@ -6760,10 +6991,13 @@ try {
     posisjon: [/^device_tracker\..*(location|posisjon|position)/, /^device_tracker\.(?!.*(route|destination|rute))/],
     forbruk: [/^sensor\..*(consumption|forbruk|wh_km|energy_per_km)/],
     ladestatus: [/^(select|sensor)\..*charging_state/],
+    ladeport: [/^cover\..*charge_port/, /^(switch|lock)\..*charge_port/, /^(cover|switch)\..*ladeport/],
   };
+  const PILL = 'display:inline-flex;align-items:center;height:30px;padding:0 11px;border-radius:15px;background:#232326;color:#f2f1ee;font-weight:500;vertical-align:middle;white-space:nowrap';
+  const SEAT = { off: 'Av', low: 'Lav', medium: 'Middels', high: 'Høy', '0': 'Av', '1': 'Lav', '2': 'Middels', '3': 'Høy', auto: 'Auto' };
 
   /** Bilscenen (designets CarScene) som SVG/HTML-streng */
-  function carScene(s) {
+  function carScene(s, outer) {
     const body = '#c9d3dc', shade = '#a7b3be', glass = s.climate ? 'rgba(255,150,90,0.55)' : 'rgba(40,52,64,0.9)';
     const ease = 'cubic-bezier(.34,1.3,.64,1)';
     const winD = 'M64,44 L82,29 C90,25 102,24 112,24 L146,24 C156,24 164,30 170,40 L170,44 Z';
@@ -6787,7 +7021,7 @@ try {
       + (s.sentry ? `<circle cx="120" cy="34" r="1.6" fill="oklch(0.66 0.22 25)" style="animation:pulse 1.4s ease-in-out infinite"></circle>` : '')
       + `</svg>`;
     const heat = s.climate ? [0, 1, 2].map(i => `<span style="${S({ position: 'absolute', left: (44 + i * 10) + '%', top: '8%', width: 10, height: 22, borderRadius: 6, borderLeft: '2px solid oklch(0.78 0.15 45)', opacity: 0, animation: 'rise 2s ease-out ' + (i * 0.5) + 's infinite' })}"></span>`).join('') : '';
-    return `<div style="position:absolute;right:6px;bottom:8px;width:230px;height:118px;pointer-events:none">`
+    return `<div style="${outer || 'position:absolute;right:6px;bottom:8px;width:230px;height:118px;pointer-events:none'}">`
       + `<span style="${S({ position: 'absolute', left: '26%', bottom: 4, width: '50%', height: 4, borderRadius: 2, background: s.charging ? 'repeating-linear-gradient(90deg, oklch(0.8 0.16 150) 0 14px, oklch(0.62 0.14 150) 14px 20px)' : 'transparent', backgroundSize: '40px 4px', boxShadow: s.charging ? '0 0 14px oklch(0.8 0.16 150 / 0.7)' : 'none', animation: s.charging ? 'flow .8s linear infinite' : 'none' })}"></span>`
       + `<div style="position:absolute;left:0;right:0;top:24px;bottom:0">${svg}${heat}</div>`
       + `<span data-key="${s.locked ? 'l' : 'u'}" style="${S({ position: 'absolute', left: '55%', top: 0, width: 26, height: 26, marginLeft: -13, borderRadius: 13, display: 'grid', placeItems: 'center', background: 'rgba(255,255,255,0.1)', color: s.locked ? '#f2f1ee' : 'oklch(0.82 0.12 75)', animation: 'bob .5s ease-out' })}"><span class="ms" style="font-size:16px;font-variation-settings:'FILL' 1">${s.locked ? 'lock' : 'lock_open'}</span></span>`
@@ -6838,7 +7072,8 @@ try {
 @keyframes flow{from{background-position:0 0}to{background-position:40px 0}}
 @keyframes ring{from{transform:scale(.6);opacity:.8}to{transform:scale(2.2);opacity:0}}
 @keyframes bob{0%{transform:translateY(0)}30%{transform:translateY(-5px)}60%{transform:translateY(0)}}
-.kd-car-act:active{transform:scale(0.94)}`;
+.kd-car-act:active{transform:scale(0.95)}
+@keyframes kdcflow{to{background-position:28.28px 0}}`;
 
     constructor() { super(); this.state = { tab: 'charge', flash: null }; }
 
@@ -6882,6 +7117,40 @@ try {
       }
       if (k === 'frunk' && c.frunk) return this.toggle(c.frunk);
       if (k === 'trunk' && c.bagasje) return this.toggle(c.bagasje);
+      if (k === 'port') { const id = this.auto('ladeport'); if (id) return this.toggle(id); }
+      if (k === 'window') return this.toggleWindow();
+      if (k === 'sentry') return this.toggleSentry();
+    }
+    toggleDefrost() { const id = this.config.defrost; if (id && this.st(id)) this.toggle(id); }
+    stepTemp(e, d) {
+      const id = this.auto('klima'); if (!id) return;
+      const cur = parseFloat(this.at(id, 'temperature')), step = parseFloat(this.at(id, 'target_temp_step')) || 0.5;
+      const lo = parseFloat(this.at(id, 'min_temp')) || 15, hi = parseFloat(this.at(id, 'max_temp')) || 28;
+      this.call('climate', 'set_temperature', { entity_id: id, temperature: KD.clamp(Math.round(((isNaN(cur) ? 21 : cur) + (+d) * step) * 10) / 10, lo, hi) });
+    }
+    selOpt(e, arg) { const i = String(arg).lastIndexOf('|'); if (i > 0) this.call('select', 'select_option', { entity_id: arg.slice(0, i), option: arg.slice(i + 1) }); }
+    /** setevarme: select-entiteter med bilens prefiks (seat_heater / setevarme) */
+    seats() {
+      const pre = [].concat(this.config.prefiks || []);
+      const ids = Array.isArray(this.config.seter) ? this.config.seter : Object.keys(this.all()).filter(id => /^select\./.test(id) && /seat_heat|setevarme/.test(id) && pre.some(p => id.includes(p)));
+      return ids.filter(id => this.ok(id)).map(id => {
+        let navn = this.fname(id); for (const p of pre) navn = navn.replace(new RegExp('^' + p.replace(/_/g, '[ _]') + '\\s*', 'i'), '');
+        return { id, navn: navn.replace(/_/g, ' ') || 'Setevarme', opts: (this.at(id, 'options', []) || []).map(String) };
+      }).filter(x => x.opts.length > 1 && x.opts.length <= 5).slice(0, 6);
+    }
+    /** dekktrykk: { fl, fr, rl, rr: { id, v, u, low }, low } – config `dekk: { fl: sensor.x, … }` overstyrer */
+    tyres() {
+      const pre = [].concat(this.config.prefiks || []), cfg = this.config.dekk || {};
+      const ids = Object.keys(this.all()).filter(id => /^sensor\./.test(id) && /(tire|tyre|tpms|dekk)/.test(id) && pre.some(p => id.includes(p)) && !/warning|advarsel|last_seen/.test(id));
+      const POS = { fl: /(front|foran)_?(left|venstre)|_fl$|_lf$/, fr: /(front|foran)_?(right|hoyre|høyre)|_fr$|_rf$/, rl: /(rear|bak)_?(left|venstre)|_rl$|_lr$/, rr: /(rear|bak)_?(right|hoyre|høyre)|_rr$|_rr$/ };
+      const out = {}; let any = false, low = false;
+      for (const k of ['fl', 'fr', 'rl', 'rr']) {
+        const id = cfg[k] || ids.find(x => POS[k].test(x));
+        const v = id ? this.n(id) : null; if (v == null) continue;
+        const u = this.unit(id) || 'bar', lo = /psi/i.test(u) ? v < 36 : /kpa/i.test(u) ? v < 250 : v < 2.5;
+        out[k] = { id, v, u, low: lo }; any = true; if (lo) low = true;
+      }
+      return any ? { ...out, low } : null;
     }
     toggleCharge() { const id = this.config.lader; if (id) this.call(id.split('.')[0] === 'input_boolean' ? 'input_boolean' : 'switch', 'toggle', { entity_id: id }); }
     setLimit(e, v) { this.setNum(this.config.ladegrense, +v); }
@@ -6928,23 +7197,20 @@ try {
 
     body() {
       const s = this.state, cf = this.config, e = KD.e, S = KD.S;
-      const batId = this.auto('batteri'), climId = this.auto('klima'), sentryId = this.auto('sentry');
+      const batId = this.auto('batteri'), climId = this.auto('klima'), sentryId = this.auto('sentry'), portId = this.auto('ladeport'), trId = this.auto('posisjon');
       const batt = this.n(batId), limit = this.n(cf.ladegrense), range = this.n(cf.rekkevidde);
       const kw = this.kw();
       const lsId = this.auto('ladestatus'), ls = String(this.v(lsId)).toLowerCase();
       const charging = this.isOn(cf.lader) || (/charging|starting/.test(ls) && !/not|complete|stopped|disconnected/.test(ls)) || (kw != null && kw > 0.3);
       const locked = !this.unlocked();
       const climate = climId ? (this.ok(climId) && this.v(climId) !== 'off') : this.isOn(cf.defrost);
-      const climTemp = climId ? this.at(climId, 'temperature') : null;
-      const frunk = this.isOpen(cf.frunk), trunk = this.isOpen(cf.bagasje), windowOpen = this.isOpen(cf.vindu);
+      const climTemp = climId ? parseFloat(this.at(climId, 'temperature')) : NaN;
+      const inside = climId ? parseFloat(this.at(climId, 'current_temperature')) : NaN;
+      const frunk = this.isOpen(cf.frunk), trunk = this.isOpen(cf.bagasje), windowOpen = this.isOpen(cf.vindu), portOpen = this.isOpen(portId);
       const sentry = sentryId ? this.isOn(sentryId) : false;
       const sc = { climate, charging, sentry, locked, frunk, trunk, window: windowOpen };
       const b = batt == null ? null : Math.floor(batt);
       const lim = limit == null ? null : Math.round(limit);
-      const sw = (on) => ({ track: { position: 'relative', width: 46, height: 28, borderRadius: 14, flex: 'none', background: on ? 'oklch(0.72 0.14 150)' : 'rgba(255,255,255,0.18)', transition: 'background .2s' }, knob: { position: 'absolute', top: 3, left: on ? 21 : 3, width: 22, height: 22, borderRadius: 11, background: '#f4f3ef', transition: 'left .2s' } });
-      const act = (k, icon, label, on, col) => ({ k, icon, label,
-        style: { height: 72, borderRadius: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, background: on ? a(col, 0.16) : '#1c1c1f', boxShadow: on ? `inset 0 0 0 1px ${a(col, 0.45)}` : 'inset 0 0 0 1px rgba(255,255,255,0.04)', color: on ? '#f2f1ee' : '#c9c7c2', transition: 'background .2s' },
-        iconStyle: { fontSize: 24, color: on ? col : '#c9c7c2', fontVariationSettings: `'FILL' ${on ? 1 : 0}` } });
       const cap = cf.kapasitet || 75;
       const need = batt != null && limit != null ? Math.max(0, limit - batt) / 100 * cap : null;
       let mins = null;
@@ -6954,181 +7220,221 @@ try {
       const strom = this.n(cf.strompris);
       const cost = this.ok(cf.ladepris) ? Math.round(this.n(cf.ladepris)) : need != null && strom != null ? Math.round(need * strom) : '–';
       const last = this.ok(cf.forrige_lading) ? Math.round(this.n(cf.forrige_lading)) : '–';
-      const tabF = (k, l) => ({ k, label: l, style: { height: 38, borderRadius: 16, fontSize: 13, fontWeight: 500, background: s.tab === k ? PINK : 'transparent', color: s.tab === k ? '#2a1720' : '#a9a7a2' } });
-      const ch = sw(charging), smartOn = this.isOn(cf.smartlading), sm = sw(smartOn);
+      const smartOn = this.isOn(cf.smartlading);
       const til = /^\d{1,2}:\d{2}/.test(this.v(cf.nattlading_til)) && this.isOn(cf.nattlading) ? this.v(cf.nattlading_til).slice(0, 5) : null;
-      const sceneCard = { position: 'relative', overflow: 'hidden', minHeight: 196, padding: 18, borderRadius: 30, boxSizing: 'border-box', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', background: climate ? 'radial-gradient(120% 90% at 75% 60%, #3a2a24 0%, #1f1f24 55%, #18181b 100%)' : charging ? 'radial-gradient(120% 90% at 75% 80%, #1c2e27 0%, #1c1f24 55%, #18181b 100%)' : 'radial-gradient(120% 90% at 75% 70%, #262b33 0%, #1c1e22 55%, #18181b 100%)', transition: 'background .8s' };
-      const sentryPill = { pointerEvents: 'auto', height: 32, padding: '0 12px', borderRadius: 16, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 500, background: sentry ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.06)', color: sentry ? '#f2f1ee' : '#8e8d89' };
-      const badgeList = [[charging, 'bolt', 'Lader', C.green], [climate, 'heat', climTemp != null ? `Varmer ${Math.round(climTemp)}°` : 'Varmer', C.amber], [windowOpen, 'window', 'Vindu åpent', C.blue], [frunk, 'garage', 'Frunk åpen', C.blue], [trunk, 'local_shipping', 'Bagasje åpen', C.blue]].filter(x => x[0]).map(([, icon, t, c]) => ({ icon, t, style: { height: 22, padding: '0 8px', borderRadius: 11, display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 600, background: a(c, 0.18), color: c, whiteSpace: 'nowrap' } }));
-      const winBtn = { position: 'absolute', right: 14, top: 14, zIndex: 2, width: 36, height: 36, borderRadius: 18, display: 'grid', placeItems: 'center', background: windowOpen ? a(C.blue, 0.25) : 'rgba(255,255,255,0.08)', color: windowOpen ? C.blue : '#c9c7c2' };
-      const batBar = { position: 'absolute', left: 0, top: 0, bottom: 0, width: `${batt == null ? 0 : KD.clamp(batt, 0, 100)}%`, borderRadius: 7, background: charging ? `repeating-linear-gradient(-45deg, ${C.green} 0 10px, oklch(0.74 0.12 150) 10px 20px)` : C.green, transition: 'width 1s' };
-      const limitMark = { position: 'absolute', top: -2, bottom: -2, left: `${lim == null ? 100 : lim}%`, width: 2, background: '#f2f1ee', transition: 'left .3s', display: lim == null ? 'none' : '' };
-      const actions = [
-        act('lock', locked ? 'lock' : 'lock_open', locked ? 'Låst' : 'Ulåst', !locked, C.amber),
-        act('horn', 'campaign', 'Tut', s.flash === 'horn', C.blue),
-        act('climate', 'heat', climate ? (climTemp != null ? `${Math.round(climTemp)}°` : 'På') : 'Klima', climate, C.red),
-        act('frunk', 'garage', 'Frunk', frunk, C.blue),
-        act('trunk', 'local_shipping', 'Bagasje', trunk, C.blue),
-      ];
-      const tabs = [tabF('charge', 'Lading'), tabF('drive', 'Kjøring'), tabF('save', 'Sparing')];
-      const chargeCard = { height: 120, borderRadius: 22, padding: 16, boxSizing: 'border-box', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', alignItems: 'flex-start', background: charging ? PINK : '#1c1c1f', color: charging ? '#2a1720' : '#f2f1ee', textAlign: 'left', transition: 'background .25s' };
-      const limits = [50, 60, 70, 80, 100].map(v => ({ v, label: `${v} %`, style: { height: 44, borderRadius: 14, fontSize: 13, fontWeight: 500, background: lim === v ? PINK : 'transparent', color: lim === v ? '#2a1720' : '#a9a7a2' } }));
-      const smartSub = smartOn ? 'Lader i billigste timer' + (til ? ` · ferdig ${til}` : '') : 'Lader med en gang bilen kobles til';
+      const zoneRaw = trId ? this.v(trId) : '';
+      const place = !zoneRaw || KD.BAD.has(zoneRaw) ? null : zoneRaw === 'home' ? 'Hjemme' : zoneRaw === 'not_home' ? 'Underveis' : zoneRaw;
+      const lbl = (t, right = '') => `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 4px;min-height:22px"><div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;white-space:nowrap">${e(t)}</div>${right}</div>`;
+      const card = 'border-radius:24px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)';
 
-      // kjøring
-      const fb = this.auto('forbruk');
-      const kmToday = this.n(cf.i_dag), odo = this.n(cf.km_stand);
-      const driveStats = [['I dag', kmToday == null ? '–' : `${Math.round(kmToday).toLocaleString('nb-NO')} km`], ['Forbruk', fb && this.ok(fb) ? `${Math.round(this.n(fb))} ${this.unit(fb) || 'Wh/km'}` : '–'], ['Km-stand', odo == null ? '–' : Math.round(odo).toLocaleString('nb-NO')]].map(([label, v]) => ({ label, v }));
-      const dur = (ms) => { const m = Math.round(ms / 60e3); return m >= 60 ? `${Math.floor(m / 60)} t ${m % 60} min` : `${m} min`; };
-      const whenW = (d) => { const t0 = new Date(); t0.setHours(0, 0, 0, 0); const diff = Math.round((t0 - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400e3); if (diff <= 0) return 'I dag'; if (diff === 1) return 'I går'; const w = d.toLocaleDateString('nb-NO', { weekday: 'short' }).replace('.', ''); return w.charAt(0).toUpperCase() + w.slice(1); };
-      const trips = s.tab === 'drive' ? this.trips().map((t, i) => ({ route: `${t.from} → ${t.to}`,
-        meta: [t.km != null ? `${Math.round(t.km).toLocaleString('nb-NO')} km` : '', dur(t.d1 - t.d0), t.kwh != null ? `${t.kwh < 10 ? nf(t.kwh, 1) : Math.round(t.kwh)} kWh` : ''].filter(Boolean).join(' · '),
-        when: whenW(t.d1), row: { display: 'flex', gap: 14, padding: '12px 4px', borderTop: i ? '1px solid rgba(255,255,255,0.05)' : 'none' } })) : [];
-
-      // sparing
-      const pctOf = (id) => { const d = Number(this.at(id, 'diesel_ville_kostet')), el = Number(this.at(id, 'strom_kostet')); return d > 0 && !isNaN(el) ? KD.clamp(Math.round((1 - el / d) * 100), 0, 100) : null; };
-      const saveCards = [['Spart denne måneden', cf.spart_maned, C.green], ['Spart i år', cf.spart_ar, C.amber]].map(([label, id, c]) => {
-        const p = pctOf(id);
-        return { label, id, v: this.ok(id) ? Math.round(this.n(id)).toLocaleString('nb-NO') : '–', pct: p == null ? '–' : `${p} %`,
-          fill: { width: (p || 0) + '%', height: '100%', background: c, transition: 'width 1.2s cubic-bezier(.2,.9,.3,1)' },
-          hatch: { flex: 1, height: '100%', background: 'repeating-linear-gradient(-45deg, ' + c + ' 0 2px, transparent 2px 6px)', opacity: 0.8 } };
-      });
-      const num = (id, fn) => this.ok(id) ? fn(this.n(id)) : '–';
-      const saveStats = [['electric_car', num(cf.kr_mil_el, v => nf(v, 2)), 'Tesla · kr/mil', cf.kr_mil_el], ['directions_car', num(cf.kr_mil_diesel, v => nf(v, 2)), 'Audi A6 · kr/mil', cf.kr_mil_diesel],
-        ['local_gas_station', num(cf.diesel_liter, v => `${Math.round(v).toLocaleString('nb-NO')} L`), 'Diesel ikke fylt', cf.diesel_liter], ['co2', num(cf.co2, v => `${Math.round(v).toLocaleString('nb-NO')} kg`), 'CO₂ spart', cf.co2],
-        ['oil_barrel', num(cf.dieselpris, v => nf(v, 2)), 'Diesel · kr/L', cf.dieselpris], ['ev_charger', num(cf.strompris, v => nf(v, 2)), 'Strøm · kr/kWh', cf.strompris]].map(([icon, v, k, id]) => ({ icon, v, k, id }));
-      const kjort = Number(this.at(cf.spart_ar, 'kjort_km'));
-      const yearKm = isNaN(kjort) ? '–' : `${Math.round(kjort).toLocaleString('nb-NO')} km`;
-      const yearKr = this.ok(cf.spart_ar) ? `${Math.round(this.n(cf.spart_ar)).toLocaleString('nb-NO')} kroner` : '–';
-      const inc = s.tab === 'save' ? this.dailySaved() : null;
-      const maxInc = inc ? Math.max(...inc, 0.001) : 1;
-      const daily = (inc || []).map((v, i) => ({ flex: 1, height: Math.max(4, v / maxInc * 100) + '%', borderRadius: '4px 4px 0 0', background: C.green, transition: 'height .9s cubic-bezier(.2,.9,.3,1) ' + (i * 0.02) + 's' }));
-      const dailySum = inc ? nf(inc.reduce((x, y) => x + y, 0), 1) : '–';
-      const pill = 'display:inline-flex;align-items:center;height:30px;padding:0 11px;border-radius:15px;background:#232326;font-weight:500;vertical-align:middle;white-space:nowrap';
-      const pill2 = 'display:inline-block;padding:0 10px;border-radius:14px;background:#f2f1ee;color:#141416;font-weight:500;line-height:1.6';
-
-      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
-  <header style="display:flex;align-items:center;justify-content:space-between">
-    <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89"><span>${e(cf.navn)}</span></div>
-    <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
-  </header>
-
-  <section data-on-click="openMore" data-arg="${e(batId || cf.lader || '')}" style="${S(sceneCard)}">
-    ${carScene(sc)}
-    <div style="position:relative;z-index:1;display:flex;flex-direction:column;gap:10px;align-items:flex-start;pointer-events:none">
-      <span style="font-size:14px;font-weight:500;color:#c9c7c2"><span>${e(cf.navn)}</span></span>
-      ${sentryId ? `<button data-on-click="toggleSentry" style="${S(sentryPill)}"><span class="ms" style="font-size:16px;font-variation-settings:'FILL' 1"><span>${sentry ? 'videocam' : 'videocam_off'}</span></span><span>${sentry ? 'Sentry på' : 'Sentry av'}</span></button>` : ''}
-      <div style="display:flex;gap:5px;flex-wrap:wrap;max-width:170px">${badgeList.map(x => `<span style="${S(x.style)}"><span class="ms" style="font-size:13px;font-variation-settings:'FILL' 1"><span>${x.icon}</span></span><span>${e(x.t)}</span></span>`).join('')}</div>
+      /* ---- helt ---- */
+      const heroBg = climate ? 'radial-gradient(110% 80% at 70% 45%, #3a2a24 0%, #1f1f24 55%, #18181b 100%)' : charging ? 'radial-gradient(110% 80% at 70% 55%, #1c3029 0%, #1c1f24 55%, #18181b 100%)' : 'radial-gradient(110% 80% at 70% 50%, #283039 0%, #1c1e22 55%, #18181b 100%)';
+      const chips = [[locked, locked ? 'lock' : 'lock_open', locked ? 'Låst' : 'Ulåst', locked ? '#c9c7c2' : C.amber, !locked],
+        [charging, 'bolt', kw != null && kw > 0.3 ? `Lader ${nf(kw, 1)} kW` : 'Lader', C.green, true], [climate, 'heat', !isNaN(climTemp) ? `Klima ${Math.round(climTemp)}°` : 'Klima på', C.amber, true],
+        [windowOpen, 'window', 'Vindu åpent', C.blue, true], [frunk, 'garage', 'Frunk åpen', C.blue, true], [trunk, 'local_shipping', 'Bagasje åpen', C.blue, true], [portOpen, 'ev_charger', 'Ladeport åpen', C.blue, true]]
+        .filter((x, i) => i === 0 || x[0]).map(([, icon, t, c, hi]) => `<span style="height:24px;padding:0 9px 0 7px;border-radius:12px;display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;white-space:nowrap;background:${hi ? a(c, 0.18) : 'rgba(255,255,255,0.07)'};color:${c}"><span class="ms" style="font-size:14px;font-variation-settings:'FILL' 1">${icon}</span>${e(t)}</span>`).join('');
+      const batCol = b != null && b < 20 ? C.red : C.green;
+      const heroRight = charging ? [`${eta === 'ferdig' ? 'Ferdig ladet' : `${eta} til ${lim == null ? '–' : lim} %`}`, kw != null && kw > 0.3 ? `${nf(kw, 1)} kW` : 'Lader'] : [zoneRaw === 'not_home' ? 'Underveis' : 'Parkert', lim != null ? `Ladegrense ${lim} %` : ''];
+      const hero = `<section data-on-click="openMore" data-arg="${e(batId || cf.lader || '')}" style="position:relative;overflow:hidden;padding:18px 18px 16px;border-radius:30px;box-sizing:border-box;display:flex;flex-direction:column;gap:6px;background:${heroBg};box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05);transition:background .8s;cursor:pointer">
+    <div style="position:relative;z-index:1;display:flex;align-items:flex-start;gap:10px">
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+        <span style="font-size:18px;font-weight:600;letter-spacing:-0.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(cf.navn)}</span>
+        ${place ? `<span data-on-click="openMore" data-arg="${e(trId)}" style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#a9a7a2;min-width:0"><span class="ms" style="font-size:15px;font-variation-settings:'FILL' 1">${zoneRaw === 'home' ? 'home' : 'location_on'}</span><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(place)}</span></span>` : ''}
+      </div>
+      ${sentryId ? `<button data-on-click="toggleSentry" style="flex:none;height:32px;padding:0 12px 0 10px;border-radius:16px;display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;background:${sentry ? a(C.red, 0.18) : 'rgba(255,255,255,0.07)'};color:${sentry ? C.red : '#a9a7a2'}"><span class="ms" style="font-size:16px;font-variation-settings:'FILL' 1">${sentry ? 'videocam' : 'videocam_off'}</span>Sentry</button>` : ''}
     </div>
-    <div style="position:relative;z-index:1;display:flex;flex-direction:column;gap:4px;pointer-events:none">
-      <span style="font-size:40px;font-weight:300;letter-spacing:-0.04em;line-height:1;font-variant-numeric:tabular-nums"><span>${b == null ? '–' : b}</span><span style="font-size:16px;color:#8e8d89"> %</span></span>
-      <span style="font-size:12px;color:#8e8d89;white-space:nowrap"><span>${range == null ? '–' : Math.round(range)}</span> km · grense <span>${lim == null ? '–' : lim}</span> %</span>
+    <div style="position:relative;z-index:1;display:flex;gap:5px;flex-wrap:wrap">${chips}</div>
+    <div style="position:relative;height:150px;margin:0 -6px">
+      ${cf.bilde ? `<img src="${e(cf.bilde)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 16px 20px rgba(0,0,0,0.5))">` : carScene(sc, 'position:absolute;left:50%;top:0;width:300px;max-width:100%;height:150px;transform:translateX(-50%);pointer-events:none')}
     </div>
-    ${cf.vindu && this.st(cf.vindu) ? `<button data-on-click="toggleWindow" title="Vindu" style="${S(winBtn)}"><span class="ms" style="font-size:18px">window</span></button>` : ''}
-  </section>
-
-  <section style="display:flex;flex-direction:column;gap:14px">
-    <div style="position:relative;height:14px;border-radius:7px;background:#1f1f22;overflow:hidden">
-      <div style="${S(batBar)}"></div>
-      <span style="${S(limitMark)}"></span>
+    <div style="position:relative;z-index:1;display:flex;align-items:flex-end;justify-content:space-between;gap:10px">
+      <div style="display:flex;flex-direction:column;gap:2px;min-width:0">
+        <span style="font-size:52px;font-weight:300;letter-spacing:-0.045em;line-height:0.95;font-variant-numeric:tabular-nums">${b == null ? '–' : b}<span style="font-size:20px;color:#8e8d89;letter-spacing:0;margin-left:2px">%</span></span>
+        <span style="font-size:13px;color:#a9a7a2;white-space:nowrap"><span style="color:#f2f1ee;font-weight:600">${range == null ? '–' : Math.round(range)} km</span> rekkevidde</span>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;min-width:0;text-align:right;padding-bottom:2px">
+        <span style="font-size:13px;font-weight:600;color:${charging ? C.green : '#f2f1ee'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">${e(heroRight[0])}</span>
+        <span style="font-size:12px;color:#8e8d89;white-space:nowrap">${e(heroRight[1])}</span>
+      </div>
     </div>
-    <div style="display:flex;justify-content:space-between;font-size:11px;color:#6d6c69"><span>0 %</span><span><span>${lim == null ? '' : `Grense ${lim} %`}</span></span></div>
-  </section>
+    <div style="position:relative;z-index:1;height:12px;border-radius:6px;background:rgba(255,255,255,0.08);margin-top:8px">
+      <div style="position:absolute;left:0;top:0;bottom:0;width:${batt == null ? 0 : KD.clamp(batt, 0, 100)}%;border-radius:6px;background:${charging ? `repeating-linear-gradient(-45deg, ${C.green} 0 10px, oklch(0.72 0.12 150) 10px 20px)` : `linear-gradient(90deg, ${a(batCol, 0.75)}, ${batCol})`};box-shadow:0 0 14px ${a(batCol, 0.35)};transition:width 1s${charging ? ';animation:kdcflow .9s linear infinite' : ''}"></div>
+      ${lim == null ? '' : `<span style="position:absolute;top:-4px;bottom:-4px;left:calc(${lim}% - 1px);width:2px;border-radius:1px;background:#f2f1ee;box-shadow:0 0 6px rgba(0,0,0,0.6);transition:left .3s"></span>`}
+    </div>
+  </section>`;
 
-  <section style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px">
-    ${actions.map(c => `
-      <button class="kd-car-act" data-on-click="act" data-arg="${c.k}" style="${S(c.style)}">
-        <span class="ms" style="${S(c.iconStyle)}"><span>${c.icon}</span></span>
-        <span style="font-size:10px;font-weight:500;white-space:nowrap"><span>${e(c.label)}</span></span>
-      </button>`).join('')}
-  </section>
+      /* ---- hurtigknapper ---- */
+      const tile = (k, icon, label, sub, on, col, handler = 'act') => `<button class="kd-car-act" data-on-click="${handler}" data-arg="${k}" style="min-width:0;height:88px;border-radius:22px;padding:10px 4px;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;background:${on ? a(col, 0.15) : '#1c1c1f'};box-shadow:${on ? `inset 0 0 0 1px ${a(col, 0.45)}` : 'inset 0 0 0 1px rgba(255,255,255,0.04)'};transition:transform .15s, background .25s">
+        <span style="width:38px;height:38px;border-radius:19px;display:grid;place-items:center;background:${on ? a(col, 0.25) : '#2a2a2e'};color:${on ? col : '#e4e2dd'};transition:background .25s"><span class="ms" style="font-size:21px;font-variation-settings:'FILL' ${on ? 1 : 0}">${icon}</span></span>
+        <span style="display:flex;flex-direction:column;align-items:center;gap:0;min-width:0;max-width:100%"><span style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">${e(label)}</span><span style="font-size:10.5px;color:${on ? col : '#8e8d89'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">${e(sub)}</span></span></button>`;
+      const tiles = [
+        tile('lock', locked ? 'lock' : 'lock_open', locked ? 'Låst' : 'Ulåst', locked ? 'Sikret' : 'Trykk for å låse', !locked, C.amber),
+        tile('climate', 'heat', 'Klima', climate ? (!isNaN(climTemp) ? `På · ${Math.round(climTemp)}°` : 'På') : !isNaN(inside) ? `Av · ${Math.round(inside)}° inne` : 'Av', climate, C.amber),
+        cf.frunk && this.st(cf.frunk) ? tile('frunk', 'garage', 'Frunk', frunk ? 'Åpen' : 'Lukket', frunk, C.blue) : '',
+        cf.bagasje && this.st(cf.bagasje) ? tile('trunk', 'local_shipping', 'Bagasje', trunk ? 'Åpen' : 'Lukket', trunk, C.blue) : '',
+        portId ? tile('port', 'ev_charger', 'Ladeport', portOpen ? 'Åpen' : 'Lukket', portOpen, C.green) : '',
+        cf.vindu && this.st(cf.vindu) ? tile('window', 'window', 'Vinduer', windowOpen ? 'Luftes' : 'Lukket', windowOpen, C.blue) : '',
+        sentryId ? tile('sentry', sentry ? 'videocam' : 'videocam_off', 'Sentry', sentry ? 'Overvåker' : 'Av', sentry, C.red) : '',
+        cf.tut ? tile('horn', 'campaign', 'Tut', 'Blink og tut', s.flash === 'horn', C.blue) : '',
+      ].filter(Boolean);
+      const controls = `<section style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px">${tiles.join('')}</section>`;
 
-  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:2px;padding:4px;border-radius:20px;background:#1c1c1f">
-    ${tabs.map(t => `<button data-on-click="tab" data-arg="${t.k}" style="${S(t.style)}"><span>${e(t.label)}</span></button>`).join('')}
-  </div>
+      const hasClim = !!(climId || (cf.defrost && this.st(cf.defrost)));
+      const tabList = [['charge', 'Lading', 'bolt'], ...(hasClim ? [['climate', 'Klima', 'thermostat']] : []), ['drive', 'Kjøring', 'route'], ['save', 'Sparing', 'savings']];
+      const tab = tabList.some(t => t[0] === s.tab) ? s.tab : 'charge';
+      const tabs = KD.segHTML('car-tab', tabList, tab, 'tab', { pink: true });
+      let tabHTML = '';
 
-  ${s.tab === 'charge' ? `
-    <section style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
-      <button data-on-click="toggleCharge" style="${S(chargeCard)}">
-        <div style="display:flex;justify-content:space-between;width:100%;align-items:center">
-          <span class="ms" style="font-size:24px;font-variation-settings:'FILL' 1">ev_station</span>
-          <span style="${S(ch.track)}"><span style="${S(ch.knob)}"></span></span>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:2px;align-items:flex-start">
-          <span style="font-size:12px;opacity:0.75">Lading</span>
-          <span style="font-size:26px;font-weight:400;letter-spacing:-0.02em"><span>${charging ? 'På' : 'Av'}</span></span>
-        </div>
+      if (tab === 'charge') {
+        const steps = [50, 60, 70, 80, 90, 100];
+        if (lim != null && !steps.includes(lim)) { steps.push(lim); steps.sort((x, y) => x - y); if (steps.length > 6) steps.splice(steps.indexOf(lim) === 0 ? 1 : 0, 1); }
+        const cStats = [['Effekt', kw == null ? '–' : `${nf(kw, 1)} kW`, cf.ladeeffekt], ['Til grensen', eta, cf.ladetid], ['Kostnad', cost === '–' ? '–' : `${cost} kr`, cf.ladepris]];
+        tabHTML = `<section style="position:relative;overflow:hidden;display:flex;flex-direction:column;gap:14px;padding:16px;border-radius:26px;background:${charging ? `linear-gradient(150deg, ${a(C.green, 0.2)}, ${a(C.green, 0.05)} 60%), #1c1c1f` : '#1c1c1f'};box-shadow:inset 0 0 0 1px ${charging ? a(C.green, 0.3) : 'rgba(255,255,255,0.04)'}">
+      <button data-on-click="toggleCharge" style="display:flex;align-items:center;gap:12px;text-align:left;width:100%">
+        <span style="width:46px;height:46px;border-radius:23px;flex:none;display:grid;place-items:center;background:${charging ? C.green : '#2a2a2e'};color:${charging ? '#10231a' : '#e4e2dd'}"><span class="ms" style="font-size:24px;font-variation-settings:'FILL' 1">ev_station</span></span>
+        <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-size:16px;font-weight:600">${charging ? 'Lader nå' : 'Lading av'}</span><span style="font-size:12px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(charging ? (eta === 'ferdig' ? 'Ladegrensen er nådd' : `Ferdig om ca. ${eta}`) : smartOn ? 'KI Lading styrer når bilen lader' : 'Trykk for å starte lading')}</span></span>
+        ${this.sw(charging)}
       </button>
-      <div data-on-click="openMore" data-arg="${e(cf.ladeeffekt || '')}" style="height:120px;border-radius:22px;padding:16px;box-sizing:border-box;display:flex;flex-direction:column;justify-content:space-between;background:#1c1c1f">
-        <span class="ms" style="font-size:24px;color:#a9a7a2;font-variation-settings:'FILL' 1">bolt</span>
-        <div style="display:flex;flex-direction:column;gap:2px">
-          <span style="font-size:12px;color:#8e8d89">Ladeeffekt</span>
-          <span style="font-size:26px;font-weight:300;letter-spacing:-0.02em;font-variant-numeric:tabular-nums"><span>${nf(kw == null ? null : kw, 1)}</span><span style="font-size:13px;color:#8e8d89"> kW</span></span>
-        </div>
+      <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-radius:18px;background:rgba(255,255,255,0.04);padding:10px 0">
+        ${cStats.map(([l, v, id], i) => `<div data-on-click="openMore" data-arg="${e(id || '')}" style="min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;padding:0 6px;${i ? 'border-left:1px solid rgba(255,255,255,0.06)' : ''}"><span style="font-size:11px;color:#8e8d89;white-space:nowrap">${e(l)}</span><span style="font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">${e(v)}</span></div>`).join('')}
       </div>
     </section>
     ${cf.ladegrense && this.st(cf.ladegrense) ? `<section style="display:flex;flex-direction:column;gap:8px">
-      <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:0 4px">Ladegrense</div>
-      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:2px;padding:4px;border-radius:18px;background:#1c1c1f">
-        ${limits.map(l => `<button data-on-click="setLimit" data-arg="${l.v}" style="${S(l.style)}"><span>${e(l.label)}</span></button>`).join('')}
+      ${lbl('Ladegrense', `<span style="font-size:13px;font-weight:600;font-variant-numeric:tabular-nums">${lim == null ? '–' : lim} %</span>`)}
+      ${KD.segHTML('car-lim', steps.map(v => [String(v), `${v} %`]), lim == null ? '' : String(lim), 'setLimit', {})}
+      <div style="display:flex;justify-content:space-between;padding:0 6px;font-size:11px;color:#6d6c69"><span>Hverdag 70–80 %</span><span>Langtur 100 %</span></div>
+    </section>` : ''}
+    <div style="font-size:17px;line-height:1.85;text-wrap:pretty;padding:0 4px;color:#c9c7c2">Det tar ca. <span style="${PILL}">${e(eta)}</span> å lade til <span style="${PILL};background:oklch(0.78 0.13 350 / 0.2);box-shadow:inset 0 0 0 1px oklch(0.78 0.13 350 / 0.45)">${lim == null ? '–' : lim} %</span> og koster ca. <span style="${PILL}">${e(cost)} kr</span>. Sist lading kostet <span style="${PILL}">${e(last)} kr</span>.</div>
+    ${cf.smartlading && this.st(cf.smartlading) ? `<section><button data-on-click="toggleSmart" style="width:100%;display:flex;align-items:center;gap:12px;padding:14px;border-radius:24px;text-align:left;background:${smartOn ? 'linear-gradient(135deg, oklch(0.78 0.13 350 / 0.16), oklch(0.9 0.05 20 / 0.06)), #1c1c1f' : '#1c1c1f'};box-shadow:inset 0 0 0 1px ${smartOn ? 'oklch(0.78 0.13 350 / 0.35)' : 'rgba(255,255,255,0.04)'}">
+      <span style="width:42px;height:42px;border-radius:21px;flex:none;display:grid;place-items:center;background:${smartOn ? PINK : '#2a2a2e'};color:${smartOn ? '#2a1720' : '#e4e2dd'}"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">auto_awesome</span></span>
+      <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-size:15px;font-weight:600">KI Lading</span><span style="font-size:12px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(smartOn ? 'Lader i billigste timer' + (til ? ` · ferdig ${til}` : '') : 'Lader med en gang bilen kobles til')}</span></span>
+      ${this.sw(smartOn)}
+    </button></section>` : ''}`;
+      }
+
+      if (tab === 'climate') {
+        const cOn = climate, cc = C.amber;
+        const seats = this.seats();
+        const tog = (h, icon, title, sub, on, col) => `<button data-on-click="${h}" style="width:100%;display:flex;align-items:center;gap:12px;padding:12px 14px;text-align:left;border-radius:22px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
+        <span style="width:38px;height:38px;border-radius:19px;flex:none;display:grid;place-items:center;background:${on ? a(col, 0.2) : '#2a2a2e'};color:${on ? col : '#c9c7c2'}"><span class="ms" style="font-size:20px;font-variation-settings:'FILL' 1">${icon}</span></span>
+        <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-size:14px;font-weight:600">${e(title)}</span><span style="font-size:12px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(sub)}</span></span>${this.sw(on)}</button>`;
+        tabHTML = `${climId ? `<section style="position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:center;gap:14px;padding:18px 16px 16px;border-radius:26px;background:${cOn ? `radial-gradient(100% 90% at 50% 0%, ${a(cc, 0.22)}, rgba(0,0,0,0) 70%), #1c1c1f` : '#1c1c1f'};box-shadow:inset 0 0 0 1px ${cOn ? a(cc, 0.3) : 'rgba(255,255,255,0.04)'}">
+      <div style="width:100%;display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#a9a7a2"><span class="ms" style="font-size:16px">device_thermostat</span>Inne ${isNaN(inside) ? '–' : nf(inside, 0)}°</span>
+        <button data-on-click="act" data-arg="climate" style="height:32px;padding:0 14px 0 10px;border-radius:16px;display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;background:${cOn ? cc : 'rgba(255,255,255,0.08)'};color:${cOn ? '#2a1c0c' : '#e4e2dd'}"><span class="ms" style="font-size:17px;font-variation-settings:'FILL' 1">power_settings_new</span>${cOn ? 'På' : 'Av'}</button>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:center;gap:22px">
+        <button data-on-click="stepTemp" data-arg="-1" style="width:52px;height:52px;border-radius:26px;display:grid;place-items:center;background:#2a2a2e"><span class="ms" style="font-size:26px">remove</span></button>
+        <span style="min-width:120px;text-align:center;font-size:58px;font-weight:300;letter-spacing:-0.04em;line-height:1;font-variant-numeric:tabular-nums;color:${cOn ? '#f2f1ee' : '#a9a7a2'}">${isNaN(climTemp) ? '–' : nf(climTemp, climTemp % 1 ? 1 : 0)}<span style="font-size:24px;color:#8e8d89">°</span></span>
+        <button data-on-click="stepTemp" data-arg="1" style="width:52px;height:52px;border-radius:26px;display:grid;place-items:center;background:#2a2a2e"><span class="ms" style="font-size:26px">add</span></button>
+      </div>
+      <span style="font-size:12px;color:#8e8d89">${cOn ? 'Klimaanlegget går' : 'Forvarm bilen før du drar'}</span>
+    </section>` : ''}
+    ${cf.defrost && this.st(cf.defrost) || cf.vindu && this.st(cf.vindu) ? `<section style="display:flex;flex-direction:column;gap:8px">
+      ${cf.defrost && this.st(cf.defrost) ? tog('toggleDefrost', 'ac_unit', 'Avising', this.isOn(cf.defrost) ? 'Maks varme på ruter og speil' : 'Av', this.isOn(cf.defrost), C.blue) : ''}
+      ${cf.vindu && this.st(cf.vindu) ? tog('toggleWindow', 'window', 'Luft vinduene', windowOpen ? 'Vinduene står på gløtt' : 'Lukket', windowOpen, C.blue) : ''}
+    </section>` : ''}
+    ${seats.map(x => `<section style="display:flex;flex-direction:column;gap:8px">
+      ${lbl(x.navn)}
+      ${KD.segHTML('seat-' + x.id, x.opts.map(o => [x.id + '|' + o, SEAT[String(o).toLowerCase()] || o]), x.id + '|' + this.v(x.id), 'selOpt', { small: true })}
+    </section>`).join('')}`;
+      }
+
+      if (tab === 'drive') {
+        const fb = this.auto('forbruk');
+        const kmToday = this.n(cf.i_dag), odo = this.n(cf.km_stand);
+        const driveStats = [['route', 'I dag', kmToday == null ? '–' : `${Math.round(kmToday).toLocaleString('nb-NO')} km`, cf.i_dag], ['electric_bolt', 'Forbruk', fb && this.ok(fb) ? `${Math.round(this.n(fb))} ${this.unit(fb) || 'Wh/km'}` : '–', fb], ['speed', 'Km-stand', odo == null ? '–' : Math.round(odo).toLocaleString('nb-NO'), cf.km_stand]];
+        const dur = (ms) => { const m = Math.round(ms / 60e3); return m >= 60 ? `${Math.floor(m / 60)} t ${m % 60} min` : `${m} min`; };
+        const whenW = (d) => { const t0 = new Date(); t0.setHours(0, 0, 0, 0); const diff = Math.round((t0 - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400e3); if (diff <= 0) return 'I dag'; if (diff === 1) return 'I går'; const w = d.toLocaleDateString('nb-NO', { weekday: 'short' }).replace('.', ''); return w.charAt(0).toUpperCase() + w.slice(1); };
+        const trips = this.trips();
+        const ty = this.tyres();
+        const trS = trId ? this.st(trId) : null;
+        tabHTML = `${place ? `<section data-on-click="openMore" data-arg="${e(trId)}" style="display:flex;align-items:center;gap:12px;padding:14px;${card};cursor:pointer">
+      <span style="position:relative;width:46px;height:46px;border-radius:23px;flex:none;display:grid;place-items:center;background:${a(C.blue, 0.16)};color:${C.blue}"><span class="ms" style="font-size:24px;font-variation-settings:'FILL' 1">${zoneRaw === 'home' ? 'home' : 'location_on'}</span></span>
+      <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-size:11px;color:#8e8d89">Posisjon</span><span style="font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(place)}</span><span style="font-size:12px;color:#6d6c69">${trS ? `Sist endret ${e(KD.ago(trS.last_changed))}` : ''}</span></span>
+      <span class="ms" style="font-size:22px;color:#6d6c69">chevron_right</span>
+    </section>` : ''}
+    <section style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
+      ${driveStats.map(([ic, l, v, id]) => `<div data-on-click="openMore" data-arg="${e(id || '')}" style="min-width:0;display:flex;flex-direction:column;gap:8px;padding:14px;${card}"><span class="ms" style="font-size:20px;color:#8e8d89">${ic}</span><span style="display:flex;flex-direction:column;gap:2px;min-width:0"><span style="font-size:11px;color:#8e8d89">${e(l)}</span><span style="font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(v)}</span></span></div>`).join('')}
+    </section>
+    ${ty ? `<section style="display:flex;flex-direction:column;gap:8px">
+      ${lbl('Dekktrykk', ty.low ? `<span style="font-size:12px;color:${C.amber}">Sjekk trykket</span>` : `<span style="font-size:12px;color:#6d6c69">Alt i orden</span>`)}
+      <div style="position:relative;display:grid;grid-template-columns:minmax(0,1fr) 84px minmax(0,1fr);grid-template-rows:auto auto;gap:14px 10px;align-items:center;padding:16px;${card}">
+        ${['fl', 'fr', 'rl', 'rr'].map((k, i) => { const t = ty[k]; const lo = t && t.low; return `<div data-on-click="openMore" data-arg="${e(t ? t.id : '')}" style="grid-column:${i % 2 ? 3 : 1};grid-row:${i < 2 ? 1 : 2};min-width:0;display:flex;flex-direction:column;align-items:${i % 2 ? 'flex-start' : 'flex-end'};gap:1px"><span style="font-size:22px;font-weight:400;letter-spacing:-0.02em;font-variant-numeric:tabular-nums;color:${lo ? C.amber : '#f2f1ee'}">${t ? nf(t.v, t.u === 'psi' ? 0 : 1) : '–'}<span style="font-size:11px;color:#8e8d89;margin-left:3px">${e(t ? t.u : '')}</span></span><span style="font-size:11px;color:#8e8d89">${['Foran venstre', 'Foran høyre', 'Bak venstre', 'Bak høyre'][i]}</span></div>`; }).join('')}
+        <svg viewBox="0 0 84 150" style="grid-column:2;grid-row:1 / span 2;width:84px;height:150px">
+          <rect x="14" y="6" width="56" height="138" rx="24" fill="#2a2a2e" stroke="rgba(255,255,255,0.10)"></rect>
+          <path d="M22 44 Q42 34 62 44 L60 62 Q42 56 24 62 Z" fill="#1a1d22"></path><path d="M24 104 Q42 98 60 104 L62 118 Q42 126 22 118 Z" fill="#1a1d22"></path>
+          ${[[6, 26, 'fl'], [70, 26, 'fr'], [6, 98, 'rl'], [70, 98, 'rr']].map(([x, y, k]) => `<rect x="${x}" y="${y}" width="8" height="26" rx="4" fill="${ty[k] && ty[k].low ? C.amber : ty[k] ? C.green : '#48474a'}"></rect>`).join('')}
+        </svg>
       </div>
     </section>` : ''}
-    <div style="font-size:18px;line-height:1.8;text-wrap:pretty;padding:0 4px">Det tar ca. <span style="${pill}"><span>${e(eta)}</span></span> å lade til <span style="display:inline-flex;align-items:center;height:30px;padding:0 11px;border-radius:15px;background:oklch(0.78 0.13 350 / 0.2);box-shadow:inset 0 0 0 1px oklch(0.78 0.13 350 / 0.45);font-weight:500;vertical-align:middle;white-space:nowrap"><span>${lim == null ? '–' : lim}</span> %</span> og koster ca. <span style="${pill}"><span>${e(cost)}</span> kr</span>. Sist lading kostet <span style="${pill}">${e(last)} kr</span>.</div>
-    ${cf.smartlading && this.st(cf.smartlading) ? `<button data-on-click="toggleSmart" style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:22px;background:#1c1c1f;text-align:left">
-      <span class="ms" style="font-size:22px;color:oklch(0.8 0.12 150);font-variation-settings:'FILL' 1">schedule</span>
-      <div style="flex:1;display:flex;flex-direction:column;gap:2px">
-        <span style="font-size:14px;font-weight:500">Smartlading</span>
-        <span style="font-size:12px;color:#8e8d89"><span>${e(smartSub)}</span></span>
-      </div>
-      <span style="${S(sm.track)}"><span style="${S(sm.knob)}"></span></span>
-    </button>` : ''}` : ''}
-
-  ${s.tab === 'drive' ? `
-    <section style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
-      ${driveStats.map(t => `
-        <div style="display:flex;flex-direction:column;gap:4px;padding:12px 14px;border-radius:18px;background:#1c1c1f">
-          <div style="font-size:11px;color:#8e8d89;white-space:nowrap"><span>${e(t.label)}</span></div>
-          <div style="font-size:16px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap"><span>${e(t.v)}</span></div>
-        </div>`).join('')}
-    </section>
-    ${trips.length ? `<section style="display:flex;flex-direction:column;gap:2px">
-      <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;padding:0 4px 8px">Siste turer</div>
-      ${trips.map(t => `
-        <div style="${S(t.row)}">
-          <div style="display:flex;flex-direction:column;align-items:center;width:10px;flex:none;padding-top:5px;gap:3px"><span style="width:8px;height:8px;border-radius:4px;background:#8e8d89"></span><span style="width:1px;height:14px;background:#48474a"></span><span style="width:8px;height:8px;border-radius:4px;background:oklch(0.8 0.12 150)"></span></div>
+    ${trips.length ? `<section style="display:flex;flex-direction:column;gap:8px">
+      ${lbl('Siste turer')}
+      <div style="display:flex;flex-direction:column;padding:2px 14px;${card}">
+      ${trips.map((t, i) => `<div style="display:flex;gap:14px;padding:12px 0;${i ? 'border-top:1px solid rgba(255,255,255,0.05)' : ''}">
+          <div style="display:flex;flex-direction:column;align-items:center;width:10px;flex:none;padding-top:5px;gap:3px"><span style="width:8px;height:8px;border-radius:4px;background:#8e8d89"></span><span style="width:1px;height:14px;background:#48474a"></span><span style="width:8px;height:8px;border-radius:4px;background:${C.green}"></span></div>
           <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px">
-            <span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span>${e(t.route)}</span></span>
-            <span style="font-size:12px;color:#8e8d89"><span>${e(t.meta)}</span></span>
+            <span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(`${t.from} → ${t.to}`)}</span>
+            <span style="font-size:12px;color:#8e8d89">${e([t.km != null ? `${Math.round(t.km).toLocaleString('nb-NO')} km` : '', dur(t.d1 - t.d0), t.kwh != null ? `${t.kwh < 10 ? nf(t.kwh, 1) : Math.round(t.kwh)} kWh` : ''].filter(Boolean).join(' · '))}</span>
           </div>
-          <span style="font-size:12px;color:#8e8d89;white-space:nowrap"><span>${e(t.when)}</span></span>
+          <span style="font-size:12px;color:#8e8d89;white-space:nowrap">${e(whenW(t.d1))}</span>
         </div>`).join('')}
-    </section>` : ''}` : ''}
+      </div>
+    </section>` : ''}`;
+      }
 
-  ${s.tab === 'save' ? `
-    <section style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
-      ${saveCards.map(c => `
-        <div data-on-click="openMore" data-arg="${e(c.id)}" style="position:relative;overflow:hidden;display:flex;flex-direction:column;gap:6px;padding:16px 16px 30px;border-radius:26px;background:#1c1c1f">
-          <span style="width:44px;height:44px;border-radius:22px;background:#262629;display:grid;place-items:center;margin-bottom:26px"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">savings</span></span>
-          <span style="font-size:12px;color:#c9c7c2"><span>${e(c.label)}</span></span>
-          <span style="display:flex;align-items:baseline;gap:4px;flex-wrap:wrap"><span style="font-size:30px;font-weight:300;letter-spacing:-0.03em;line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap"><span>${e(c.v)}</span></span><span style="font-size:11px;color:#8e8d89">kr</span><span style="font-size:11px;color:#c9c7c2;margin-left:auto;white-space:nowrap"><span>${e(c.pct)}</span> billigere</span></span>
-          <span style="position:absolute;left:0;right:0;bottom:0;height:22px;display:flex"><span style="${S(c.fill)}"></span><span style="${S(c.hatch)}"></span></span>
+      if (tab === 'save') {
+        const pctOf = (id) => { const d = Number(this.at(id, 'diesel_ville_kostet')), el = Number(this.at(id, 'strom_kostet')); return d > 0 && !isNaN(el) ? KD.clamp(Math.round((1 - el / d) * 100), 0, 100) : null; };
+        const saveCards = [['Spart denne måneden', cf.spart_maned, C.green], ['Spart i år', cf.spart_ar, C.amber]].map(([label, id, c]) => {
+          const p = pctOf(id);
+          return { label, id, c, v: this.ok(id) ? Math.round(this.n(id)).toLocaleString('nb-NO') : '–', pct: p == null ? '–' : `${p} %`, p: p || 0 };
+        });
+        const num = (id, fn) => this.ok(id) ? fn(this.n(id)) : '–';
+        const saveStats = [['electric_car', num(cf.kr_mil_el, v => nf(v, 2)), 'Tesla · kr/mil', cf.kr_mil_el], ['directions_car', num(cf.kr_mil_diesel, v => nf(v, 2)), 'Audi A6 · kr/mil', cf.kr_mil_diesel],
+          ['local_gas_station', num(cf.diesel_liter, v => `${Math.round(v).toLocaleString('nb-NO')} L`), 'Diesel ikke fylt', cf.diesel_liter], ['co2', num(cf.co2, v => `${Math.round(v).toLocaleString('nb-NO')} kg`), 'CO₂ spart', cf.co2],
+          ['oil_barrel', num(cf.dieselpris, v => nf(v, 2)), 'Diesel · kr/L', cf.dieselpris], ['ev_charger', num(cf.strompris, v => nf(v, 2)), 'Strøm · kr/kWh', cf.strompris]];
+        const kjort = Number(this.at(cf.spart_ar, 'kjort_km'));
+        const yearKm = isNaN(kjort) ? '–' : `${Math.round(kjort).toLocaleString('nb-NO')} km`;
+        const yearKr = this.ok(cf.spart_ar) ? `${Math.round(this.n(cf.spart_ar)).toLocaleString('nb-NO')} kroner` : '–';
+        const inc = this.dailySaved();
+        const maxInc = inc ? Math.max(...inc, 0.001) : 1;
+        const dailySum = inc ? nf(inc.reduce((x, y) => x + y, 0), 1) : '–';
+        const pill2 = 'display:inline-block;padding:0 10px;border-radius:14px;background:#f2f1ee;color:#141416;font-weight:500;line-height:1.6';
+        tabHTML = `<section style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
+      ${saveCards.map(c => `<div data-on-click="openMore" data-arg="${e(c.id)}" style="position:relative;overflow:hidden;min-width:0;display:flex;flex-direction:column;gap:6px;padding:16px 16px 30px;border-radius:26px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
+          <span style="width:44px;height:44px;border-radius:22px;background:${a(c.c, 0.16)};color:${c.c};display:grid;place-items:center;margin-bottom:22px"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">savings</span></span>
+          <span style="font-size:12px;color:#c9c7c2">${e(c.label)}</span>
+          <span style="display:flex;align-items:baseline;gap:4px;flex-wrap:wrap"><span style="font-size:30px;font-weight:300;letter-spacing:-0.03em;line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap">${e(c.v)}</span><span style="font-size:11px;color:#8e8d89">kr</span><span style="font-size:11px;color:#c9c7c2;margin-left:auto;white-space:nowrap">${e(c.pct)} billigere</span></span>
+          <span style="position:absolute;left:0;right:0;bottom:0;height:22px;display:flex"><span style="width:${c.p}%;height:100%;background:${c.c};transition:width 1.2s cubic-bezier(.2,.9,.3,1)"></span><span style="flex:1;height:100%;background:repeating-linear-gradient(-45deg, ${c.c} 0 2px, transparent 2px 6px);opacity:0.8"></span></span>
         </div>`).join('')}
     </section>
     <section style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
-      ${saveStats.map(x => `
-        <div data-on-click="openMore" data-arg="${e(x.id)}" style="display:flex;align-items:center;gap:10px;height:60px;padding:0 12px 0 5px;border-radius:30px;background:#1c1c1f">
-          <span style="width:50px;height:50px;border-radius:25px;flex:none;background:#262629;display:grid;place-items:center"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1"><span>${x.icon}</span></span></span>
-          <span style="display:flex;flex-direction:column;min-width:0"><span style="font-size:14px;font-weight:600;font-variant-numeric:tabular-nums"><span>${e(x.v)}</span></span><span style="font-size:11px;color:#a9a7a2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span>${e(x.k)}</span></span></span>
+      ${saveStats.map(([icon, v, k, id]) => `<div data-on-click="openMore" data-arg="${e(id)}" style="min-width:0;display:flex;align-items:center;gap:10px;height:60px;padding:0 12px 0 5px;border-radius:30px;background:#1c1c1f">
+          <span style="width:50px;height:50px;border-radius:25px;flex:none;background:#262629;display:grid;place-items:center"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">${icon}</span></span>
+          <span style="display:flex;flex-direction:column;min-width:0"><span style="font-size:14px;font-weight:600;font-variant-numeric:tabular-nums">${e(v)}</span><span style="font-size:11px;color:#a9a7a2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(k)}</span></span>
         </div>`).join('')}
     </section>
     <div style="font-size:18px;line-height:1.9;padding:0 4px;text-wrap:pretty">Så langt i år har dere kjørt <span style="${pill2}">${e(yearKm)}</span> og spart <span style="${pill2}">${e(yearKr)}</span> mot den gamle dieselen.</div>
     <section style="position:relative;overflow:hidden;display:flex;flex-direction:column;gap:6px;padding:16px 0 0;border-radius:26px;background:#1c1c1f">
       <span style="font-size:12px;color:#8e8d89;padding:0 16px">Spart per dag siste 30 dager</span>
       <span style="font-size:30px;font-weight:300;letter-spacing:-0.03em;padding:0 16px;font-variant-numeric:tabular-nums">${e(dailySum)}<span style="font-size:12px;color:#8e8d89"> kr</span></span>
-      <div style="display:flex;align-items:flex-end;gap:3px;height:120px;padding:0 10px">${daily.map(x => `<span style="${S(x)}"></span>`).join('')}</div>
-    </section>` : ''}
+      <div style="display:flex;align-items:flex-end;gap:3px;height:120px;padding:0 10px">${(inc || []).map((v, i) => `<span style="flex:1;height:${Math.max(4, v / maxInc * 100)}%;border-radius:4px 4px 0 0;background:${C.green};transition:height .9s cubic-bezier(.2,.9,.3,1) ${i * 0.02}s"></span>`).join('')}</div>
+    </section>`;
+      }
+
+      return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:18px">
+  <header style="display:flex;align-items:center;justify-content:space-between">
+    <div style="font-size:13px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89"><span>${e(cf.navn)}</span></div>
+    <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
+  </header>
+  ${hero}
+  ${controls}
+  ${tabs}
+  ${tabHTML}
 </div>`;
     }
+    /** Bryter (spor + knott) */
+    sw(on) { return `<span style="position:relative;width:46px;height:28px;border-radius:14px;flex:none;background:${on ? 'oklch(0.72 0.14 150)' : 'rgba(255,255,255,0.18)'};transition:background .2s"><span style="position:absolute;top:3px;left:${on ? 21 : 3}px;width:22px;height:22px;border-radius:11px;background:#f4f3ef;box-shadow:0 2px 6px rgba(0,0,0,0.3);transition:left .25s cubic-bezier(.34,1.4,.64,1)"></span></span>`; }
   }
 
   KD.define('kd-bil-card', KDBilCard, 'KD Bil', 'Tesla Model Y – pikselkopi av Claude Design');
@@ -7362,9 +7668,7 @@ try {
 
   ${canStart ? `<button data-on-click="startJob" style="height:56px;border-radius:28px;background:oklch(0.82 0.12 75);color:#1a1408;font-size:15px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:8px"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">print</span><span>${e(file ? `Skriv ut siste jobb · ${file}` : 'Skriv ut siste jobb')}</span></button>` : ''}
 
-  <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:2px;padding:4px;border-radius:20px;background:#1c1c1f">
-    ${tabs.map(t => `<button data-on-click="tab" data-arg="${t.k}" style="${S(t.style)}"><span>${e(t.label)}</span></button>`).join('')}
-  </div>
+  ${KD.segHTML('fane', [['simple', 'Enkel'], ['adv', 'Avansert']], s.tab, 'tab', { pink: true })}
 
   <section style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
     ${temps.map(t => `
@@ -7410,26 +7714,29 @@ try {
 /* ===== 60-kd-server-card.js ===== */
 try {
 /*
- * kd-server-card – pikselkopi av Claude Design «Server» (Proxmox · Unraid · UniFi · HA).
+ * kd-server-card – Server-popup (Proxmox · Unraid · UniFi · Nettverk) med oversikt, helsevarsler og styring.
  *
  *   type: custom:kd-server-card        # virker uten mer: alt under er standardverdier
- *   pve_node: sensor.1_node_pve_       # prefiks for Proxmox-noden (Proxmox Extended Sensors)
+ *   pve_node: sensor.1_node_pve_       # foretrukket Proxmox-node (andre noder finnes selv)
  *   unraid: d_day_darling              # prefiks for Unraid-integrasjonen (uten «sensor.»)
  *   unifi_gateway: ''                  # slug for ruteren; tom = finnes selv (den med *_wan_latency)
  *   speedtest_ned / speedtest_opp / speedtest_ping, qbit_sparefart
  *   pve_ip, unraid_ip, isp, pve_cpu_navn, unraid_cpu_navn, pve_effekt, unraid_effekt, pve_temp
  *   navn_map: { "102": "Plex" }        # penere navn på gjester/containere (vmid eller nøkkel)
  *   blokker: [switch.x]                # UniFi-klienter som kan blokkeres (tom = finnes selv)
- *   faner: [pve, unraid, unifi, ha]    # hvilke faner (tom = de som har data)
+ *   faner: [oversikt, pve, unraid, unifi, ha]   # hvilke faner (tom = de som har data). «ha» = Nettverk
+ *   grense_cpu: 85, grense_ram: 90, grense_disk: 85, grense_temp: 70, grense_disktemp: 50   # varselgrenser
  *
- * Oppdager selv: Proxmox-gjester (sensor.N_ct_…_status / sensor.N_vm_…_status + start/stopp-knapper), lagring
- * (sensor.N_storage_*_usage), Unraid-containere/VM-er/disker, UniFi-enheter (device_tracker + *_uptime),
- * og via entitetsregisteret UniFi-sporere, blokk- og PoE-brytere og fastvareoppdateringer.
+ * Oppdager selv: Proxmox-noder og -gjester (Proxmox Extended Sensors: sensor.N_node_…, sensor.N_ct_/vm_…_status
+ * + knapper, og «Proxmox VE»-integrasjonen (proxmoxve) via entitetsregisteret), lagring (sensor.N_storage_*_usage),
+ * Unraid-array/paritet/disker/containere/VM-er/UPS, UniFi-enheter (device_tracker + *_uptime, *_restart, update.*),
+ * Wi-Fi-nett, PoE-porter, blokk-brytere og klienter. Faner uten data skjules.
+ * Handlinger som stopper noe (slå av, omstart, PoE av, fastvare …) må bekreftes (trykk → bekreft-rad).
  */
 (() => {
   const KD = window.KD; if (!KD) return;
   const C = { green: 'oklch(0.8 0.12 150)', blue: 'oklch(0.8 0.12 250)', amber: 'oklch(0.82 0.12 75)', red: 'oklch(0.72 0.15 25)', pink: 'oklch(0.78 0.13 350)' };
-  const a = (c, o) => c.replace(')', ` / ${o})`);
+  const a = (c, o) => String(c).startsWith('#') ? `color-mix(in srgb, ${c} ${Math.round(o * 100)}%, transparent)` : String(c).replace(')', ` / ${o})`);
   const PINK = 'linear-gradient(135deg, oklch(0.78 0.13 350), oklch(0.9 0.05 20))';
   const nf = (n, d = 0) => (n == null || isNaN(n)) ? '–' : Number(n).toLocaleString('nb-NO', { minimumFractionDigits: d, maximumFractionDigits: d });
   const nf1 = (n) => (n == null || isNaN(n)) ? '–' : Number(n).toLocaleString('nb-NO', { minimumFractionDigits: 0, maximumFractionDigits: 1 });
@@ -7467,9 +7774,29 @@ try {
     [/immich|photo|foto/i, 'photo_library'], [/dispatch|iptv|tvh/i, 'live_tv'], [/docker|portainer|dockge/i, 'deployed_code'], [/unifi/i, 'router'], [/postgres|mysql|maria|influx|db\b|redis/i, 'database'],
     [/grafana|monitor|uptime|kuma/i, 'monitoring'], [/nginx|proxy|traefik|caddy|tunnel/i, 'lan'], [/windows|win\d/i, 'desktop_windows'], [/ubuntu|debian|linux|alpine/i, 'terminal'], [/flaresolverr|solver/i, 'bolt']];
   const iconFor = (name, def) => { for (const [re, ic] of ICONS) if (re.test(name)) return ic; return def; };
+  /** Handlingstyper for Proxmox-knapper: [tekst, ikon, farge, må bekreftes] */
+  const ACT = {
+    start: ['Start', 'play_arrow', C.green, false], resume: ['Fortsett', 'play_arrow', C.green, false],
+    shutdown: ['Slå av', 'power_settings_new', C.amber, true], reboot: ['Omstart', 'restart_alt', C.blue, true],
+    suspend: ['Pause', 'pause', C.amber, true], hibernate: ['Dvale', 'bedtime', C.amber, true],
+    stop: ['Tving stopp', 'stop_circle', C.red, true], reset: ['Tilbakestill', 'device_reset', C.red, true],
+    start_all: ['Start alle', 'play_circle', C.green, true], stop_all: ['Stopp alle', 'stop_circle', C.red, true],
+  };
+  const actOf = (rest) => {
+    const r = String(rest || '');
+    if (/^start_?all/.test(r)) return 'start_all'; if (/^(stop|shutdown)_?all/.test(r)) return 'stop_all';
+    const m = r.match(/^(start|shutdown|stop|reboot|restart|suspend|pause|resume|hibernate|reset)/); if (!m) return null;
+    return { restart: 'reboot', pause: 'suspend' }[m[1]] || m[1];
+  };
+  const prefixOf = (list) => { if (!list.length) return ''; let p = list.reduce((x, y) => { let i = 0; while (i < x.length && x[i] === y[i]) i++; return x.slice(0, i); }, list[0]); return p.slice(0, p.lastIndexOf('_') + 1); };
+  /** Størrelse fra attributt («4.0 TB», 4000000000) → byte */
+  const sizeAttr = (v) => { if (v == null || v === '') return null; if (typeof v === 'number') return v; const m = String(v).match(/(-?\d+(?:[.,]\d+)?)\s*([kmgt]i?b)?/i); if (!m) return null; return parseFloat(m[1].replace(',', '.')) * (UNIT[(m[2] || 'b').toLowerCase()] || 1); };
+  const pctCol = (p, warn = 85, bad = 95, def = C.blue) => p == null ? def : p >= bad ? C.red : p >= warn ? C.amber : def;
+  const tempCol = (t, warn, bad) => t == null ? '#8e8d89' : t >= bad ? C.red : t >= warn ? C.amber : C.green;
+  const LVL = [C.blue, C.amber, C.red];
 
   class KDServerCard extends KD.KDSheet {
-    static head = ['dns', 'Server', 'Proxmox · UniFi'];
+    static head = ['dns', 'Server', 'Proxmox · Unraid · UniFi'];
     static defaults = {
       pve_node: 'sensor.1_node_pve_', pve_temp: '', pve_effekt: 'sensor.server_rack_power', pve_ip: '', pve_cpu_navn: '',
       unraid: 'd_day_darling', unraid_effekt: '', unraid_ip: '', unraid_cpu_navn: '',
@@ -7477,38 +7804,94 @@ try {
       speedtest_ned: 'sensor.speedtest_download', speedtest_opp: 'sensor.speedtest_upload', speedtest_ping: 'sensor.speedtest_ping',
       qbit_sparefart: 'switch.qbittorrent_alternative_speed', qbit: 'sensor.qbittorrent_',
       navn_map: {}, blokker: null, faner: null, poe_maks: 8,
+      grense_cpu: 85, grense_ram: 90, grense_disk: 85, grense_temp: 70, grense_disktemp: 50,
     };
-    constructor() { super(); this.state = { tab: null }; }
+    constructor() { super(); this.state = { tab: null, open: null, conf: null, gf: 'alle', gs: 'id', df: 'alle' }; this._cm = {}; this._mi = {}; }
 
     /* ---------------- oppdagelse ---------------- */
     _ids() { const S = this.all(); if (this._idsN !== this._hass.states) { this._idsN = this._hass.states; this._idList = Object.keys(S); } return this._idList; }
     _reg() { return (this._hass && this._hass.entities) || {}; }
     _devs() { return (this._hass && this._hass.devices) || {}; }
     _nm(k, def) { const m = this.config.navn_map || {}; return m[k] || def; }
+    _devName(id) { const R = this._reg(), d = this._devs()[(R[id] || {}).device_id]; return d ? (d.name_by_user || d.name || '') : ''; }
 
-    /** Proxmox: noden */
-    _pveNode() {
-      const P = this.config.pve_node || '';
-      const name = (P.match(/_node_(.+?)_?$/) || [])[1] || 'pve';
-      const has = this._ids().some(id => id.startsWith(P));
-      return { P, name, has };
+    /** Proxmox-noder: sensor.N_node_<navn>_* (Proxmox Extended Sensors) + proxmoxve-integrasjonen */
+    _pveNodes() {
+      if (this._pnS === this._hass.states && this._pnC) return this._pnC;
+      this._pnS = this._hass.states;
+      const ids = this._ids(), keys = [], out = [];
+      for (const id of ids) { const m = id.match(/^sensor\.(\d+_node_.+?)_(cpu_usage|uptime|memory_usage)$/); if (m && !keys.includes(m[1])) keys.push(m[1]); }
+      const pref = (this.config.pve_node || '').replace(/^sensor\./, '').replace(/_$/, '');
+      keys.sort((x, y) => (y === pref) - (x === pref) || x.localeCompare(y));
+      for (const k of keys) {
+        const P = `sensor.${k}_`, name = k.replace(/^\d+_node_/, '');
+        const btns = {};
+        for (const b of ids) if (b.startsWith(`button.${k}_`)) { const a = actOf(b.slice(8 + k.length)); if (a && !btns[a]) btns[a] = b; }
+        const f = (sfx) => this._hass.states[P + sfx] ? P + sfx : null;
+        out.push({ key: k, name: this._nm(name, name), P, cpu: f('cpu_usage'), mem: f('memory_usage'), memUsed: f('memory_used'), memTotal: f('memory_total'), disk: f('root_filesystem_usage') || f('disk_usage'),
+          up: f('uptime'), load1: f('load_average_1m'), load5: f('load_average_5m'), load15: f('load_average_15m'), swap: f('swap_usage'), iowait: f('io_wait'),
+          ver: f('pve_version'), kernel: f('kernel_version'), upd: f('node_updates'), status: f('status') || (this._hass.states[`binary_sensor.${k}_status`] ? `binary_sensor.${k}_status` : null),
+          temp: (k === pref && this.config.pve_temp) || ids.find(id => id.startsWith(P) && /temp/.test(id)) || null,
+          stress: ids.filter(id => id.startsWith(`binary_sensor.${k}_`) && /stress|overload/.test(id)), btns, src: 'pes' });
+      }
+      // proxmoxve (HACS/kjerne): grupper registerentiteter per enhet
+      for (const g of this._pveRegGroups()) if (g.type === 'node') {
+        const L = g.ids, fnd = (re, d = 'sensor') => L.find(id => id.startsWith(d + '.') && re.test(obj(id))) || null;
+        const btns = {}; for (const b of L) if (dom(b) === 'button') { const a = actOf(obj(b).slice(g.pre.length)); if (a && !btns[a]) btns[a] = b; }
+        out.push({ key: g.dev, name: g.name, P: '', cpu: fnd(/cpu_(usage|used)$/), mem: fnd(/memory_(usage|used_percentage)$/), memUsed: fnd(/memory_used$/), memTotal: fnd(/memory_(total|free)$/), disk: fnd(/disk_(usage|used_percentage)$/),
+          up: fnd(/uptime$/), load1: null, load5: null, load15: null, swap: fnd(/swap_(usage|used_percentage)$/), iowait: null, ver: fnd(/version$/), kernel: null, upd: fnd(/updates?$/),
+          status: fnd(/status$/, 'binary_sensor') || fnd(/status$/), temp: fnd(/temp/), stress: [], btns, src: 'reg' });
+      }
+      return (this._pnC = out);
     }
-    /** Proxmox: gjester fra sensor.N_(ct|vm)_<nøkkel>_status */
+    /** proxmoxve-registerentiteter gruppert per enhet: [{dev, type, name, vmid, ids, pre}] */
+    _pveRegGroups() {
+      if (this._prS === this._hass.states && this._prC) return this._prC;
+      this._prS = this._hass.states;
+      const R = this._reg(), D = this._devs(), per = {};
+      for (const id in R) { const r = R[id]; if (!r || !/^proxmox(ve)?$/.test(r.platform) || r.hidden || !this._hass.states[id]) continue; (per[r.device_id || 'x'] = per[r.device_id || 'x'] || []).push(id); }
+      const out = [];
+      for (const [dev, ids] of Object.entries(per)) {
+        const objs = ids.map(obj), pre = prefixOf(objs), d = D[dev] || {};
+        const hint = `${pre} ${d.model || ''} ${d.name || ''}`.toLowerCase();
+        const type = /(^|[\s_])(lxc|ct|container)/.test(hint) ? 'lxc' : /(^|[\s_])(qemu|vm|virtual)/.test(hint) ? 'vm' : /storage/.test(hint) ? 'storage' : /node/.test(hint) ? 'node' : null;
+        if (!type) continue;
+        const vmid = (hint.match(/\b(\d{3,})\b|_(\d{3,})_/) || []).slice(1).find(Boolean) || '';
+        const raw = pre.replace(/^(node|qemu|lxc|vm|ct|storage)_/, '').replace(/_?\d{3,}_?$/, '').replace(/_$/, '');
+        let name = String(d.name_by_user || d.name || '').replace(/^(node|qemu|lxc|vm|ct|storage)\s*[:-]?\s*/i, '').replace(/\(?\b\d{3,}\b\)?/g, '').trim() || title(raw);
+        name = this._nm(vmid, this._nm(raw, name));
+        out.push({ dev, type, name, vmid, ids, pre, raw });
+      }
+      return (this._prC = out);
+    }
+    /** Proxmox-gjester (struktur) */
     _pveGuests() {
       if (this._pgS === this._hass.states && this._pgC) return this._pgC;
       this._pgS = this._hass.states;
-      const out = [];
-      for (const id of this._ids()) {
+      const out = [], ids = this._ids();
+      const mk = (kind, vmid, key, name, L, pre) => {
+        const fnd = (re, doms = ['sensor']) => L.find(id => doms.includes(dom(id)) && re.test(obj(id).slice(pre.length))) || null;
+        const btns = {}; for (const b of L) if (dom(b) === 'button') { const a = actOf(obj(b).slice(pre.length)); if (a && !btns[a]) btns[a] = b; }
+        return { k: `pve-${kind}-${vmid || key}`, kind, vmid, key, name, status: fnd(/^status$/, ['sensor', 'binary_sensor']) || fnd(/status$/, ['sensor', 'binary_sensor']),
+          cpu: fnd(/^cpu_(usage|used)$/), memPct: fnd(/^(memory|ram)_(usage|used_percentage)$/), memUsed: fnd(/^(memory|ram)_used$/), memTotal: fnd(/^(memory|ram)_total$/),
+          disk: fnd(/^disk_(usage|used_percentage)$/), up: fnd(/^uptime$/), btns };
+      };
+      const groups = {};
+      for (const id of ids) {
         const m = id.match(/^sensor\.(\d+)_(ct|lxc|vm|qemu)_(.+)_status$/); if (!m) continue;
-        const [, n, k, key] = m, kind = /ct|lxc/.test(k) ? 'lxc' : 'vm', base = `${n}_${k}_${key}_`;
-        const vmid = (key.match(/_(\d{2,})$/) || [])[1] || '';
-        const raw = key.replace(/_\d{2,}$/, '');
+        const [, n, k, key] = m, base = `${n}_${k}_${key}_`;
+        const vmid = (key.match(/_(\d{2,})$/) || [])[1] || '', raw = key.replace(/_\d{2,}$/, '');
         let name = String(this.at(id, 'friendly_name', '') || '').replace(/\s*status\s*$/i, '').replace(/\(?\b\d{3,}\b\)?/g, '').replace(/^\s*(lxc|ct|vm|qemu)\b\s*[-:]?\s*/i, '').trim() || title(raw);
         name = this._nm(vmid, this._nm(raw, name));
-        const btn = (re) => this._ids().find(b => b.startsWith(`button.${base}`) && re.test(b.slice(7 + base.length)));
-        out.push({ id, kind, vmid, key: raw, name, base: `sensor.${base}`, start: btn(/^start/), stop: btn(/^shutdown/) || btn(/^stop/) });
+        groups[base] = { kind: /ct|lxc/.test(k) ? 'lxc' : 'vm', vmid, raw, name };
       }
-      return (this._pgC = out.sort((x, y) => (+x.vmid || 1e9) - (+y.vmid || 1e9) || x.name.localeCompare(y.name, 'nb')));
+      if (Object.keys(groups).length) {
+        const by = {}; for (const b of Object.keys(groups)) by[b] = [];
+        for (const id of ids) { const o = obj(id); if (!/^\d+_(ct|lxc|vm|qemu)_/.test(o)) continue; for (const b in by) if (o.startsWith(b)) { by[b].push(id); break; } }
+        for (const b in groups) { const g = groups[b]; out.push(mk(g.kind, g.vmid, g.raw, g.name, by[b], b)); }
+      }
+      for (const g of this._pveRegGroups()) if (g.type === 'lxc' || g.type === 'vm') out.push(mk(g.type, g.vmid, g.raw, g.name, g.ids, g.pre));
+      return (this._pgC = out);
     }
     _pveStorage() {
       const out = [];
@@ -7518,6 +7901,7 @@ try {
         const name = this._nm(m[2], String(this.at(id, 'friendly_name', '') || '').replace(/\s*(usage|bruk)\s*$/i, '').replace(/^\s*storage\s*/i, '').trim() || m[2].replace(/_/g, '-'));
         out.push({ id, name, used: base + 'used', total: base + 'total' });
       }
+      for (const g of this._pveRegGroups()) if (g.type === 'storage') { const u = g.ids.find(id => /disk_(usage|used_percentage)$|_usage$/.test(id)); if (u) out.push({ id: u, name: g.name, used: g.ids.find(id => /_used$/.test(id)), total: g.ids.find(id => /_total$/.test(id)) }); }
       return out;
     }
     /** Unraid */
@@ -7528,7 +7912,7 @@ try {
       const cont = ids.filter(id => id.startsWith(`switch.${u}_container_`)).map(id => {
         const k = id.slice(`switch.${u}_container_`.length);
         const nm = this._nm(k, title(k.replace(/^binhex_/, '')));
-        return { id, key: k, name: nm, upd: `update.${obj(id)}_update`, cpu: `sensor.${u}_container_${k}_cpu_usage`, mem: `sensor.${u}_container_${k}_memory_usage` };
+        return { id, key: k, name: nm, upd: `update.${obj(id)}_update`, restart: ids.find(b => b.startsWith(`button.${u}_container_${k}_`) && /restart/.test(b)) || null, cpu: `sensor.${u}_container_${k}_cpu_usage`, mem: `sensor.${u}_container_${k}_memory_usage` };
       }).sort((x, y) => x.name.localeCompare(y.name, 'nb'));
       const vms = ids.filter(id => id.startsWith(`switch.${u}_vm_`)).map(id => ({ id, name: this._nm(id.slice(`switch.${u}_vm_`.length), title(id.slice(`switch.${u}_vm_`.length))) }));
       const disks = {};
@@ -7555,7 +7939,12 @@ try {
         const name = String(this.at(id, 'friendly_name', '') || this.at(`sensor.${slug}_uptime${sfx}`, 'friendly_name', '') || '').replace(/\s*(uptime|oppetid)\s*$/i, '').trim() || title(slug);
         const lav = `${name} ${slug}`.toLowerCase();
         const type = /dream|udm|gateway|udr|ucg|uxg|usg/.test(lav) || ids.includes(`sensor.${slug}_google_wan_latency`) || ids.includes(`sensor.${slug}_cloudflare_wan_latency`) ? 0 : /usw|switch|flex|\bus[- ]?\d/.test(lav) ? 1 : 2;
-        out.push({ slug, name, type, tracker: id, up: `sensor.${slug}_uptime${sfx}`, cpu, mem: `sensor.${slug}_memory_utilisation${sfx}`, clients: `sensor.${slug}_clients`, fw: `update.${slug}_firmware`, temp: `sensor.${slug}_cpu_temperature${sfx}` });
+        const memId = [`sensor.${slug}_memory_utilisation${sfx}`, `sensor.${slug}_memory_utilization${sfx}`].find(x => S[x]) || `sensor.${slug}_memory_utilisation${sfx}`;
+        const temp = [`sensor.${slug}_cpu_temperature${sfx}`, `sensor.${slug}_temperature${sfx}`, `sensor.${slug}_cpu_temperature`, `sensor.${slug}_temperature`].find(x => S[x]) || null;
+        const restart = [`button.${slug}_restart`, `button.${slug}_restart_2`].find(x => S[x]) || null;
+        const ports = ids.filter(p => p.startsWith(`switch.${slug}_port_`) && /_port_\d+(_poe)?$/.test(p)).sort((x, y) => +x.match(/_port_(\d+)/)[1] - +y.match(/_port_(\d+)/)[1]);
+        const cycles = ids.filter(p => p.startsWith(`button.${slug}_port_`) && /power_cycle$/.test(p));
+        out.push({ slug, name, type, tracker: id, up: `sensor.${slug}_uptime${sfx}`, cpu, mem: memId, clients: `sensor.${slug}_clients`, fw: `update.${slug}_firmware`, temp, restart, ports, cycles });
       }
       out.sort((x, y) => x.type - y.type || x.name.localeCompare(y.name, 'nb'));
       const gws = this.config.unifi_gateway;
@@ -7569,127 +7958,178 @@ try {
       for (const id in R) if (R[id] && R[id].platform === 'unifi' && !R[id].hidden && this._hass.states[id]) out.push(id);
       return out;
     }
-
-    /* ---------------- hendelser ---------------- */
-    goTab(ev, k) { this.setState({ tab: k }); }
-    act(ev, id) { if (!id) return; const d = dom(id); if (d === 'button') this.press(id); else if (d === 'update') this.call('update', 'install', { entity_id: id }); else this.toggle(id); }
-    tog(ev, id) { if (id) this.toggle(id); }
-
-    /* ---------------- visninger ---------------- */
-    _gauge(label, v, max, unit, sub, col) {
-      const vv = v == null || isNaN(v) ? 0 : v;
-      return { label, sub, v: v == null || isNaN(v) ? '–' : `${nf(v)}${unit}`, ring: { position: 'relative', width: 72, height: 72, borderRadius: '50%', background: `conic-gradient(${col} ${Math.max(0, Math.min(1, vv / max)) * 360}deg, #2a2a2d 0)`, transition: 'background .6s' } };
-    }
-    _item(o, i) {
-      const on = o.on ?? true, col = o.col || C.blue;
-      return {
-        name: o.name, icon: o.icon, sub: o.sub || '', v: o.v || '', tagT: o.tag || '', act: o.act, tog: o.tog, btnIcon: o.btnIcon || '',
-        row: { display: 'flex', alignItems: 'center', gap: 12, padding: '10px 4px', borderTop: i ? '1px solid rgba(255,255,255,0.05)' : 'none' },
-        iconWrap: { width: 36, height: 36, borderRadius: 12, flex: 'none', display: 'grid', placeItems: 'center', background: on ? a(col, 0.16) : '#1f1f22', color: on ? col : '#6d6c69' },
-        tag: { display: o.tag ? 'inline-block' : 'none', fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 6, background: o.tagCol ? a(o.tagCol, 0.18) : '#2a2a2d', color: o.tagCol || '#a9a7a2', textTransform: 'uppercase', letterSpacing: '0.04em' },
-        subStyle: { display: o.sub ? 'block' : 'none', fontSize: 12, color: o.warn ? C.red : '#8e8d89', fontVariantNumeric: 'tabular-nums' },
-        barWrap: { display: o.bar != null ? 'block' : 'none', height: 4, borderRadius: 2, background: '#2a2a2d', overflow: 'hidden' },
-        bar: { display: 'block', width: `${o.bar || 0}%`, height: '100%', background: (o.bar || 0) > 85 ? C.amber : col },
-        vStyle: { display: o.v ? 'block' : 'none', fontSize: 13, fontWeight: 500, color: '#c9c7c2', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' },
-        btn: { display: o.act ? 'grid' : 'none', width: 36, height: 36, borderRadius: 18, flex: 'none', placeItems: 'center', background: '#1f1f22', color: o.btnCol || '#c9c7c2' },
-        track: { display: o.tog ? 'block' : 'none', position: 'relative', width: 44, height: 26, borderRadius: 13, flex: 'none', background: o.togOn ? C.pink : '#3a3a3d', transition: 'background .2s' },
-        knob: { position: 'absolute', top: 3, left: o.togOn ? 21 : 3, width: 20, height: 20, borderRadius: 10, background: '#f4f3ef', transition: 'left .2s' },
-      };
-    }
-    _group(title, meta, list) { return list.length ? { title, meta, items: list.map((o, i) => this._item(o, i)) } : null; }
-
-    _pve() {
-      const c = this.config, N = this._pveNode(), P = N.P;
-      const guests = this._pveGuests().map(g => {
-        const st = this.v(g.id).toLowerCase(), on = st === 'running';
-        const cpu = this.n(g.base + 'cpu_usage'), ram = fmtB(bytes(this.st(g.base + 'ram_used'))), up = upShort(upSec(this.st(g.base + 'uptime')));
-        return { ...g, on, cpu, ram, up, state: st };
-      });
-      const running = guests.filter(g => g.on).length;
-      const ver = (String(this.v(P + 'pve_version')).match(/\d+\.\d+/) || [])[0];
-      const cpu = this.n(P + 'cpu_usage'), mem = this.n(P + 'memory_usage');
-      const memU = bytes(this.st(P + 'memory_used')), memT = bytes(this.st(P + 'memory_total'));
-      const tempId = c.pve_temp || this._ids().find(id => id.startsWith(P) && /temp/.test(id)) || '';
-      const temp = tempId ? this.n(tempId) : null;
-      const load = this.n(P + 'load_average_1m'), swap = this.n(P + 'swap_usage'), root = this.n(P + 'root_filesystem_usage');
-      const W = c.pve_effekt ? this.n(c.pve_effekt) : null;
-      const store = this._pveStorage().map(s => {
-        const bar = this.n(s.id), u = bytes(this.st(s.used)), t = bytes(this.st(s.total));
-        return { name: s.name, icon: 'hard_drive', sub: u != null && t != null ? `${fmtB(u)} av ${fmtB(t)}` : '', bar: bar == null ? null : Math.round(bar), v: bar == null ? '' : `${Math.round(bar)} %` };
-      });
-      const bk = [];
-      const bp = this.st(P + 'backup_progress');
-      if (bp && !KD.BAD.has(bp.state)) { const v = num(bp); bk.push({ name: 'Sikkerhetskopi', icon: 'backup', sub: v != null ? (v > 0 && v < 100 ? `Pågår · ${nf(v)} %` : `Sist oppdatert kl. ${hm(bp.last_changed)}`) : String(bp.state), v: v != null && v > 0 && v < 100 ? `${nf(v)} %` : 'OK', col: C.green }); }
-      const lt = this.st(P + 'last_task');
-      if (lt && !KD.BAD.has(lt.state)) { const bad = /error|fail|feil/i.test(lt.state); bk.push({ name: 'Siste oppgave', icon: 'verified', sub: `${lt.state} · kl. ${hm(lt.last_changed)}`, v: bad ? 'Feil' : 'OK', col: bad ? C.red : C.green }); }
-      const upd = this.n(P + 'node_updates');
-      if (upd != null) bk.push({ name: 'Oppdateringer', icon: 'system_update', sub: upd ? `${nf(upd)} pakker venter` : 'Noden er oppdatert', v: upd ? String(upd) : 'OK', col: upd ? C.amber : C.green });
-      return {
-        status: `${N.name} · Proxmox VE${ver ? ' ' + ver : ''}`, ok: guests.length && running === guests.length ? C.green : C.amber,
-        headline: !guests.length ? (N.has ? 'Noden kjører' : 'Fant ingen Proxmox-node') : running === guests.length ? 'Alle gjester kjører' : `${running} av ${guests.length} gjester kjører`,
-        subline: [this.ok(P + 'uptime') ? `Oppe i ${upLong(upSec(this.st(P + 'uptime')))}` : '', W != null ? `${nf(W)} W` : '', c.pve_ip].filter(Boolean).join(' · '),
-        gauges: [
-          this._gauge('CPU', cpu, 100, ' %', c.pve_cpu_navn || (load != null ? `load ${nf(load, 2)}` : ''), cpu > 70 ? C.amber : C.blue),
-          this._gauge('Minne', mem, 100, ' %', memU != null && memT != null ? `${fmtBs(memU)[0]} av ${fmtBs(memT).join(' ')}` : swap != null ? `swap ${nf(swap)} %` : '', C.blue),
-          tempId ? this._gauge('Temp', temp, 90, '°', 'CPU-pakke', temp > 58 ? C.red : C.green) : this._gauge('Disk', root, 100, ' %', 'rot-FS', root > 85 ? C.amber : C.green),
-        ],
-        groups: [
-          this._group('VM og LXC', `${running} kjører`, guests.map(g => ({ name: g.name, icon: iconFor(g.name, g.kind === 'vm' ? 'computer' : 'deployed_code'), tag: `${g.kind}${g.vmid ? ' ' + g.vmid : ''}`, on: g.on,
-            sub: g.on ? [g.cpu != null ? `CPU ${nf(g.cpu)} %` : '', g.ram, g.up ? `oppe ${g.up}` : ''].filter(Boolean).join(' · ') : g.state === 'paused' ? 'Pauset' : 'Stoppet', warn: !g.on,
-            act: g.on ? g.stop : g.start, btnIcon: g.on ? 'stop' : 'play_arrow', btnCol: g.on ? '#c9c7c2' : C.green }))),
-          this._group('Lagring', `${store.length} ${store.length === 1 ? 'område' : 'områder'}`, store),
-          this._group('Sikkerhetskopi', 'Proxmox VE', bk),
-        ].filter(Boolean),
-      };
+    /** Wi-Fi-nett (WLAN-brytere): enheter med QR-bilde eller id med wlan/wifi/ssid */
+    _wlans() {
+      const R = this._reg(), reg = this._unifiReg();
+      const qrDev = new Set(reg.filter(id => dom(id) === 'image').map(id => (R[id] || {}).device_id).filter(Boolean));
+      return reg.filter(id => dom(id) === 'switch' && !/port_\d/.test(id) && (qrDev.has((R[id] || {}).device_id) || /wlan|wifi|wi_fi|ssid/.test(obj(id))));
     }
 
-    _unraidV(U) {
-      const c = this.config, P = U.P, u = U.u;
-      const nameS = String(this.at(P + 'cpu_usage', 'friendly_name', '') || '').replace(/\s*cpu.*$/i, '').trim() || title(u);
-      const ver = (String(this.v(P + 'unraid_version')).match(/\d+(\.\d+)?/) || [])[0];
-      const dockers = U.cont.map(d => ({ ...d, on: this.v(d.id) === 'on', gone: !this.ok(d.id), hasUpd: this.v(d.upd) === 'on', cpu: this.n(d.cpu), mem: this.n(d.mem) }));
+    /* ---------------- modeller (verdier) ---------------- */
+    _gV(g) {
+      const raw = this.v(g.status).toLowerCase();
+      const state = dom(g.status || 'x.x') === 'binary_sensor' ? (raw === 'on' ? 'running' : raw === 'off' ? 'stopped' : raw) : raw;
+      const on = state === 'running', paused = /pause|suspend/.test(state);
+      const mu = bytes(this.st(g.memUsed)), mt = bytes(this.st(g.memTotal));
+      const memP = this.n(g.memPct) ?? (mu != null && mt ? mu / mt * 100 : null);
+      return { ...g, state, on, paused, cpuV: this.n(g.cpu), memV: memP, mu, mt, diskV: this.n(g.disk), upS: upSec(this.st(g.up)) };
+    }
+    _nV(N) {
+      const mu = bytes(this.st(N.memUsed)), mt = bytes(this.st(N.memTotal));
+      const st = this.v(N.status).toLowerCase();
+      const online = !N.status || ['online', 'on', 'running', 'ok'].includes(st) || (!KD.BAD.has(st) && !/off|down|unknown/.test(st));
+      return { ...N, online, cpuV: this.n(N.cpu), memV: this.n(N.mem) ?? (mu != null && mt ? mu / mt * 100 : null), mu, mt, diskV: this.n(N.disk), upS: upSec(this.st(N.up)),
+        loads: [this.n(N.load1), this.n(N.load5), this.n(N.load15)], swapV: this.n(N.swap), ioV: this.n(N.iowait), tempV: N.temp ? this.n(N.temp) : null,
+        verV: (String(this.v(N.ver)).match(/\d+\.\d+(\.\d+)?/) || [])[0] || '', updV: this.n(N.upd), stressOn: N.stress.filter(id => this.v(id) === 'on') };
+    }
+    _urV(U) {
+      const P = U.P, u = U.u;
+      const dockers = U.cont.map(d => ({ ...d, on: this.v(d.id) === 'on', gone: !this.ok(d.id), hasUpd: this.v(d.upd) === 'on', cpuV: this.n(d.cpu), memV: this.n(d.mem) }));
       const parRun = this.v(`binary_sensor.${u}_parity_check_running`) === 'on';
       const parP = this.n(`sensor.${u}_parity_check_progress`, this.n(`sensor.${u}_parity_progress`));
       const parity = parRun || (parP != null && parP > 0 && parP < 100) || (U.parity && this.v(U.parity) === 'on');
-      const arrOn = this.st(`binary_sensor.${u}_array_started`) ? this.v(`binary_sensor.${u}_array_started`) === 'on' : !/stop/i.test(this.v(P + 'array_state'));
-      const upS = this.st(P + 'up_since') || this.st(P + 'uptime');
-      const Wid = c.unraid_effekt || [P + 'ups_power', P + 'ups_load_power', P + 'ups_current_power'].find(id => this.st(id));
-      const W = Wid ? this.n(Wid) : null;
-      const cpu = this.n(P + 'cpu_usage'), ram = this.n(P + 'ram_usage'), arr = this.n(P + 'array_usage'), temp = this.n(P + 'cpu_temperature');
-      const ramU = bytes(this.st(P + 'ram_used')), ramT = bytes(this.st(P + 'ram_total'));
-      const arU = bytes(this.st(P + 'array_used')) ?? bytes(this.st(P + 'array_usage_used')), arT = bytes(this.st(P + 'array_total')) ?? bytes(this.st(P + 'array_size'));
+      const arrState = this.v(P + 'array_state') || this.v(P + 'array_status');
+      const arrOn = this.st(`binary_sensor.${u}_array_started`) ? this.v(`binary_sensor.${u}_array_started`) === 'on' : !/stop/i.test(arrState);
       const disks = U.disks.map(d => {
-        const bar = this.n(d.use), t = this.n(d.temp), par = /^Parity/.test(d.name);
-        return { name: d.name, icon: /^Cache/.test(d.name) ? 'memory' : 'hard_drive', sub: [t != null ? `${nf(t)}°` : '', !par && bar == null ? 'spunnet ned' : ''].filter(Boolean).join(' · ') || (par ? 'paritet' : ''), bar: par ? 100 : bar == null ? 0 : Math.round(bar), v: par ? 'paritet' : bar == null ? '' : `${Math.round(bar)} %`, col: par ? '#6d6c69' : C.blue };
+        const s = this.st(d.use), at = (s && s.attributes) || {}, t = this.n(d.temp), bar = this.n(d.use), par = /^Parity/.test(d.name);
+        const tot = sizeAttr(at.total_size ?? at.disk_size ?? at.size ?? at.total), used = sizeAttr(at.used_space ?? at.used), free = sizeAttr(at.free_space ?? at.free);
+        const spun = at.spin_down === true || /standby|spun|sleep/i.test(String(at.disk_status || at.status || at.spin_state || '')) || (d.temp && !this.ok(d.temp) && !!this.st(d.temp));
+        return { ...d, par, cache: /^Cache/.test(d.name), t, bar, tot, used: used ?? (tot != null && free != null ? tot - free : null), spun, model: at.model || at.device || '', fs: at.filesystem || at.fs_type || '' };
       });
-      const qb = this.config.qbit || 'sensor.qbittorrent_';
-      const qbSub = () => { const d = this.st(qb + 'download_speed'), up = this.st(qb + 'upload_speed'); if (!d || KD.BAD.has(d.state)) return ''; const rate = s => { const v = num(s); if (v == null) return '–'; const uu = String(s.attributes.unit_of_measurement || 'B/s').toLowerCase(); const f = uu.startsWith('gi') ? 1073741824 : uu.startsWith('mi') ? 1048576 : uu.startsWith('ki') ? 1024 : uu.startsWith('g') ? 1e9 : uu.startsWith('m') ? 1e6 : uu.startsWith('k') ? 1e3 : 1; const b = v * (uu.includes('bit') ? f / 8 : f); return b >= 1e6 ? `${nf1(b / 1e6)} MB/s` : `${nf(b / 1e3)} kB/s`; }; return `↓ ${rate(d)} · ↑ ${rate(up)}`; };
-      const acts = [];
-      if (U.parity) acts.push({ name: 'Paritetssjekk', icon: 'fact_check', sub: parity ? `Pågår${parP != null ? ' · ' + nf(parP) + ' %' : ''}` : (this.ok(P + 'last_parity_check') ? `Sist ${new Date(this.v(P + 'last_parity_check')).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' })}` : 'Ikke i gang'), col: C.amber, on: parity, togOn: parity, tog: U.parity });
-      if (U.mover) { const on = this.v(U.mover) === 'on'; acts.push(dom(U.mover) === 'button' ? { name: 'Mover', icon: 'move_down', sub: 'Flytt fra cache til array', col: C.blue, act: U.mover, btnIcon: 'play_arrow', btnCol: C.blue } : { name: 'Mover', icon: 'move_down', sub: on ? 'Flytter fra cache til array' : 'Venter', col: C.blue, on, togOn: on, tog: U.mover }); }
-      if (this.st(P + 'ups_battery') || this.st(P + 'ups_battery_charge')) { const b = this.n(P + 'ups_battery', this.n(P + 'ups_battery_charge')), rt = this.n(P + 'ups_runtime', this.n(P + 'ups_battery_runtime')); acts.push({ name: 'UPS', icon: 'battery_charging_full', sub: [b != null ? `${nf(b)} %` : '', rt != null ? `${nf(rt)} min` : ''].filter(Boolean).join(' · '), v: W != null ? `${nf(W)} W` : '', col: C.green }); }
-      for (const vm of U.vms) { const on = this.v(vm.id) === 'on'; acts.push({ name: vm.name, icon: iconFor(vm.name, 'computer'), tag: 'vm', sub: on ? 'Kjører' : 'Stoppet', col: C.blue, on, togOn: on, tog: vm.id }); }
-      if (this.st(c.qbit_sparefart)) { const on = this.v(c.qbit_sparefart) === 'on'; acts.push({ name: 'Sparefart', icon: 'speed', sub: on ? 'qBittorrent · alternativ hastighet på' : 'qBittorrent · full hastighet', col: C.amber, on, togOn: on, tog: c.qbit_sparefart }); }
-      if (U.check) acts.push({ name: 'Se etter oppdateringer', icon: 'update', sub: 'Docker-containere', col: C.blue, act: U.check, btnIcon: 'refresh' });
-      return {
-        status: `${nameS} · Unraid${ver ? ' ' + ver : ''} · integrasjon i HA`, ok: dockers.every(d => d.on) ? C.green : C.amber,
-        headline: parity ? 'Paritetssjekk pågår' : arrOn ? 'Arrayet er startet' : 'Arrayet er stoppet',
-        subline: parity ? [parP != null ? `${nf(parP)} %` : '', 'paritetssjekk'].filter(Boolean).join(' · ') : [upS && !KD.BAD.has(upS.state) ? `Oppe i ${upLong(upSec(upS))}` : '', W != null ? `${nf(W)} W` : '', c.unraid_ip].filter(Boolean).join(' · '),
-        gauges: [
-          this._gauge('CPU', cpu, 100, ' %', c.unraid_cpu_navn || (temp != null ? `${nf(temp)}° CPU` : ''), C.blue),
-          this._gauge('Minne', ram, 100, ' %', ramU != null && ramT != null ? `${fmtBs(ramU)[0]} av ${fmtBs(ramT).join(' ')}` : '', C.blue),
-          this._gauge('Array', arr, 100, ' %', arU != null && arT != null ? `${fmtBs(arU)[0]} av ${fmtBs(arT).join(' ')}` : '', C.amber),
-        ],
-        groups: [
-          this._group('Array', `${disks.length} ${disks.length === 1 ? 'disk' : 'disker'}`, disks),
-          this._group('Docker', `${dockers.filter(d => d.on).length} av ${dockers.length} kjører`, dockers.map(d => ({ name: d.name, icon: iconFor(d.key + ' ' + d.name, 'deployed_code'), on: d.on,
-            sub: d.gone ? 'Svarer ikke' : d.on ? ([d.cpu != null ? `CPU ${nf1(d.cpu)} %` : '', d.mem != null ? `minne ${nf1(d.mem)} %` : '', /qbit|torrent/i.test(d.key) ? qbSub() : '', d.hasUpd ? 'oppdatering klar' : ''].filter(Boolean).join(' · ') || 'Kjører') : 'Stoppet', warn: !d.on,
-            act: d.id, btnIcon: d.on ? 'stop' : 'play_arrow', btnCol: d.on ? '#c9c7c2' : C.green }))),
-          this._group('Handlinger i HA', 'unraid-integrasjon', acts),
-        ].filter(Boolean),
-      };
+      return { dockers, parRun: parity, parP, arrOn, arrState, disks, cpu: this.n(P + 'cpu_usage'), ram: this.n(P + 'ram_usage'), arr: this.n(P + 'array_usage'), temp: this.n(P + 'cpu_temperature'),
+        mobo: this.n(P + 'motherboard_temperature'), parErr: this.n(P + 'parity_check_errors', this.n(P + 'parity_errors')), upsStatus: this.v(P + 'ups_status'),
+        upsB: this.n(P + 'ups_battery', this.n(P + 'ups_battery_charge')), upsRt: this.n(P + 'ups_runtime', this.n(P + 'ups_battery_runtime')), upsLoad: this.n(P + 'ups_load', this.n(P + 'ups_load_percentage')) };
+    }
+    _ufV(UF) {
+      return UF.list.map(d => {
+        const tr = this.st(d.tracker), on = !tr || tr.state === 'home';
+        return { ...d, on, kl: this.n(d.clients), cpuV: this.n(d.cpu), memV: this.n(d.mem), tempV: d.temp ? this.n(d.temp) : null, upS: upSec(this.st(d.up)), fwV: this.at(d.fw, 'installed_version', ''), fwNew: this.v(d.fw) === 'on' ? this.at(d.fw, 'latest_version', '') || 'ny' : '' };
+      });
     }
 
+    /* ---------------- hendelser ---------------- */
+    goTab(ev, k) { this.setState({ tab: k, open: null, conf: null }); }
+    setGf(ev, v) { this.setState({ gf: v, open: null }); }
+    setGs(ev, v) { this.setState({ gs: v }); }
+    setDf(ev, v) { this.setState({ df: v, open: null }); }
+    openRow(ev, k) { this.setState({ open: this.state.open === k ? null : k, conf: null }); }
+    moreInfo(ev, k) { const id = this._mi[k] || k; if (id && id.includes('.')) this.more(id); }
+    _run(id) {
+      if (!id) return; const d = dom(id);
+      if (d === 'button') this.press(id); else if (d === 'update') this.call('update', 'install', { entity_id: id }); else this.toggle(id);
+    }
+    /** Trykk på handling: bekreft først hvis den kan stoppe noe */
+    ask(ev, id) { if (!id) return; const m = this._cm[id]; if (m && m.confirm) { clearTimeout(this._cT); this._cT = setTimeout(() => this.state.conf === id && this.setState({ conf: null }), 9000); this.setState({ conf: id }); } else this._run(id); }
+    yesConf(ev, id) { clearTimeout(this._cT); this.haptic('heavy'); this._run(id); this.setState({ conf: null }); }
+    noConf() { this.setState({ conf: null }); }
+    /* bakoverkompatible navn */
+    act(ev, id) { this.ask(ev, id); }
+    tog(ev, id) { this.ask(ev, id); }
+    /** Registrer handling for bekreftelse: rad-nøkkel, verb («Slå av»), tekst, bekreft? */
+    _A(id, row, verb, what, confirm, col) { if (id) this._cm[id] = { row, verb, what, confirm: !!confirm, col: col || C.red }; return id; }
+
+    /* ---------------- byggeklosser (HTML) ---------------- */
+    _chip(t, col) { return t ? `<span style="display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 8px;border-radius:10px;flex:none;font-size:11px;font-weight:600;white-space:nowrap;background:${a(col, 0.16)};color:${col}"><span style="width:6px;height:6px;border-radius:3px;background:${col}"></span>${e(t)}</span>` : ''; }
+    _mbar(label, p, col, txt) {
+      const w = p == null || isNaN(p) ? 0 : Math.max(0, Math.min(100, p));
+      return `<div style="display:flex;align-items:center;gap:8px;min-width:0;font-size:11px;color:#8e8d89;font-variant-numeric:tabular-nums">
+        <span style="width:34px;flex:none">${e(label)}</span>
+        <span style="flex:1;min-width:0;height:4px;border-radius:2px;background:#2a2a2d;overflow:hidden"><span style="display:block;height:100%;width:${w}%;border-radius:2px;background:${col};transition:width .5s"></span></span>
+        <span style="flex:none;min-width:38px;text-align:right;color:#c9c7c2">${e(txt != null ? txt : p == null ? '–' : nf(p) + ' %')}</span></div>`;
+    }
+    _stats(list) {
+      const L = list.filter(x => x && x[1] != null && x[1] !== '');
+      return L.length ? `<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px">${L.map(([l, v, col]) => `<div style="min-width:0;padding:9px 11px;border-radius:16px;background:#232326;display:flex;flex-direction:column;gap:2px">
+        <span style="font-size:11px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(l)}</span>
+        <span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums;${col ? 'color:' + col : ''}">${e(v)}</span></div>`).join('')}</div>` : '';
+    }
+    /** Handlingsknapp (pille) – med bekreftelse når må */
+    _btn(id, row, act, what, label, icon, col, confirm) {
+      if (!id) return '';
+      this._A(id, row, label, what, confirm, col);
+      const on = this.state.conf === id;
+      return `<button data-on-click="ask" data-arg="${e(id)}" style="height:36px;padding:0 13px 0 10px;border-radius:18px;display:inline-flex;align-items:center;gap:6px;flex:none;font-size:13px;font-weight:500;white-space:nowrap;background:${on ? a(col, 0.22) : '#232326'};color:${col};box-shadow:inset 0 0 0 1px ${on ? a(col, 0.5) : 'rgba(255,255,255,0.04)'}"><span class="ms" style="font-size:18px;font-variation-settings:'FILL' 1">${e(icon)}</span>${e(label)}</button>`;
+    }
+    _btns(list) { const h = list.filter(Boolean).join(''); return h ? `<div style="display:flex;flex-wrap:wrap;gap:6px">${h}</div>` : ''; }
+    /** Bekreft-rad for en rad (vises når en av radens handlinger venter) */
+    _confHTML(row) {
+      const id = this.state.conf, m = id && this._cm[id];
+      if (!m || m.row !== row) return '';
+      return `<div data-key="cf-${e(row)}" style="display:flex;align-items:center;gap:8px;padding:8px 8px 8px 12px;border-radius:20px;background:${a(m.col, 0.12)};box-shadow:inset 0 0 0 1px ${a(m.col, 0.3)};animation:fadein .2s">
+        <span class="ms" style="font-size:20px;color:${m.col};flex:none">warning</span>
+        <span style="flex:1;min-width:0;font-size:13px;line-height:1.3"><b style="font-weight:600">${e(m.verb)}</b> ${e(m.what)}?</span>
+        <button data-on-click="noConf" style="height:34px;padding:0 12px;border-radius:17px;flex:none;background:#2a2a2d;font-size:13px">Avbryt</button>
+        <button data-on-click="yesConf" data-arg="${e(id)}" data-no-haptic="1" style="height:34px;padding:0 14px;border-radius:17px;flex:none;background:${m.col};color:#161414;font-size:13px;font-weight:600;white-space:nowrap">${e(m.verb)}</button></div>`;
+    }
+    _toggleHTML(id, row, on, what, confirmOff, col = C.pink, verbs = ['Slå på', 'Slå av']) {
+      this._A(id, row, on ? verbs[1] : verbs[0], what, on && confirmOff, on ? C.red : C.green);
+      return `<button data-on-click="ask" data-arg="${e(id)}" style="position:relative;width:44px;height:26px;border-radius:13px;flex:none;background:${on ? col : '#3a3a3d'};transition:background .2s"><span style="position:absolute;top:3px;left:${on ? 21 : 3}px;width:20px;height:20px;border-radius:10px;background:#f4f3ef;transition:left .2s"></span></button>`;
+    }
+    /** Generisk rad. o: {k, name, icon, col, on, tag, chip:[t,col], sub, warn, bar, bars:[[l,p,col,txt]], v, act, actIcon, actCol, actVerb, actConfirm, tog, togOn, togConfirm, togCol, detail(fn), more} */
+    _row(o, i) {
+      const on = o.on ?? true, col = o.col || C.blue, k = o.k || o.act || o.tog || o.name, open = !!o.detail && this.state.open === k;
+      if (o.more) this._mi[k] = o.more;
+      const bar = o.bar != null ? `<span style="display:block;height:4px;border-radius:2px;background:#2a2a2d;overflow:hidden"><span style="display:block;width:${Math.max(0, Math.min(100, o.bar))}%;height:100%;border-radius:2px;background:${o.barCol || pctCol(o.bar, 85, 95, col)};transition:width .5s"></span></span>` : '';
+      const bars = (o.bars || []).filter(Boolean).map(b => this._mbar(...b)).join('');
+      let actB = '';
+      if (o.act) { this._A(o.act, k, o.actVerb || 'Utfør', o.name, o.actConfirm, o.actCol && o.actConfirm ? o.actCol : C.red); actB = `<button data-on-click="ask" data-arg="${e(o.act)}" style="width:36px;height:36px;border-radius:18px;flex:none;display:grid;place-items:center;background:${this.state.conf === o.act ? a(C.red, 0.2) : '#232326'};color:${o.actCol || '#c9c7c2'}"><span class="ms" style="font-size:18px;font-variation-settings:'FILL' 1">${e(o.actIcon || 'play_arrow')}</span></button>`; }
+      const togB = o.tog ? this._toggleHTML(o.tog, k, !!o.togOn, o.name, o.togConfirm, o.togCol, o.togVerbs) : '';
+      const detail = open ? o.detail() : '';
+      const conf = this._confHTML(k);
+      return `<div data-key="r-${e(k)}" style="display:flex;flex-direction:column;gap:${open || conf ? 10 : 0}px;padding:${open ? '12px 12px 14px' : '10px 4px'};margin:${open ? '4px -4px' : '0'};border-radius:${open ? 22 : 0}px;background:${open ? '#1c1c1f' : 'transparent'};border-top:${i && !open ? '1px solid rgba(255,255,255,0.05)' : '1px solid transparent'};transition:background .25s,padding .25s,margin .25s,border-radius .25s">
+        <div ${o.detail ? `data-on-click="openRow" data-arg="${e(k)}"` : ''} ${o.more ? `data-hold="moreInfo" data-arg="${e(k)}"` : ''} style="display:flex;align-items:center;gap:12px;min-width:0;${o.detail ? 'cursor:pointer' : ''}">
+          <span style="width:36px;height:36px;border-radius:12px;flex:none;display:grid;place-items:center;background:${on ? a(col, 0.16) : '#1f1f22'};color:${on ? col : '#6d6c69'}"><span class="ms" style="font-size:18px;font-variation-settings:'FILL' 1">${e(o.icon)}</span></span>
+          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:5px">
+            <span style="display:flex;align-items:center;gap:6px;min-width:0;font-size:14px;font-weight:500"><span style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(o.name)}</span>${o.tag ? `<span style="flex:none;font-size:10px;font-weight:600;padding:2px 6px;border-radius:6px;background:${o.tagCol ? a(o.tagCol, 0.18) : '#2a2a2d'};color:${o.tagCol || '#a9a7a2'};text-transform:uppercase;letter-spacing:0.04em;white-space:nowrap">${e(o.tag)}</span>` : ''}${o.chip ? this._chip(o.chip[0], o.chip[1]) : ''}</span>
+            ${o.sub ? `<span style="font-size:12px;color:${o.warn ? C.red : '#8e8d89'};font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(o.sub)}</span>` : ''}
+            ${bar}${bars ? `<div style="display:flex;flex-direction:column;gap:3px">${bars}</div>` : ''}
+          </div>
+          ${o.v ? `<span style="flex:none;font-size:13px;font-weight:500;color:${o.vCol || '#c9c7c2'};font-variant-numeric:tabular-nums;white-space:nowrap">${e(o.v)}</span>` : ''}
+          ${o.detail ? `<span class="ms" style="flex:none;font-size:20px;color:#6d6c69;transition:transform .25s;transform:rotate(${open ? 180 : 0}deg)">expand_more</span>` : ''}
+          ${actB}${togB}
+        </div>
+        ${detail}${conf}
+      </div>`;
+    }
+    _sec(title, meta, inner, opts = {}) {
+      if (!inner) return '';
+      return `<section data-key="sec-${e(opts.key || title)}" data-lay="${e(opts.key || title)}" data-lay-navn="${e(title)}" style="display:flex;flex-direction:column;gap:${opts.gap ?? 4}px;min-width:0">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:0 4px 6px">
+        <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89;white-space:nowrap">${e(title)}</div>
+        <div style="font-size:12px;color:#6d6c69;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(meta || '')}</div>
+      </div>${inner}</section>`;
+    }
+    _rows(list) { return list.filter(Boolean).map((o, i) => this._row(o, i)).join(''); }
+    _gauge(label, v, max, unit, sub, col) {
+      const vv = v == null || isNaN(v) ? 0 : v;
+      return { label, sub, v: v == null || isNaN(v) ? '–' : `${nf(v)}${unit}`, deg: Math.max(0, Math.min(1, vv / max)) * 360, col };
+    }
+    _gaugesHTML(G) {
+      return `<section data-lay="maalere" data-lay-navn="Målere" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
+    ${G.map(g => `<div style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px 6px 14px;border-radius:22px;background:#1c1c1f;min-width:0">
+        <div style="position:relative;width:72px;height:72px;border-radius:50%;background:conic-gradient(${g.col} ${g.deg}deg, #2a2a2d 0);transition:background .6s"><div style="position:absolute;inset:8px;border-radius:50%;background:#1c1c1f;display:grid;place-items:center"><span style="font-size:17px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap">${e(g.v)}</span></div></div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:1px;text-align:center;min-width:0;max-width:100%"><span style="font-size:13px;font-weight:500">${e(g.label)}</span><span style="font-size:11px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">${e(g.sub)}</span></div>
+      </div>`).join('')}
+  </section>`;
+    }
+    _heroHTML(V) {
+      return `<section data-lay="status" data-lay-navn="Status" style="display:flex;flex-direction:column;gap:6px;padding:0 4px;min-width:0">
+    <div style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:#c9c7c2;min-width:0"><span style="width:8px;height:8px;border-radius:4px;flex:none;background:${V.ok};box-shadow:0 0 10px ${V.ok}"></span><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(V.status)}</span></div>
+    <div style="font-size:24px;font-weight:500;letter-spacing:-0.015em">${e(V.headline)}</div>
+    <div style="font-size:14px;color:#8e8d89">${e(V.subline)}</div>
+  </section>`;
+    }
+    _speedHTML() {
+      const sp = this._speed(); if (!sp) return '';
+      const bars = (arr, col) => { const m = Math.max(1, ...arr); return arr.map((v, i) => `<span style="flex:1;height:${v / m * 100}%;border-radius:2px;background:${i === arr.length - 1 ? col : a(col, 0.45)}"></span>`).join(''); };
+      return `<section data-lay="fart" data-lay-navn="Hastighet" style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
+      ${[['Ned', 'south', sp.down, C.green], ['Opp', 'north', sp.up, C.blue]].map(([label, icon, arr, col]) => `<div style="display:flex;flex-direction:column;gap:6px;padding:16px;border-radius:22px;background:#1c1c1f;min-width:0">
+          <span style="display:flex;align-items:center;gap:6px;font-size:12px;color:#8e8d89"><span class="ms" style="font-size:16px;color:${col}">${icon}</span><span>${label}</span></span>
+          <span style="font-size:28px;font-weight:300;letter-spacing:-0.02em;font-variant-numeric:tabular-nums;white-space:nowrap">${e(nf(arr[arr.length - 1] || 0))}<span style="font-size:13px;color:#8e8d89"> Mbit/s</span></span>
+          <div style="display:flex;align-items:flex-end;gap:2px;height:32px">${bars(arr, col)}</div>
+        </div>`).join('')}
+    </section>`;
+    }
     _speed() {
       const c = this.config, ids = [c.speedtest_ned, c.speedtest_opp].filter(id => this.st(id));
       if (!ids.length) return null;
@@ -7697,50 +8137,296 @@ try {
       const series = (id) => {
         if (!id || !this.st(id)) return [];
         const pts = ((hist && hist[id]) || []).map(p => p.v).filter(v => typeof v === 'number');
-        const cur = this.n(id);
-        const arr = pts.slice(-20);
+        const cur = this.n(id), arr = pts.slice(-20);
         if (cur != null && (!arr.length || arr[arr.length - 1] !== cur)) { arr.push(cur); if (arr.length > 20) arr.shift(); }
         return arr;
       };
       return { down: series(c.speedtest_ned), up: series(c.speedtest_opp) };
     }
 
-    _unifiV(UF) {
-      const c = this.config, gw = UF.gw, g = UF.gwSlug;
-      const devs = UF.list.map(d => {
-        const tr = this.st(d.tracker), on = !tr || tr.state === 'home';
-        return { ...d, on, kl: this.n(d.clients), cpuV: this.n(d.cpu), memV: this.n(d.mem), fwV: this.at(d.fw, 'installed_version', '') };
+    /* ---------------- helse (varsler) ---------------- */
+    _health(M) {
+      const c = this.config, out = [], G = { cpu: +c.grense_cpu || 85, ram: +c.grense_ram || 90, disk: +c.grense_disk || 85, temp: +c.grense_temp || 70, dt: +c.grense_disktemp || 50 };
+      const add = (lvl, icon, text, sub, tab, k) => out.push({ lvl, icon, text, sub, tab, k: k || text });
+      if (M.pve) {
+        for (const n of M.pve.nodes) {
+          if (!n.online) add(2, 'dns', `${n.name} er frakoblet`, 'Proxmox-node', 'pve');
+          if (n.cpuV != null && n.cpuV >= G.cpu) add(n.cpuV >= 95 ? 2 : 1, 'speed', `Høy CPU på ${n.name}`, `${nf(n.cpuV)} %`, 'pve');
+          if (n.memV != null && n.memV >= G.ram) add(n.memV >= 97 ? 2 : 1, 'memory', `Lite minne på ${n.name}`, `${nf(n.memV)} % brukt`, 'pve');
+          if (n.diskV != null && n.diskV >= G.disk) add(n.diskV >= 95 ? 2 : 1, 'hard_drive', `Rot-disken på ${n.name} er nesten full`, `${nf(n.diskV)} %`, 'pve');
+          if (n.tempV != null && n.tempV >= G.temp) add(n.tempV >= G.temp + 10 ? 2 : 1, 'thermostat', `Varm CPU på ${n.name}`, `${nf(n.tempV)}°`, 'pve');
+          for (const s of n.stressOn) add(1, 'warning', this.fname(s), 'Proxmox', 'pve');
+          if (n.updV) add(0, 'system_update', `${nf(n.updV)} pakkeoppdateringer på ${n.name}`, 'Proxmox VE', 'pve');
+        }
+        const off = M.pve.guests.filter(g => !g.on);
+        if (off.length) add(0, 'deployed_code', off.length === 1 ? `${off[0].name} er ${off[0].paused ? 'pauset' : 'stoppet'}` : `${off.length} gjester er stoppet`, 'Proxmox · ' + off.map(g => g.name).join(', '), 'pve');
+        for (const g of M.pve.guests) if (g.on && g.cpuV != null && g.cpuV >= G.cpu) add(1, 'speed', `${g.name} bruker mye CPU`, `${nf(g.cpuV)} %`, 'pve');
+        for (const g of M.pve.guests) if (g.diskV != null && g.diskV >= G.disk) add(g.diskV >= 95 ? 2 : 1, 'hard_drive', `Disken til ${g.name} er nesten full`, `${nf(g.diskV)} %`, 'pve');
+        for (const s of M.pve.store) if (s.bar != null && s.bar >= G.disk) add(s.bar >= 95 ? 2 : 1, 'database', `Lagring ${s.name} er nesten full`, `${nf(s.bar)} %`, 'pve');
+      }
+      if (M.ur) {
+        const R = M.ur;
+        if (!R.arrOn) add(2, 'storage', 'Unraid-arrayet er stoppet', R.arrState || '', 'unraid');
+        if (R.parRun) add(0, 'fact_check', 'Paritetssjekk pågår', R.parP != null ? `${nf(R.parP)} %` : '', 'unraid');
+        if (R.parErr) add(2, 'error', `Paritetsfeil: ${nf(R.parErr)}`, 'Siste paritetssjekk', 'unraid');
+        for (const d of R.disks) {
+          if (!d.par && d.bar != null && d.bar >= G.disk) add(d.bar >= 95 ? 2 : 1, 'hard_drive', `${d.name} er nesten full`, `${nf(d.bar)} %`, 'unraid');
+          if (d.t != null && d.t >= G.dt) add(d.t >= G.dt + 5 ? 2 : 1, 'device_thermostat', `${d.name} er varm`, `${nf(d.t)}°`, 'unraid');
+        }
+        if (R.cpu != null && R.cpu >= G.cpu) add(1, 'speed', 'Høy CPU på Unraid', `${nf(R.cpu)} %`, 'unraid');
+        if (R.ram != null && R.ram >= G.ram) add(1, 'memory', 'Lite minne på Unraid', `${nf(R.ram)} %`, 'unraid');
+        if (R.temp != null && R.temp >= G.temp) add(1, 'thermostat', 'Varm CPU på Unraid', `${nf(R.temp)}°`, 'unraid');
+        if (/batt|onbatt/i.test(R.upsStatus)) add(2, 'battery_alert', 'UPS går på batteri', R.upsRt != null ? `${nf(R.upsRt)} min igjen` : '', 'unraid');
+        const stop = R.dockers.filter(d => !d.on);
+        if (stop.length) add(0, 'deployed_code', stop.length === 1 ? `${stop[0].name} er stoppet` : `${stop.length} containere er stoppet`, 'Docker · ' + stop.map(d => d.name).join(', '), 'unraid');
+      }
+      if (M.uf) {
+        for (const d of M.uf.devs) {
+          if (!d.on) add(2, 'wifi_off', `${d.name} svarer ikke`, 'UniFi-enhet', 'unifi');
+          else if (d.cpuV != null && d.cpuV >= G.cpu) add(1, 'speed', `Høy CPU på ${d.name}`, `${nf(d.cpuV)} %`, 'unifi');
+        }
+        if (M.uf.ping != null && M.uf.ping > 100) add(1, 'network_ping', 'Høy latens på WAN', `${nf(M.uf.ping)} ms`, 'unifi');
+      }
+      if (M.upds.length) add(1, 'system_update', M.upds.length === 1 ? `Oppdatering klar: ${M.upds[0].name}` : `${M.upds.length} oppdateringer klare`, M.upds.map(u => u.name).slice(0, 4).join(', '), 'oversikt', 'upd');
+      return out.sort((x, y) => y.lvl - x.lvl);
+    }
+    /** Alle update.* som venter (UniFi-fastvare og Unraid-containere) */
+    _updates(U, UF) {
+      const R = this._reg(), set = new Set();
+      for (const d of UF.list) set.add(d.fw);
+      for (const id of this._unifiReg()) if (dom(id) === 'update') set.add(id);
+      if (U) for (const d of U.cont) set.add(d.upd);
+      for (const id in R) if (R[id] && /^proxmox(ve)?$/.test(R[id].platform) && dom(id) === 'update') set.add(id);
+      return [...set].filter(id => this.v(id) === 'on').map(id => ({ id, name: this.fname(id).replace(/\s*(firmware|fastvare|update|oppdatering)\s*$/i, '').trim(), from: this.at(id, 'installed_version', ''), to: this.at(id, 'latest_version', ''), busy: !!this.at(id, 'in_progress', false) }));
+    }
+    _updRows(list) {
+      return list.map(u => ({ k: 'upd-' + u.id, name: u.name, icon: 'system_update', col: C.amber, more: u.id, sub: u.busy ? 'Installerer …' : [u.from, u.to].filter(Boolean).join(' → ') || 'Ny versjon',
+        act: u.busy ? null : u.id, actIcon: 'download', actCol: C.amber, actVerb: 'Installer', actConfirm: true }));
+    }
+
+    /* ---------------- faner ---------------- */
+    _tabOversikt(M, H) {
+      const red = H.filter(x => x.lvl === 2).length, amb = H.filter(x => x.lvl === 1).length;
+      const ok = red ? C.red : amb ? C.amber : C.green;
+      const sys = [];
+      if (M.pve) {
+        const n = M.pve.nodes[0], run = M.pve.guests.filter(g => g.on).length;
+        sys.push({ tab: 'pve', icon: 'deployed_code', name: 'Proxmox', col: C.blue, line: M.pve.guests.length ? `${run} av ${M.pve.guests.length} gjester kjører` : `${M.pve.nodes.length} ${M.pve.nodes.length === 1 ? 'node' : 'noder'}`, bars: n ? [['CPU', n.cpuV, pctCol(n.cpuV, 70, 90)], ['RAM', n.memV, pctCol(n.memV)]] : [] });
+      }
+      if (M.ur) sys.push({ tab: 'unraid', icon: 'storage', name: 'Unraid', col: C.amber, line: `${M.ur.arrOn ? 'Array startet' : 'Array stoppet'} · ${M.ur.dockers.filter(d => d.on).length}/${M.ur.dockers.length} Docker`, bars: [['Array', M.ur.arr, pctCol(M.ur.arr, 85, 95, C.amber)], ['CPU', M.ur.cpu, pctCol(M.ur.cpu, 70, 90)]] });
+      if (M.uf) { const on = M.uf.devs.filter(d => d.on).length; sys.push({ tab: 'unifi', icon: 'router', name: 'UniFi', col: C.green, line: `${on}/${M.uf.devs.length} enheter · ${M.uf.clients != null ? nf(M.uf.clients) + ' klienter' : ''}`, bars: [['Ping', M.uf.ping != null ? Math.min(100, M.uf.ping / 40 * 100) : null, C.green, M.uf.ping != null ? `${nf(M.uf.ping)} ms` : '–'], M.uf.gwD ? ['GW', M.uf.gwD.cpuV, pctCol(M.uf.gwD.cpuV, 70, 90)] : null].filter(Boolean) });
+      }
+      const alertN = (t) => H.filter(x => x.tab === t && x.lvl > 0).length;
+      const tiles = sys.map((s, i) => { const n = alertN(s.tab); return `<button data-on-click="goTab" data-arg="${s.tab}" style="min-width:0;${sys.length % 2 && i === sys.length - 1 ? 'grid-column:1/-1;' : ''}display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:24px;background:#1c1c1f;text-align:left">
+          <span style="display:flex;align-items:center;gap:10px;min-width:0;width:100%"><span style="width:34px;height:34px;border-radius:12px;flex:none;display:grid;place-items:center;background:${a(s.col, 0.16)};color:${s.col}"><span class="ms" style="font-size:18px;font-variation-settings:'FILL' 1">${s.icon}</span></span>
+            <span style="flex:1;min-width:0;font-size:15px;font-weight:500">${e(s.name)}</span>${n ? `<span style="flex:none;min-width:20px;height:20px;padding:0 6px;box-sizing:border-box;border-radius:10px;display:grid;place-items:center;font-size:11px;font-weight:600;background:${a(C.amber, 0.2)};color:${C.amber}">${n}</span>` : `<span class="ms" style="flex:none;font-size:18px;color:${C.green};font-variation-settings:'FILL' 1">check_circle</span>`}</span>
+          <span style="font-size:12px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%">${e(s.line)}</span>
+          <span style="display:flex;flex-direction:column;gap:4px;width:100%">${s.bars.map(b => this._mbar(...b)).join('')}</span></button>`; }).join('');
+      const alerts = H.filter(x => x.k !== 'upd').map(x => ({ k: 'al-' + x.k, name: x.text, sub: x.sub, icon: x.icon, col: LVL[x.lvl], chip: [['Info', 'Advarsel', 'Kritisk'][x.lvl], LVL[x.lvl]], act: null, _tab: x.tab }));
+      const alertHTML = alerts.map((o, i) => `<button data-on-click="goTab" data-arg="${e(o._tab)}" style="display:block;width:100%;text-align:left">${this._row({ ...o }, i)}</button>`).join('');
+      return `${this._heroHTML({ ok, status: `Helse · ${sys.length} ${sys.length === 1 ? 'system' : 'systemer'}`, headline: red ? `${red} ${red === 1 ? 'kritisk varsel' : 'kritiske varsler'}` : amb ? `${amb} ${amb === 1 ? 'ting' : 'ting'} å se på` : 'Alt ser bra ut', subline: [M.pve ? `${M.pve.guests.filter(g => g.on).length} gjester` : '', M.ur ? `${M.ur.dockers.filter(d => d.on).length} containere` : '', M.uf ? `${M.uf.devs.filter(d => d.on).length} nettverksenheter` : '', M.upds.length ? `${M.upds.length} oppdateringer` : ''].filter(Boolean).join(' · ') })}
+  ${tiles ? `<section data-lay="systemer" data-lay-navn="Systemer" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">${tiles}</section>` : ''}
+  ${this._sec('Varsler', alerts.length ? `${alerts.length} aktive` : 'ingen', alerts.length ? alertHTML : `<div style="display:flex;align-items:center;gap:10px;padding:14px;border-radius:20px;background:#1c1c1f;color:#8e8d89;font-size:13px"><span class="ms" style="color:${C.green};font-variation-settings:'FILL' 1">verified</span>Ingen varsler – alt kjører som det skal</div>`, { key: 'varsler' })}
+  ${this._sec('Oppdateringer', `${M.upds.length} klare`, this._rows(this._updRows(M.upds)), { key: 'oppd' })}`;
+    }
+
+    _tabPve(M) {
+      const c = this.config, s = this.state, nodes = M.nodes, N = nodes[0] || null;
+      const guests0 = M.guests, running = guests0.filter(g => g.on).length;
+      const W = c.pve_effekt ? this.n(c.pve_effekt) : null;
+      const V = {
+        status: `${N ? N.name : 'Proxmox'} · Proxmox VE${N && N.verV ? ' ' + N.verV : ''}${nodes.length > 1 ? ` · ${nodes.length} noder` : ''}`, ok: nodes.some(n => !n.online) ? C.red : guests0.length && running === guests0.length ? C.green : C.amber,
+        headline: !guests0.length ? (N ? 'Noden kjører' : 'Fant ingen Proxmox-node') : running === guests0.length ? 'Alle gjester kjører' : `${running} av ${guests0.length} gjester kjører`,
+        subline: [N && N.upS != null ? `Oppe i ${upLong(N.upS)}` : '', W != null ? `${nf(W)} W` : '', c.pve_ip].filter(Boolean).join(' · '),
+      };
+      const G = N ? [
+        this._gauge('CPU', N.cpuV, 100, ' %', c.pve_cpu_navn || (N.loads[0] != null ? `load ${nf(N.loads[0], 2)}` : ''), N.cpuV > 70 ? C.amber : C.blue),
+        this._gauge('Minne', N.memV, 100, ' %', N.mu != null && N.mt != null ? `${fmtBs(N.mu)[0]} av ${fmtBs(N.mt).join(' ')}` : N.swapV != null ? `swap ${nf(N.swapV)} %` : '', N.memV > 90 ? C.amber : C.blue),
+        N.temp ? this._gauge('Temp', N.tempV, 90, '°', 'CPU-pakke', N.tempV > 58 ? C.red : C.green) : this._gauge('Disk', N.diskV, 100, ' %', 'rot-FS', N.diskV > 85 ? C.amber : C.green),
+      ] : null;
+      // noder
+      const nodeHTML = nodes.map(n => {
+        const k = 'node-' + n.key, what = `noden ${n.name}`;
+        const acts = this._btns([this._btn(n.btns.reboot, k, 'reboot', what, 'Omstart', 'restart_alt', C.blue, true), this._btn(n.btns.shutdown, k, 'shutdown', what, 'Slå av', 'power_settings_new', C.red, true),
+          this._btn(n.btns.start_all, k, 'start_all', `alle gjester på ${n.name}`, 'Start alle', 'play_circle', C.green, true), this._btn(n.btns.stop_all, k, 'stop_all', `alle gjester på ${n.name}`, 'Stopp alle', 'stop_circle', C.red, true)]);
+        const lds = n.loads.filter(x => x != null), load = lds.length ? lds.map(x => nf(x, lds.length > 1 ? 1 : 2)).join(' / ') : null;
+        return `<div data-key="${e(k)}" style="display:flex;flex-direction:column;gap:12px;padding:14px;border-radius:24px;background:#1c1c1f;min-width:0">
+          <div data-hold="moreInfo" data-arg="${e(n.cpu || n.status || '')}" style="display:flex;align-items:center;gap:10px;min-width:0">
+            <span style="width:36px;height:36px;border-radius:12px;flex:none;display:grid;place-items:center;background:${a(C.blue, 0.16)};color:${C.blue}"><span class="ms" style="font-size:19px;font-variation-settings:'FILL' 1">dns</span></span>
+            <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-size:15px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(n.name)}</span><span style="font-size:12px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(['Proxmox VE' + (n.verV ? ' ' + n.verV : ''), (String(this.v(n.kernel)).match(/^[\d.]+-\d+/) || [])[0] ? 'kjerne ' + String(this.v(n.kernel)).match(/^[\d.]+-\d+/)[0] : ''].filter(Boolean).join(' · '))}</span></div>
+            ${this._chip(n.online ? 'Online' : 'Frakoblet', n.online ? C.green : C.red)}
+          </div>
+          <div style="display:flex;flex-direction:column;gap:5px">${this._mbar('CPU', n.cpuV, pctCol(n.cpuV, 70, 90))}${this._mbar('RAM', n.memV, pctCol(n.memV, 85, 95), n.mu != null && n.mt != null ? `${fmtBs(n.mu)[0]}/${fmtB(n.mt)}` : null)}${n.diskV != null ? this._mbar('Disk', n.diskV, pctCol(n.diskV, 85, 95, C.green)) : ''}${n.swapV != null ? this._mbar('Swap', n.swapV, pctCol(n.swapV, 50, 80, C.blue)) : ''}</div>
+          ${this._stats([['Oppetid', n.upS != null ? upLong(n.upS) : null], [n.loads.filter(x => x != null).length > 1 ? 'Load 1/5/15' : 'Load', load], ['Temp', n.tempV != null ? `${nf(n.tempV)}°` : null, tempCol(n.tempV, 60, 75)], ['IO-vent', n.ioV != null ? `${nf1(n.ioV)} %` : null], ['Oppdateringer', n.updV != null ? (n.updV ? `${nf(n.updV)} pakker` : 'Ingen') : null, n.updV ? C.amber : null], ['Varsler', n.stress.length ? (n.stressOn.length ? n.stressOn.length + ' aktive' : 'Ingen') : null, n.stressOn.length ? C.red : null]])}
+          ${acts}${this._confHTML(k)}
+        </div>`;
+      }).join('');
+      // gjester: filter og sortering
+      const cnt = { alle: guests0.length, on: running, off: guests0.length - running };
+      let guests = guests0.filter(g => s.gf === 'on' ? g.on : s.gf === 'off' ? !g.on : true);
+      guests = guests.slice().sort(s.gs === 'cpu' ? (x, y) => (y.cpuV ?? -1) - (x.cpuV ?? -1) : s.gs === 'ram' ? (x, y) => (y.mu ?? y.memV ?? -1) - (x.mu ?? x.memV ?? -1) : (x, y) => (+x.vmid || 1e9) - (+y.vmid || 1e9) || x.name.localeCompare(y.name, 'nb'));
+      const gRows = guests.map(g => {
+        const chip = g.on ? ['Kjører', C.green] : g.paused ? ['Pauset', C.amber] : [g.state && !KD.BAD.has(g.state) && g.state !== 'stopped' ? title(g.state) : 'Stoppet', C.red];
+        const what = `${g.kind === 'vm' ? 'VM' : 'LXC'} ${g.name}`, b = g.btns;
+        return { k: g.k, name: g.name, icon: iconFor(g.name, g.kind === 'vm' ? 'computer' : 'deployed_code'), tag: `${g.kind}${g.vmid ? ' ' + g.vmid : ''}`, on: g.on || g.paused, col: g.paused ? C.amber : C.blue, chip, more: g.status,
+          sub: g.on ? [g.upS != null ? `oppe ${upShort(g.upS)}` : '', g.mu != null ? fmtB(g.mu) + (g.mt ? ` av ${fmtB(g.mt)}` : '') : ''].filter(Boolean).join(' · ') : '',
+          bars: g.on ? [['CPU', g.cpuV, pctCol(g.cpuV, 70, 90)], g.memV != null ? ['RAM', g.memV, pctCol(g.memV, 85, 95)] : null] : null,
+          act: !g.on && !g.paused ? b.start : null, actIcon: 'play_arrow', actCol: C.green, actVerb: 'Start',
+          detail: () => `${this._stats([['Status', title(g.state || '–')], ['Oppetid', g.upS != null ? upLong(g.upS) : null], ['CPU', g.cpuV != null ? `${nf1(g.cpuV)} %` : null], ['Minne', g.mu != null ? fmtB(g.mu) : g.memV != null ? `${nf(g.memV)} %` : null], ['Disk', g.diskV != null ? `${nf(g.diskV)} %` : null, pctCol(g.diskV, 85, 95, null)], ['VMID', g.vmid || null]])}
+            ${this._btns(g.on ? [this._btn(b.shutdown, g.k, 'shutdown', what, 'Slå av', 'power_settings_new', C.amber, true), this._btn(b.reboot, g.k, 'reboot', what, 'Omstart', 'restart_alt', C.blue, true), this._btn(b.suspend, g.k, 'suspend', what, 'Pause', 'pause', C.amber, true), this._btn(b.stop, g.k, 'stop', what, 'Tving stopp', 'stop_circle', C.red, true)]
+              : g.paused ? [this._btn(b.resume, g.k, 'resume', what, 'Fortsett', 'play_arrow', C.green, false), this._btn(b.stop, g.k, 'stop', what, 'Tving stopp', 'stop_circle', C.red, true)]
+              : [this._btn(b.start, g.k, 'start', what, 'Start', 'play_arrow', C.green, false)])}` };
       });
+      const filt = guests0.length > 3 ? `<div style="display:flex;gap:8px;padding:0 0 6px;min-width:0"><div style="flex:3;min-width:0">${KD.segHTML('srv-gf', [['alle', `Alle ${cnt.alle}`], ['on', `Kjører ${cnt.on}`], ['off', `Stoppet ${cnt.off}`]], s.gf, 'setGf', { small: true })}</div><div style="flex:2;min-width:0">${KD.segHTML('srv-gs', [['id', 'ID'], ['cpu', 'CPU'], ['ram', 'RAM']], s.gs, 'setGs', { small: true })}</div></div>` : '';
+      const store = M.store.map(x => ({ k: 'st-' + x.id, name: x.name, icon: 'hard_drive', more: x.id, sub: x.u != null && x.t != null ? `${fmtB(x.u)} av ${fmtB(x.t)} · ${fmtB(x.t - x.u)} ledig` : '', bar: x.bar, v: x.bar == null ? '' : `${Math.round(x.bar)} %`, vCol: x.bar >= 85 ? C.amber : null }));
+      const bk = [];
+      const P = N && N.P;
+      if (P) {
+        const bp = this.st(P + 'backup_progress');
+        if (bp && !KD.BAD.has(bp.state)) { const v = num(bp); bk.push({ name: 'Sikkerhetskopi', icon: 'backup', sub: v != null ? (v > 0 && v < 100 ? `Pågår · ${nf(v)} %` : `Sist oppdatert kl. ${hm(bp.last_changed)}`) : String(bp.state), v: v != null && v > 0 && v < 100 ? `${nf(v)} %` : 'OK', col: C.green, bar: v > 0 && v < 100 ? v : null }); }
+        const lt = this.st(P + 'last_task');
+        if (lt && !KD.BAD.has(lt.state)) { const bad = /error|fail|feil/i.test(lt.state); bk.push({ name: 'Siste oppgave', icon: 'verified', sub: `${lt.state} · kl. ${hm(lt.last_changed)}`, v: bad ? 'Feil' : 'OK', vCol: bad ? C.red : C.green, col: bad ? C.red : C.green }); }
+      }
+      return `${this._heroHTML(V)}
+  ${G ? this._gaugesHTML(G) : ''}
+  ${nodeHTML ? `<section data-lay="noder" data-lay-navn="Noder" style="display:flex;flex-direction:column;gap:8px">${nodeHTML}</section>` : ''}
+  ${this._sec('VM og LXC', `${running} av ${guests0.length} kjører`, guests0.length ? filt + (this._rows(gRows) || `<div style="padding:14px 4px;font-size:13px;color:#8e8d89">Ingen gjester i dette utvalget</div>`) : '', { key: 'gjester' })}
+  ${this._sec('Lagring', `${store.length} ${store.length === 1 ? 'område' : 'områder'}`, this._rows(store), { key: 'lagring' })}
+  ${this._sec('Sikkerhetskopi', 'Proxmox VE', this._rows(bk), { key: 'backup' })}`;
+    }
+
+    _tabUnraid(U, R) {
+      const c = this.config, s = this.state, P = U.P, u = U.u;
+      const nameS = String(this.at(P + 'cpu_usage', 'friendly_name', '') || '').replace(/\s*cpu.*$/i, '').trim() || title(u);
+      const ver = (String(this.v(P + 'unraid_version')).match(/\d+(\.\d+)*/) || [])[0];
+      const upS = this.st(P + 'up_since') || this.st(P + 'uptime');
+      const Wid = c.unraid_effekt || [P + 'ups_power', P + 'ups_load_power', P + 'ups_current_power'].find(id => this.st(id));
+      const W = Wid ? this.n(Wid) : null;
+      const ramU = bytes(this.st(P + 'ram_used')), ramT = bytes(this.st(P + 'ram_total'));
+      const arU = bytes(this.st(P + 'array_used')) ?? bytes(this.st(P + 'array_usage_used')), arT = bytes(this.st(P + 'array_total')) ?? bytes(this.st(P + 'array_size'));
+      const V = {
+        status: `${nameS} · Unraid${ver ? ' ' + ver : ''}`, ok: !R.arrOn ? C.red : R.dockers.every(d => d.on) ? C.green : C.amber,
+        headline: R.parRun ? 'Paritetssjekk pågår' : R.arrOn ? 'Arrayet er startet' : 'Arrayet er stoppet',
+        subline: R.parRun ? [R.parP != null ? `${nf(R.parP)} %` : '', 'paritetssjekk'].filter(Boolean).join(' · ') : [upS && !KD.BAD.has(upS.state) ? `Oppe i ${upLong(upSec(upS))}` : '', W != null ? `${nf(W)} W` : '', c.unraid_ip].filter(Boolean).join(' · '),
+      };
+      const G = [
+        this._gauge('CPU', R.cpu, 100, ' %', c.unraid_cpu_navn || (R.temp != null ? `${nf(R.temp)}° CPU` : ''), C.blue),
+        this._gauge('Minne', R.ram, 100, ' %', ramU != null && ramT != null ? `${fmtBs(ramU)[0]} av ${fmtBs(ramT).join(' ')}` : '', C.blue),
+        this._gauge('Array', R.arr, 100, ' %', arU != null && arT != null ? `${fmtBs(arU)[0]} av ${fmtBs(arT).join(' ')}` : '', R.arr >= 90 ? C.red : C.amber),
+      ];
+      // array + paritet
+      const lastP = this.v(P + 'last_parity_check'), lastD = lastP && !isNaN(new Date(lastP)) ? new Date(lastP) : null;
+      const dur = this.st(P + 'parity_check_duration') || this.st(P + 'last_parity_check_duration');
+      const durV = dur && !KD.BAD.has(dur.state) ? (num(dur) != null ? upLong(upSec(dur)) : String(dur.state)) : null;
+      const nextP = this.v(P + 'next_parity_check'), nextD = nextP && !isNaN(new Date(nextP)) ? new Date(nextP) : null;
+      const speed = this.st(P + 'parity_check_speed');
+      const dt = d => d.toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' });
+      const parK = 'ur-parity', parOn = U.parity && this.v(U.parity) === 'on';
+      const arrHTML = `<div data-key="ur-array" style="display:flex;flex-direction:column;gap:12px;padding:14px;border-radius:24px;background:#1c1c1f;min-width:0">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0">
+          <span style="width:36px;height:36px;border-radius:12px;flex:none;display:grid;place-items:center;background:${a(C.amber, 0.16)};color:${C.amber}"><span class="ms" style="font-size:19px;font-variation-settings:'FILL' 1">storage</span></span>
+          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-size:15px;font-weight:500">Array</span><span style="font-size:12px;color:#8e8d89;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e([arU != null && arT != null ? `${fmtB(arU)} av ${fmtB(arT)}` : '', `${R.disks.filter(d => !d.par && !d.cache).length} datadisker`].filter(Boolean).join(' · '))}</span></div>
+          ${this._chip(R.arrOn ? (R.arrState && !/start/i.test(R.arrState) && !KD.BAD.has(R.arrState) ? title(R.arrState) : 'Startet') : 'Stoppet', R.arrOn ? C.green : C.red)}
+        </div>
+        ${R.arr != null ? this._mbar('Bruk', R.arr, pctCol(R.arr, 85, 95, C.amber)) : ''}
+        <div style="display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:18px;background:#232326">
+          <div style="display:flex;align-items:center;gap:10px;min-width:0"><span class="ms" style="font-size:18px;color:${R.parErr ? C.red : R.parRun ? C.amber : C.green};font-variation-settings:'FILL' 1">fact_check</span>
+            <span style="flex:1;min-width:0;font-size:14px;font-weight:500">Paritet</span>
+            ${this._chip(R.parRun ? 'Pågår' : R.parErr ? `${nf(R.parErr)} feil` : 'Gyldig', R.parRun ? C.amber : R.parErr ? C.red : C.green)}
+            ${U.parity && dom(U.parity) === 'switch' ? this._toggleHTML(U.parity, parK, parOn, 'paritetssjekk', true, C.amber, ['Start', 'Avbryt']) : ''}</div>
+          ${R.parRun && R.parP != null ? this._mbar('Fremdr.', R.parP, C.amber) : ''}
+          ${this._stats([['Sist kjørt', lastD ? dt(lastD) : null], ['Feil', R.parErr != null ? nf(R.parErr) : null, R.parErr ? C.red : null], ['Varighet', durV], ['Fart', speed && !KD.BAD.has(speed.state) ? `${speed.state} ${speed.attributes.unit_of_measurement || ''}`.trim() : null], ['Neste', nextD ? dt(nextD) : null]]).replace(/#232326/g, '#2a2a2d')}
+        </div>
+        ${this._confHTML(parK)}
+      </div>`;
+      if (U.parity && dom(U.parity) === 'switch') this._cm[U.parity].confirm = true; // både start og avbryt bekreftes
+      const DT = +c.grense_disktemp || 50;
+      const disks = R.disks.map(d => ({ k: 'disk-' + d.key, name: d.name, icon: d.cache ? 'memory' : d.par ? 'shield' : 'hard_drive', col: d.par ? '#8e8d89' : d.cache ? C.blue : C.amber, on: !d.spun, more: d.use || d.temp,
+        chip: d.t != null ? [`${nf(d.t)}°`, tempCol(d.t, DT - 5, DT)] : d.spun ? ['Hviler', '#8e8d89'] : null,
+        sub: d.par ? ['Paritet', d.tot != null ? fmtB(d.tot) : '', d.model].filter(Boolean).join(' · ') : [d.used != null && d.tot != null ? `${fmtB(d.used)} av ${fmtB(d.tot)}` : d.tot != null ? fmtB(d.tot) : '', d.fs, d.spun ? 'spunnet ned' : ''].filter(Boolean).join(' · '),
+        bar: d.par ? null : d.bar, barCol: pctCol(d.bar, 85, 95, d.cache ? C.blue : C.amber), v: d.par ? '' : d.bar == null ? '' : `${Math.round(d.bar)} %`, vCol: d.bar >= 85 ? C.amber : null }));
+      // Docker
+      const qb = c.qbit || 'sensor.qbittorrent_';
+      const qbSub = () => { const d = this.st(qb + 'download_speed'), up = this.st(qb + 'upload_speed'); if (!d || KD.BAD.has(d.state)) return ''; const rate = s => { const v = num(s); if (v == null) return '–'; const uu = String(s.attributes.unit_of_measurement || 'B/s').toLowerCase(); const f = uu.startsWith('gi') ? 1073741824 : uu.startsWith('mi') ? 1048576 : uu.startsWith('ki') ? 1024 : uu.startsWith('g') ? 1e9 : uu.startsWith('m') ? 1e6 : uu.startsWith('k') ? 1e3 : 1; const b = v * (uu.includes('bit') ? f / 8 : f); return b >= 1e6 ? `${nf1(b / 1e6)} MB/s` : `${nf(b / 1e3)} kB/s`; }; return `↓ ${rate(d)} · ↑ ${rate(up)}`; };
+      const dOn = R.dockers.filter(d => d.on).length;
+      const dl = R.dockers.filter(d => s.df === 'on' ? d.on : s.df === 'off' ? !d.on : true);
+      const dRows = dl.map(d => ({ k: 'dk-' + d.key, name: d.name, icon: iconFor(d.key + ' ' + d.name, 'deployed_code'), on: d.on, more: d.id,
+        chip: d.hasUpd ? ['Oppdatering', C.amber] : null,
+        sub: d.gone ? 'Svarer ikke' : d.on ? ([/qbit|torrent/i.test(d.key) ? qbSub() : ''].filter(Boolean).join(' · ') || (d.cpuV == null && d.memV == null ? 'Kjører' : '')) : 'Stoppet', warn: !d.on,
+        bars: d.on && (d.cpuV != null || d.memV != null) ? [d.cpuV != null ? ['CPU', d.cpuV, pctCol(d.cpuV, 70, 90), `${nf1(d.cpuV)} %`] : null, d.memV != null ? ['RAM', d.memV, pctCol(d.memV, 85, 95), `${nf1(d.memV)} %`] : null] : null,
+        tog: d.id, togOn: d.on, togConfirm: true, togCol: C.green, togVerbs: ['Start', 'Stopp'],
+        detail: (d.restart || d.hasUpd) ? () => this._btns([d.on ? this._btn(d.restart, 'dk-' + d.key, 'reboot', `containeren ${d.name}`, 'Omstart', 'restart_alt', C.blue, true) : '', d.hasUpd ? this._btn(d.upd, 'dk-' + d.key, 'upd', `${d.name} (${this.at(d.upd, 'latest_version', 'ny versjon')})`, 'Oppdater', 'download', C.amber, true) : '']) : null }));
+      const dFilt = R.dockers.length > 4 ? `<div style="padding:0 0 6px">${KD.segHTML('srv-df', [['alle', `Alle ${R.dockers.length}`], ['on', `Kjører ${dOn}`], ['off', `Stoppet ${R.dockers.length - dOn}`]], s.df, 'setDf', { small: true })}</div>` : '';
+      // VM-er
+      const vmRows = U.vms.map(vm => { const on = this.v(vm.id) === 'on'; return { k: 'uvm-' + vm.id, name: vm.name, icon: iconFor(vm.name, 'computer'), tag: 'vm', chip: on ? ['Kjører', C.green] : ['Stoppet', C.red], on, more: vm.id, tog: vm.id, togOn: on, togConfirm: true, togCol: C.green, togVerbs: ['Start', 'Stopp'] }; });
+      // system / UPS / handlinger
+      const sys = this._stats([['CPU-temp', R.temp != null ? `${nf(R.temp)}°` : null, tempCol(R.temp, 60, 75)], ['Hovedkort', R.mobo != null ? `${nf(R.mobo)}°` : null, tempCol(R.mobo, 50, 65)], ['Oppetid', upS && !KD.BAD.has(upS.state) ? upLong(upSec(upS)) : null], ['Flash', this.n(P + 'flash_usage') != null ? `${nf(this.n(P + 'flash_usage'))} %` : null], ['Logg', this.n(P + 'log_usage') != null ? `${nf(this.n(P + 'log_usage'))} %` : null], ['Effekt', W != null ? `${nf(W)} W` : null]]);
+      const ups = (R.upsB != null || R.upsStatus) ? `<div style="display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:24px;background:#1c1c1f">
+          <div style="display:flex;align-items:center;gap:10px"><span class="ms" style="font-size:20px;color:${C.green};font-variation-settings:'FILL' 1">battery_charging_full</span><span style="flex:1;font-size:14px;font-weight:500">UPS</span>${this._chip(R.upsStatus && !KD.BAD.has(R.upsStatus) ? R.upsStatus : 'Tilkoblet', /batt/i.test(R.upsStatus) ? C.red : C.green)}</div>
+          ${this._mbar('Batteri', R.upsB, R.upsB != null && R.upsB < 30 ? C.red : C.green)}${R.upsLoad != null ? this._mbar('Last', R.upsLoad, pctCol(R.upsLoad, 70, 90)) : ''}
+          ${this._stats([['Kjøretid', R.upsRt != null ? `${nf(R.upsRt)} min` : null], ['Effekt', W != null ? `${nf(W)} W` : null]])}</div>` : '';
+      const acts = [];
+      if (U.mover) { const on = this.v(U.mover) === 'on'; acts.push(dom(U.mover) === 'button' ? { name: 'Mover', icon: 'move_down', sub: 'Flytt fra cache til array', col: C.blue, act: U.mover, actIcon: 'play_arrow', actCol: C.blue, actVerb: 'Start', actConfirm: true } : { name: 'Mover', icon: 'move_down', sub: on ? 'Flytter fra cache til array' : 'Venter', col: C.blue, on, tog: U.mover, togOn: on, togConfirm: true }); }
+      if (this.st(c.qbit_sparefart)) { const on = this.v(c.qbit_sparefart) === 'on'; acts.push({ name: 'Sparefart', icon: 'speed', sub: on ? 'qBittorrent · alternativ hastighet på' : 'qBittorrent · full hastighet', col: C.amber, on, tog: c.qbit_sparefart, togOn: on }); }
+      if (U.check) acts.push({ name: 'Se etter oppdateringer', icon: 'update', sub: 'Docker-containere', col: C.blue, act: U.check, actIcon: 'refresh', actCol: C.blue, actVerb: 'Sjekk' });
+      return `${this._heroHTML(V)}
+  ${this._gaugesHTML(G)}
+  <section data-lay="array" data-lay-navn="Array og paritet" style="display:flex;flex-direction:column;gap:8px">${arrHTML}</section>
+  ${this._sec('Disker', `${R.disks.length} ${R.disks.length === 1 ? 'disk' : 'disker'}`, this._rows(disks), { key: 'disker' })}
+  ${this._sec('Docker', `${dOn} av ${R.dockers.length} kjører`, R.dockers.length ? dFilt + this._rows(dRows) : '', { key: 'docker' })}
+  ${this._sec('Virtuelle maskiner', `${U.vms.filter(v => this.v(v.id) === 'on').length} kjører`, this._rows(vmRows), { key: 'vm' })}
+  ${this._sec('System', 'temperatur og oppetid', sys, { key: 'system', gap: 0 })}
+  ${ups ? `<section data-lay="ups" data-lay-navn="UPS">${ups}</section>` : ''}
+  ${this._sec('Handlinger', 'unraid-integrasjon', this._rows(acts), { key: 'handl' })}`;
+    }
+
+    _tabUnifi(UF, M) {
+      const c = this.config, gw = UF.gw, g = UF.gwSlug, devs = M.devs;
       const down = devs.filter(d => !d.on).length;
       const lat = { cloudflare: this.n(`sensor.${g}_cloudflare_wan_latency`), google: this.n(`sensor.${g}_google_wan_latency`) };
-      const pm = c.ping_mal === 'google' ? ['google', 'cloudflare'] : ['cloudflare', 'google'];
-      const pk = pm.find(k => lat[k] != null);
-      const ping = pk ? lat[pk] : this.n(c.speedtest_ping);
-      const pingSub = pk === 'cloudflare' ? '1.1.1.1' : pk === 'google' ? '8.8.8.8' : 'Speedtest';
-      const gwD = devs.find(d => gw && d.slug === gw.slug);
-      const apCl = devs.filter(d => d.type === 2).reduce((s, d) => s + (d.kl || 0), 0);
-      const gwCl = gwD && gwD.kl != null ? gwD.kl : this.n(`sensor.${g}_clients`);
-      const clients = gwCl != null ? gwCl : devs.reduce((s, d) => s + (d.kl || 0), 0);
-      const sp = this._speed();
       const sd = this.n(c.speedtest_ned), su = this.n(c.speedtest_opp);
-      const top = this._topClients();
-      return {
-        status: `UniFi Network${gw ? ' · ' + gw.name : ''}`, ok: devs.length && !down ? C.green : C.amber,
-        headline: !devs.length ? 'Fant ingen UniFi-enheter' : down ? `${down} ${down === 1 ? 'enhet svarer' : 'enheter svarer'} ikke` : ping != null && ping > 100 ? 'Høy latens på WAN' : 'Nettet er friskt',
-        subline: [gw && this.ok(gw.up) ? `WAN oppe ${upLong(upSec(this.st(gw.up)))}` : '', [c.isp, sd != null && su != null ? `${nf(sd)}/${nf(su)}` : ''].filter(Boolean).join(' ')].filter(Boolean).join(' · '),
-        gauges: [
-          this._gauge('Klienter', clients, Number(c.klienter_maks) || 80, '', apCl ? `${nf(apCl)} trådløst` : 'tilkoblet', C.blue),
-          this._gauge('Ping', ping, 40, ' ms', pingSub, C.green),
-          this._gauge('Gateway', gwD ? gwD.cpuV : null, 100, ' %', 'CPU', C.blue),
-        ],
-        hasNet: !!sp, sp,
-        groups: [
-          this._group('Enheter', `${devs.length} adoptert`, devs.map(d => ({ name: d.name, icon: ['router', 'lan', 'wifi'][d.type], on: d.on, col: C.green, warn: !d.on,
-            sub: !d.on ? 'Svarer ikke' : [d.type === 0 ? 'Gateway' + (d.fwV ? ' · ' + d.fwV : '') : d.fwV ? `v${d.fwV}` : '', d.type !== 0 && d.kl != null ? `${nf(d.kl)} klienter` : '', d.cpuV != null ? `CPU ${nf(d.cpuV)} %` : ''].filter(Boolean).join(' · '),
-            v: !d.on ? 'Borte' : d.type === 0 && d.kl != null ? `${nf(d.kl)} klienter` : 'OK' }))),
-          top.length ? this._group('Topp klienter', 'nå', top) : null,
-        ].filter(Boolean),
+      const apCl = devs.filter(d => d.type === 2).reduce((s, d) => s + (d.kl || 0), 0);
+      const V = {
+        status: `UniFi Network${gw ? ' · ' + gw.name : ''}`, ok: !devs.length ? C.amber : down ? C.red : C.green,
+        headline: !devs.length ? 'Fant ingen UniFi-enheter' : down ? `${down} ${down === 1 ? 'enhet svarer' : 'enheter svarer'} ikke` : M.ping != null && M.ping > 100 ? 'Høy latens på WAN' : 'Nettet er friskt',
+        subline: [M.gwD && M.gwD.upS != null ? `WAN oppe ${upLong(M.gwD.upS)}` : '', [c.isp, sd != null && su != null ? `${nf(sd)}/${nf(su)}` : ''].filter(Boolean).join(' ')].filter(Boolean).join(' · '),
       };
+      const G = [
+        this._gauge('Klienter', M.clients, Number(c.klienter_maks) || 80, '', apCl ? `${nf(apCl)} trådløst` : 'tilkoblet', C.blue),
+        this._gauge('Ping', M.ping, 40, ' ms', M.pk === 'cloudflare' ? '1.1.1.1' : M.pk === 'google' ? '8.8.8.8' : 'Speedtest', M.ping > 100 ? C.red : C.green),
+        this._gauge('Gateway', M.gwD ? M.gwD.cpuV : null, 100, ' %', 'CPU', C.blue),
+      ];
+      const wan = this._stats([['Cloudflare', lat.cloudflare != null ? `${nf(lat.cloudflare)} ms` : null], ['Google', lat.google != null ? `${nf(lat.google)} ms` : null], ['Speedtest-ping', this.n(c.speedtest_ping) != null ? `${nf(this.n(c.speedtest_ping))} ms` : null],
+        ['Ned', sd != null ? `${nf(sd)} Mbit/s` : null], ['Opp', su != null ? `${nf(su)} Mbit/s` : null], ['WAN-IP', this.ok(`sensor.${g}_wan_ip`) ? this.v(`sensor.${g}_wan_ip`) : null]]);
+      const TYP = ['Gateway', 'Switch', 'Aksesspunkt'];
+      const dRows = devs.map(d => {
+        const k = 'uf-' + d.slug, what = d.name;
+        return { k, name: d.name, icon: ['router', 'lan', 'wifi'][d.type], on: d.on, col: C.green, more: d.tracker,
+          chip: !d.on ? ['Frakoblet', C.red] : d.fwNew ? ['Oppdatering', C.amber] : null,
+          sub: !d.on ? 'Svarer ikke' : [TYP[d.type], d.kl != null ? `${nf(d.kl)} klienter` : '', d.upS != null ? `oppe ${upShort(d.upS)}` : ''].filter(Boolean).join(' · '),
+          bars: d.on ? [['CPU', d.cpuV, pctCol(d.cpuV, 70, 90, C.green)], d.memV != null ? ['RAM', d.memV, pctCol(d.memV, 85, 95, C.green)] : null] : null,
+          detail: () => {
+            const ports = d.ports.slice(0, Math.max(Number(c.poe_maks) || 8, 24)).map(p => {
+              const on = this.v(p) === 'on', n = (p.match(/_port_(\d+)/) || [])[1], w = this.n(`sensor.${obj(p).replace(/_poe$/, '')}_poe_power`);
+              this._A(p, k, on ? 'Slå av PoE' : 'Slå på PoE', `på port ${n} (${this.fname(p).replace(/\s*poe\s*$/i, '')})`, on, on ? C.red : C.green);
+              return `<button data-on-click="ask" data-arg="${e(p)}" data-hold="moreInfo" style="min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:8px 10px;border-radius:14px;background:${on ? a(C.amber, 0.14) : '#232326'};box-shadow:${this.state.conf === p ? `inset 0 0 0 1px ${C.red}` : 'none'};text-align:left">
+                <span style="display:flex;align-items:center;gap:4px;font-size:12px;font-weight:600;color:${on ? C.amber : '#8e8d89'}"><span class="ms" style="font-size:14px;font-variation-settings:'FILL' ${on ? 1 : 0}">bolt</span>${e(n)}</span>
+                <span style="font-size:11px;color:#8e8d89;font-variant-numeric:tabular-nums;white-space:nowrap">${on ? (w != null ? `${nf1(w)} W` : 'PoE på') : 'av'}</span></button>`;
+            }).join('');
+            return `${this._stats([['Type', TYP[d.type]], ['Klienter', d.kl != null ? nf(d.kl) : null], ['Oppetid', d.upS != null ? upLong(d.upS) : null], ['CPU', d.cpuV != null ? `${nf(d.cpuV)} %` : null], ['Minne', d.memV != null ? `${nf(d.memV)} %` : null], ['Temp', d.tempV != null ? `${nf(d.tempV)}°` : null, tempCol(d.tempV, 70, 85)], ['Fastvare', d.fwV || null], ['Ny versjon', d.fwNew || null, C.amber]])}
+              ${ports ? `<div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">PoE-porter · trykk for å slå av/på</span><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:6px">${ports}</div></div>` : ''}
+              ${this._btns([this._btn(d.restart, k, 'restart', what, 'Omstart', 'restart_alt', C.blue, true), d.fwNew ? this._btn(d.fw, k, 'fw', `fastvare ${d.fwNew} på ${what}`, 'Installer fastvare', 'download', C.amber, true) : ''])}`;
+          } };
+      });
+      const wl = this._wlans().map(id => { const on = this.v(id) === 'on', cl = this.n(`sensor.${obj(id)}_clients`); return { k: 'wl-' + id, name: this.fname(id), icon: on ? 'wifi' : 'wifi_off', col: C.blue, on, more: id, sub: on ? (cl != null ? `${nf(cl)} klienter` : 'Sender') : 'Av', tog: id, togOn: on, togConfirm: true, togCol: C.green }; });
+      const upd = M.upds.filter(u => devs.some(d => d.fw === u.id) || (this._reg()[u.id] || {}).platform === 'unifi');
+      return `${this._heroHTML(V)}
+  ${this._gaugesHTML(G)}
+  ${this._speedHTML()}
+  ${this._sec('WAN', gw ? gw.name : 'ruter', wan, { key: 'wan', gap: 0 })}
+  ${this._sec('Enheter', `${devs.length - down} av ${devs.length} tilkoblet`, this._rows(dRows), { key: 'enheter' })}
+  ${this._sec('Wi-Fi-nett', `${wl.filter(w => w.on).length} aktive`, this._rows(wl), { key: 'wifi' })}
+  ${this._sec('Fastvare', `${upd.length} klare`, this._rows(this._updRows(upd)), { key: 'fastvare' })}`;
     }
     /** Klienter med rx/tx-sensorer fra UniFi (valgfrie, av som standard i HA) */
     _topClients() {
@@ -7758,12 +8444,11 @@ try {
       });
     }
 
-    _haV(UF) {
+    _tabNett(UF) {
       const c = this.config, R = this._reg(), S = this._hass.states;
       const reg = this._unifiReg();
       const infra = new Set(UF.list.map(d => d.tracker));
       const infraDev = new Set(UF.list.map(d => (R[d.tracker] || {}).device_id).filter(Boolean));
-      // sporere: personenes device_trackers som kommer fra UniFi (eller har UniFi-attributter)
       const isUnifiTr = id => id && S[id] && !infra.has(id) && ((R[id] && R[id].platform === 'unifi') || ['essid', 'ap_mac', 'is_wired'].some(k => k in (S[id].attributes || {})));
       let phones = [];
       for (const pid of this._ids().filter(id => id.startsWith('person.'))) for (const t of (this.at(pid, 'device_trackers', []) || [])) if (isUnifiTr(t) && !phones.includes(t)) phones.push(t);
@@ -7774,105 +8459,82 @@ try {
       const pres = phones.map(id => {
         const on = this.v(id) === 'home', at = (this.st(id) || {}).attributes || {};
         const ap = at.ap_mac ? macName[String(at.ap_mac).toLowerCase()] : '';
-        return { name: this.fname(id), icon: 'smartphone', on, col: C.green, v: on ? 'Hjemme' : 'Borte', sub: on ? ([ap, at.essid].filter(Boolean).join(' · ') || (at.is_wired ? 'Kablet' : 'Tilkoblet')) : `Borte · sist sett ${hm((this.st(id) || {}).last_changed)}` };
+        return { k: 'pr-' + id, name: this.fname(id), icon: 'smartphone', on, col: C.green, more: id, chip: on ? ['Hjemme', C.green] : ['Borte', '#8e8d89'], sub: on ? ([ap, at.essid].filter(Boolean).join(' · ') || (at.is_wired ? 'Kablet' : 'Tilkoblet')) : `Sist sett kl. ${hm((this.st(id) || {}).last_changed)}` };
       });
-      // brytere
+      const wl = new Set(this._wlans());
       const sw = reg.filter(id => dom(id) === 'switch');
-      const poe = sw.filter(id => /port_\d+_poe$|_poe$/.test(obj(id)));
-      const blocks = Array.isArray(c.blokker) ? c.blokker.filter(id => this.st(id)) : sw.filter(id => !poe.includes(id) && !infraDev.has((R[id] || {}).device_id) && !/wlan|wifi|ssid|dpi|restrict|forward|traffic|rule|outlet|led|vpn|port_\d/.test(obj(id)));
-      const upds = reg.filter(id => dom(id) === 'update');
-      const updOn = upds.filter(id => this.v(id) === 'on');
+      const pn = id => +((id.match(/_port_(\d+)/) || [])[1] || 0), poe = sw.filter(id => /port_\d+_poe$|_poe$/.test(obj(id))).sort((x, y) => x.slice(0, x.indexOf('_port_')).localeCompare(y.slice(0, y.indexOf('_port_'))) || pn(x) - pn(y));
+      const blocks = Array.isArray(c.blokker) ? c.blokker.filter(id => this.st(id)) : sw.filter(id => !poe.includes(id) && !wl.has(id) && !infraDev.has((R[id] || {}).device_id) && !/wlan|wifi|ssid|dpi|restrict|forward|traffic|rule|outlet|led|vpn|port_\d/.test(obj(id)));
       const last = reg.reduce((m, id) => Math.max(m, new Date((S[id] || {}).last_updated || 0).getTime()), 0);
       const poeDev = (() => { const id = poe[0]; const dev = id && this._devs()[(R[id] || {}).device_id]; return (dev && (dev.name_by_user || dev.name)) || 'UniFi'; })();
       const poeW = id => { const p = this.n(`sensor.${obj(id).replace(/_poe$/, '')}_poe_power`); return p != null ? ` · ${nf1(p)} W` : ''; };
       const alive = reg.some(id => this.ok(id));
-      return {
+      const home = clientTr.filter(id => this.v(id) === 'home').length;
+      const V = {
         status: 'UniFi Network · integrasjon i Home Assistant', ok: alive ? C.green : C.amber,
-        headline: !reg.length ? 'Fant ikke UniFi-integrasjonen' : alive ? 'Integrasjonen er tilkoblet' : 'Integrasjonen svarer ikke',
+        headline: !reg.length ? 'Fant ikke UniFi-integrasjonen' : `${nf(home)} ${home === 1 ? 'klient' : 'klienter'} tilkoblet`,
         subline: reg.length ? `Oppdatert for ${agoTxt(last)} · ${reg.length} entiteter` : 'Krever UniFi Network-integrasjonen',
-        gauges: [
-          this._gauge('Sporere', clientTr.filter(id => this.v(id) === 'home').length, Math.max(1, clientTr.length), '', 'hjemme', C.green),
-          this._gauge('Brytere', sw.filter(id => this.v(id) === 'on').length, Math.max(1, sw.length), '', 'blokk og PoE', C.blue),
-          this._gauge('Oppdat.', updOn.length, Math.max(1, upds.length), '', 'fastvare', C.amber),
-        ],
-        groups: [
-          this._group('Tilstedeværelse', 'device_tracker', pres),
-          this._group('Blokker klient', `${blocks.filter(id => this.v(id) === 'off').length} blokkert`, blocks.map(id => { const bl = this.v(id) === 'off'; return { name: this.fname(id), icon: 'block', sub: bl ? 'Blokkert i UniFi' : 'Tillatt', on: bl, col: C.red, togOn: bl, tog: id }; })),
-          this._group('PoE-porter', poeDev, poe.slice(0, Number(c.poe_maks) || 8).map(id => { const on = this.v(id) === 'on'; return { name: this.fname(id).replace(/\s*poe\s*$/i, ''), icon: 'power', sub: on ? `PoE på${poeW(id)}` : 'PoE av', on, col: C.amber, togOn: on, tog: id }; })),
-          this._group('Oppdateringer', 'update-entiteter', updOn.map(id => { const busy = !!this.at(id, 'in_progress', false); return { name: this.fname(id).replace(/\s*(firmware|fastvare)\s*$/i, ''), icon: 'system_update', sub: `${this.at(id, 'installed_version', '?')} → ${this.at(id, 'latest_version', '?')}`, col: C.amber, act: id, btnIcon: busy ? 'check' : 'download', btnCol: busy ? C.green : C.amber }; })),
-        ].filter(Boolean),
       };
+      const G = [
+        this._gauge('Sporere', home, Math.max(1, clientTr.length), '', 'hjemme', C.green),
+        this._gauge('Blokkert', blocks.filter(id => this.v(id) === 'off').length, Math.max(1, blocks.length), '', 'klienter', C.red),
+        this._gauge('PoE', poe.filter(id => this.v(id) === 'on').length, Math.max(1, poe.length), '', 'porter på', C.amber),
+      ];
+      const top = this._topClients();
+      return `${this._heroHTML(V)}
+  ${this._gaugesHTML(G)}
+  ${this._sec('Tilstedeværelse', 'device_tracker', this._rows(pres), { key: 'pres' })}
+  ${this._sec('Blokker klient', `${blocks.filter(id => this.v(id) === 'off').length} blokkert`, this._rows(blocks.map(id => { const bl = this.v(id) === 'off'; return { k: 'bl-' + id, name: this.fname(id), icon: 'block', more: id, sub: bl ? 'Blokkert i UniFi' : 'Tillatt', on: bl, col: C.red, tog: id, togOn: bl, togCol: C.red, togConfirm: false }; })), { key: 'blokk' })}
+  ${this._sec('PoE-porter', poeDev, this._rows(poe.slice(0, Number(c.poe_maks) || 8).map(id => { const on = this.v(id) === 'on'; return { k: 'poe-' + id, name: this.fname(id).replace(/\s*poe\s*$/i, ''), icon: 'power', more: id, sub: on ? `PoE på${poeW(id)}` : 'PoE av', on, col: C.amber, tog: id, togOn: on, togConfirm: true, togCol: C.amber }; })), { key: 'poe' })}
+  ${this._sec('Topp klienter', 'nå', this._rows(top), { key: 'topp' })}`;
     }
 
     body() {
       const s = this.state, c = this.config;
-      const UF = this._unifi(), U = this._unraid(), N = this._pveNode();
-      const has = { pve: N.has || this._pveGuests().length > 0, unraid: !!U, unifi: UF.list.length > 0 || !!UF.gwSlug, ha: this._unifiReg().length > 0 || UF.list.length > 0 };
-      const all = [['pve', 'Proxmox', 'deployed_code'], ['unraid', 'Unraid', 'storage'], ['unifi', 'UniFi', 'router'], ['ha', 'HA', 'home']];
-      let tabs = Array.isArray(c.faner) && c.faner.length ? all.filter(t => c.faner.includes(t[0])) : all.filter(t => has[t[0]]);
-      if (!tabs.length) tabs = [all[0]];
+      this._cm = {}; this._mi = {};
+      const UF = this._unifi(), U = this._unraid(), nodes = this._pveNodes(), pg = this._pveGuests();
+      const has = { pve: nodes.length > 0 || pg.length > 0, unraid: !!U, unifi: UF.list.length > 0 || !!UF.gwSlug, ha: this._unifiReg().length > 0 || UF.list.length > 0 };
+      has.oversikt = (has.pve + has.unraid + has.unifi) >= 1;
+      const all = [['oversikt', 'Oversikt', 'monitor_heart'], ['pve', 'Proxmox', 'deployed_code'], ['unraid', 'Unraid', 'storage'], ['unifi', 'UniFi', 'router'], ['ha', 'Nettverk', 'lan']];
+      const want = Array.isArray(c.faner) && c.faner.length ? c.faner.map(x => x === 'nett' ? 'ha' : x) : null;
+      let tabs = want ? all.filter(t => want.includes(t[0])) : all.filter(t => has[t[0]]);
+      if (!tabs.length) tabs = [all[1]];
       const tabK = tabs.some(t => t[0] === s.tab) ? s.tab : tabs[0][0];
-      const V = tabK === 'unraid' ? this._unraidV(U) : tabK === 'unifi' ? this._unifiV(UF) : tabK === 'ha' ? this._haV(UF) : this._pve();
-      const tab = (k, l, icon) => ({ k, label: l, icon, style: { height: 54, borderRadius: 18, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, fontSize: 11, fontWeight: 500, background: tabK === k ? PINK : 'transparent', color: tabK === k ? '#2a1720' : '#a9a7a2', transition: 'background .25s' } });
-      const bars = (arr, col) => { const m = Math.max(1, ...arr); return arr.map((v, i) => ({ flex: 1, height: `${v / m * 100}%`, borderRadius: 2, background: i === arr.length - 1 ? col : a(col, 0.45) })); };
-      const net = V.sp ? [['Ned', 'south', V.sp.down, C.green], ['Opp', 'north', V.sp.up, C.blue]].map(([label, icon, arr, col]) => ({ label, icon, v: nf(arr[arr.length - 1] || 0), bars: bars(arr, col), iconStyle: { fontSize: 16, color: col } })) : [];
-      const statusStyle = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 500, color: '#c9c7c2' };
-      const statusDot = { width: 8, height: 8, borderRadius: 4, flex: 'none', background: V.ok, boxShadow: `0 0 10px ${V.ok}` };
-      const tl = tabs.map(t => tab(...t));
+      // modeller (bare det som trengs)
+      const needAll = tabK === 'oversikt';
+      const M = {};
+      if (has.pve && (needAll || tabK === 'pve')) M.pve = { nodes: nodes.map(n => this._nV(n)), guests: pg.map(g => this._gV(g)), store: this._pveStorage().map(x => ({ ...x, bar: this.n(x.id), u: bytes(this.st(x.used)), t: bytes(this.st(x.total)) })) };
+      if (U && (needAll || tabK === 'unraid')) M.ur = this._urV(U);
+      if ((UF.list.length || UF.gwSlug) && (needAll || tabK === 'unifi')) {
+        const devs = this._ufV(UF), g = UF.gwSlug;
+        const lat = { cloudflare: this.n(`sensor.${g}_cloudflare_wan_latency`), google: this.n(`sensor.${g}_google_wan_latency`) };
+        const pk = (c.ping_mal === 'google' ? ['google', 'cloudflare'] : ['cloudflare', 'google']).find(k => lat[k] != null);
+        const gwD = devs.find(d => UF.gw && d.slug === UF.gw.slug);
+        const gwCl = gwD && gwD.kl != null ? gwD.kl : this.n(`sensor.${g}_clients`);
+        M.uf = { devs, gwD, pk, ping: pk ? lat[pk] : this.n(c.speedtest_ping), clients: gwCl != null ? gwCl : devs.reduce((x, d) => x + (d.kl || 0), 0) };
+      }
+      M.upds = this._updates(U, UF);
+      if (M.uf) M.uf.upds = M.upds;
+      let content;
+      if (tabK === 'oversikt') content = this._tabOversikt(M, this._health(M));
+      else if (tabK === 'unraid' && U) content = this._tabUnraid(U, M.ur);
+      else if (tabK === 'unifi') content = this._tabUnifi(UF, M.uf || { devs: [], clients: null, ping: null, upds: [] }) ;
+      else if (tabK === 'ha') content = this._tabNett(UF);
+      else content = this._tabPve(M.pve || { nodes: [], guests: [], store: [] });
+      const tabBar = tabs.length > 1 ? `<div data-lay-skip="1" data-key="srv-tabs" style="min-width:0">${KD.segHTML('srv-tab', tabs.map(t => [t[0], t[1], tabs.length > 4 ? null : t[2]]), tabK, 'goTab', { pink: true, h: 40 })}</div>` : '';
       return `<div style="box-sizing:border-box;width:100%;max-width:var(--kd-bredde,100%);overflow-x:clip;min-height:100vh;margin:0 auto;background:transparent;padding:20px var(--kd-kant,10px) 40px;display:flex;flex-direction:column;gap:20px">
   <header style="display:flex;align-items:center;gap:12px">
     <span style="width:40px;height:40px;border-radius:20px;background:#e9e8e4;color:#141416;display:grid;place-items:center;flex:none"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">dns</span></span>
     <div style="flex:1;font-size:26px;font-weight:500;letter-spacing:-0.02em">Server</div>
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
   </header>
-
-  <div style="display:grid;grid-template-columns:repeat(${tl.length},1fr);gap:2px;padding:4px;border-radius:22px;background:#1c1c1f">
-    ${tl.map(t => `<button data-on-click="goTab" data-arg="${t.k}" style="${S(t.style)}"><span class="ms" style="font-size:19px">${e(t.icon)}</span><span>${e(t.label)}</span></button>`).join('')}
-  </div>
-
-  <section style="display:flex;flex-direction:column;gap:6px;padding:0 4px">
-    <div style="${S(statusStyle)}"><span style="${S(statusDot)}"></span><span>${e(V.status)}</span></div>
-    <div style="font-size:24px;font-weight:500;letter-spacing:-0.015em"><span>${e(V.headline)}</span></div>
-    <div style="font-size:14px;color:#8e8d89"><span>${e(V.subline)}</span></div>
-  </section>
-
-  <section style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
-    ${V.gauges.map(g => `<div style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px 6px 14px;border-radius:22px;background:#1c1c1f">
-        <div style="${S(g.ring)}"><div style="position:absolute;inset:8px;border-radius:50%;background:#1c1c1f;display:grid;place-items:center"><span style="font-size:17px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap"><span>${e(g.v)}</span></span></div></div>
-        <div style="display:flex;flex-direction:column;align-items:center;gap:1px;text-align:center"><span style="font-size:13px;font-weight:500"><span>${e(g.label)}</span></span><span style="font-size:11px;color:#8e8d89"><span>${e(g.sub)}</span></span></div>
-      </div>`).join('')}
-  </section>
-
-  ${V.hasNet ? `<section style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
-      ${net.map(n => `<div style="display:flex;flex-direction:column;gap:6px;padding:16px;border-radius:22px;background:#1c1c1f">
-          <span style="display:flex;align-items:center;gap:6px;font-size:12px;color:#8e8d89"><span class="ms" style="${S(n.iconStyle)}">${e(n.icon)}</span><span>${e(n.label)}</span></span>
-          <span style="font-size:28px;font-weight:300;letter-spacing:-0.02em;font-variant-numeric:tabular-nums;white-space:nowrap"><span>${e(n.v)}</span><span style="font-size:13px;color:#8e8d89"> Mbit/s</span></span>
-          <div style="display:flex;align-items:flex-end;gap:2px;height:32px">${n.bars.map(b => `<span style="${S(b)}"></span>`).join('')}</div>
-        </div>`).join('')}
-    </section>` : ''}
-
-  ${V.groups.map(gr => `<section style="display:flex;flex-direction:column;gap:4px">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;padding:0 4px 6px">
-        <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#8e8d89"><span>${e(gr.title)}</span></div>
-        <div style="font-size:12px;color:#6d6c69"><span>${e(gr.meta)}</span></div>
-      </div>
-      ${gr.items.map(it => `<div style="${S(it.row)}">
-          <span style="${S(it.iconWrap)}"><span class="ms" style="font-size:18px;font-variation-settings:'FILL' 1">${e(it.icon)}</span></span>
-          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:5px">
-            <span style="display:flex;align-items:center;gap:6px;font-size:14px;font-weight:500"><span>${e(it.name)}</span><span style="${S(it.tag)}"><span>${e(it.tagT)}</span></span></span>
-            <span style="${S(it.subStyle)}"><span>${e(it.sub)}</span></span>
-            <span style="${S(it.barWrap)}"><span style="${S(it.bar)}"></span></span>
-          </div>
-          <span style="${S(it.vStyle)}"><span>${e(it.v)}</span></span>
-          <button data-on-click="act" data-arg="${e(it.act || '')}" style="${S(it.btn)}"><span class="ms" style="font-size:18px;font-variation-settings:'FILL' 1">${e(it.btnIcon)}</span></button>
-          <button data-on-click="tog" data-arg="${e(it.tog || '')}" style="${S(it.track)}"><span style="${S(it.knob)}"></span></button>
-        </div>`).join('')}
-    </section>`).join('')}
+  ${tabBar}
+  ${content}
 </div>`;
     }
   }
 
-  KD.define('kd-server-card', KDServerCard, 'KD Server', 'Proxmox, Unraid, UniFi og HA – pikselkopi av Claude Design «Server»');
+  KD.define('kd-server-card', KDServerCard, 'KD Server', 'Proxmox, Unraid, UniFi og nettverk – oversikt, helsevarsler og styring');
   KD.sheet('server', 'kd-server-card');
 })();
 } catch (e) { console.error('ki-hjem-design: 60-kd-server-card.js', e); }
@@ -8151,6 +8813,9 @@ try {
  *   hytter: []                           # sensor.<sted>_oversikt fra KI Hyttebesøk (tom = finnes selv)
  *
  * Hvilke kalendere som vises kan hver bruker velge i «Tilpass oppsett» (lagres i HA-brukerdata 'kd_kalender' = { kalendere: [id…] }).
+ * Kildene (serier, filmer, plex_serier, plex_filmer, post, post_kalender, bursdager) kan også velges der
+ * ('kd_kalender'.kilder = { serier: 'calendar.sonarr', post: '' (= ingen) … }); config er reserve.
+ * Serier/filmer kan være en upcoming_media-sensor (attributtet data) eller en kalender (f.eks. Sonarr/Radarr-kalenderen).
  * Farger: kalendere som heter som en person (Rune, Cybele, Sebastian) eller «Familie» får designets farger.
  * Hytta leser KI Hyttebesøk (sensor.<sted>_oversikt: her_naa, dager, opphold, kommende, per_maaned …).
  * Pakker finnes i entitetsregisteret (Norwegian Parcel Tracker).
@@ -8178,6 +8843,16 @@ try {
   const cap = s => String(s).replace(/^./, c => c.toUpperCase());
   const hm = d => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
   const hash = s => { let h = 0; for (const ch of String(s)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h; };
+  /* Kilder som kan velges i «Tilpass oppsett»: [nøkkel, navn, ikon, mønster, domener] */
+  const SRC = [
+    ['serier', 'Serier', 'live_tv', /sonarr/i, ['sensor', 'calendar'], 'Sonarr – upcoming-sensor eller kalender'],
+    ['filmer', 'Filmer', 'movie', /radarr/i, ['sensor', 'calendar'], 'Radarr – upcoming-sensor eller kalender'],
+    ['plex_serier', 'Plex · serier', 'smart_display', /plex/i, ['sensor'], 'Nylig lagt til (serier)'],
+    ['plex_filmer', 'Plex · filmer', 'smart_display', /plex/i, ['sensor'], 'Nylig lagt til (filmer)'],
+    ['post', 'Posten · neste levering', 'mail', /posten|post_?nord|nar_kommer/i, ['sensor'], 'Sensor med neste leveringsdato'],
+    ['post_kalender', 'Posten · kalender', 'local_post_office', /posten|post/i, ['calendar'], 'Kalender med leveringsdager'],
+    ['bursdager', 'Bursdager', 'cake', /birthday|bursdag|f[oø]dsel/i, ['calendar'], 'Kalender med bursdager'],
+  ];
   const bdName = s => String(s || '').replace(/\(\s*\d{4}\s*\)/g, '').replace(/[_-]+/g, ' ').replace(/\b(bursdag|birthday|fodselsdag|fødselsdag)\b/gi, '').replace(/[’']\s*s\b/gi, '').replace(/\s{2,}/g, ' ').replace(/^[\s.,·-]+|[\s.,·-]+$/g, '').replace(/^./, c => c.toUpperCase());
 
   class KDKalenderCard extends KD.KDSheet {
@@ -8200,8 +8875,14 @@ try {
     /* ================= data ================= */
     /* Alle calendar.* med navn og farge. Standardutvalget (config kalendere + auto, minus ekskluder/hytta) får fargene først
        (samme som før), resten får farge etterpå, så fargene ikke hopper når brukeren slår kalendere av/på. */
+    /** Valgte kilder: brukerens valg ('kd_kalender'.kilder; '' = ingen) → config */
+    _src() {
+      const u = (KD.ud(this, 'kd_kalender') || {}).kilder || {}, c = this.config, out = {};
+      for (const [k] of SRC) out[k] = Object.prototype.hasOwnProperty.call(u, k) ? (u[k] || null) : (c[k] || null);
+      return out;
+    }
     _allCals() {
-      const c = this.config, ex = new Set(c.ekskluder || []), hut = this._hutCalIds(), out = [];
+      const c = this.config, src = this._src(), ex = new Set([...(c.ekskluder || []), ...['serier', 'filmer', 'post_kalender'].map(k => src[k]).filter(id => id && id.startsWith('calendar.'))]), hut = this._hutCalIds(), out = [];
       let fi = 0;
       const col = (navn, id) => { const w = WHO.find(x => x[0].test(navn + ' ' + id)); return w ? w[1] : PALETTE[fi++ % PALETTE.length]; };
       const cfg = new Map();
@@ -8245,9 +8926,15 @@ try {
     _pcol(name) { const p = PERSC.find(x => x[0].test(name)); if (p) return p[1]; this._pc = this._pc || {}; if (!this._pc[name]) this._pc[name] = PERS_FALL[Object.keys(this._pc).length % PERS_FALL.length]; return this._pc[name]; }
 
     _upcoming() {
-      const c = this.config;
+      const c = this._src();
       const read = (id, type) => {
         const st = this.st(id); if (!st) return [];
+        if (id.startsWith('calendar.')) { // Sonarr/Radarr-kalender: «Serie - 1x03 - Episode» / «Film (Kino)»
+          return this._events([{ id, navn: type, col: C.blue }], 60, day0(new Date()), 'src-' + type).map(ev => {
+            const m = String(ev.summary || '').match(/^(.+?)\s+-\s+(S?\d+[xE]\d+)\s+-\s+(.+)$/i), kino = /\(?(kino|cinema|theatrical)\)?/i.test(ev.summary || '');
+            return { type, src: id, title: (m ? m[1] : String(ev.summary || '').replace(/\s*\((kino|cinema|theatrical|physical|digital)[^)]*\)\s*$/i, '')).trim(), episode: m ? m[3] : '', number: m ? m[2].toUpperCase().replace(/^(\d+)X(\d+)$/, (x, a1, b1) => `S${pad(a1)}E${pad(b1)}`) : '', when: ev.start, studio: '', kino };
+          }).filter(x => x.title);
+        }
         let d = st.attributes.data; if (typeof d === 'string') { try { d = JSON.parse(d); } catch (x) { d = null; } }
         if (!Array.isArray(d)) return [];
         return d.filter(x => x && (x.airdate || x.aired) && x.title).map(x => ({ type, src: id, title: x.title, episode: x.episode && x.episode !== 'TBA' ? x.episode : '', number: x.number || '', when: new Date(x.airdate || x.aired), studio: x.studio || '', kino: !!x.flag }));
@@ -8258,7 +8945,7 @@ try {
       return [...read(c.serier, 'serie'), ...read(c.filmer, 'film')].filter(x => !isNaN(x.when) && x.when >= t0).map(x => ({ ...x, plex: plex.has(key(x)) })).sort((p, q) => p.when - q.when);
     }
     _bdays() {
-      const id = this.config.bursdager; if (!id || !this.st(id)) return [];
+      const id = this._src().bursdager; if (!id || !this.st(id)) return [];
       const t0 = day0(new Date());
       const raw = this.cached(`kd-kal-bd-${id}-${isoL(t0)}`, 30 * 60e3, () => this.calendar([id], 367), null) || [];
       const seen = new Set(), out = [];
@@ -8297,12 +8984,55 @@ try {
     kalAlle(ev, k) { this._setCals(k === 'alle' ? this._allCals().map(x => x.id) : k === 'ingen' ? [] : null); }
 
     /* ================= «Tilpass oppsett»: hvilke kalendere som vises ================= */
+    srcPick(ev, k) { this.setState(s => ({ srcOpen: s.srcOpen === k ? null : k, srcQ: '' })); this.haptic('selection'); }
+    srcQ(ev) { this.setState({ srcQ: ev.target.value }); }
+    srcSet(ev, arg) {
+      const i = arg.indexOf('|'), k = arg.slice(0, i), id = arg.slice(i + 1), u = KD.ud(this, 'kd_kalender') || {}, kil = { ...(u.kilder || {}) };
+      if (id === '*') delete kil[k]; else kil[k] = id;
+      this.haptic('selection'); this.setState({ srcOpen: null });
+      KD.udSave(this, 'kd_kalender', { ...u, kilder: kil });
+    }
+    _srcHTML() {
+      const s = this.state, src = this._src(), u = (KD.ud(this, 'kd_kalender') || {}).kilder || {}, ids = Object.keys((this._hass && this._hass.states) || {});
+      const name = id => String(this.fname(id) || id);
+      const rows = SRC.map(([k, label, icon, re, doms, hint]) => {
+        const cur = src[k], open = s.srcOpen === k, own = Object.prototype.hasOwnProperty.call(u, k), ok = cur && this.st(cur);
+        const sub = !cur ? 'Ingen valgt' : `${ok ? '' : 'Finnes ikke · '}${cur}`;
+        let list = '';
+        if (open) {
+          const q = String(s.srcQ || '').trim().toLowerCase();
+          const pool = ids.filter(id => doms.includes(id.split('.')[0]));
+          const hit = id => !q || id.toLowerCase().includes(q) || name(id).toLowerCase().includes(q);
+          const match = pool.filter(id => re.test(id) || re.test(name(id)));
+          let cand = q ? pool.filter(hit).sort((x, y) => (re.test(y) ? 1 : 0) - (re.test(x) ? 1 : 0)) : [...match, ...(doms.includes('calendar') ? pool.filter(id => id.startsWith('calendar.') && !match.includes(id)) : [])];
+          cand = cand.slice(0, 40);
+          const opt = (id, t1, t2, sel, ic) => `<button data-key="src-${e(k)}-${e(id)}" data-on-click="srcSet" data-arg="${e(k + '|' + id)}" style="min-height:44px;padding:6px 12px;border-radius:14px;display:flex;align-items:center;gap:10px;width:100%;min-width:0;text-align:left;background:${sel ? 'oklch(0.78 0.13 350 / 0.16)' : 'transparent'};box-shadow:${sel ? 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.6)' : 'none'}">
+            <span class="ms" style="font-size:18px;flex:none;color:${sel ? 'oklch(0.82 0.1 350)' : '#8e8d89'}">${ic}</span>
+            <span style="flex:1;min-width:0;display:flex;flex-direction:column"><span style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(t1)}</span>${t2 ? `<span style="font-size:11px;color:#6d6c69;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(t2)}</span>` : ''}</span>
+            ${sel ? `<span class="ms" style="font-size:18px;flex:none;color:oklch(0.82 0.1 350)">check</span>` : ''}</button>`;
+          list = `<div style="display:flex;flex-direction:column;gap:2px;padding:4px 0 6px;min-width:0">
+          <div style="display:flex;align-items:center;gap:8px;height:40px;margin:2px 4px 4px;padding:0 14px;border-radius:20px;background:#1c1c1f;min-width:0"><span class="ms" style="font-size:18px;color:#8e8d89">search</span><input data-on-input="srcQ" value="${e(s.srcQ || '')}" placeholder="Søk i ${doms.map(d => d + '.*').join(' og ')}" style="flex:1;min-width:0;border:0;outline:none;background:transparent;color:#f2f1ee;font:inherit;font-size:13px"></div>
+          ${this.config[k] ? opt('*', 'Standard', this.config[k], !own, 'restart_alt') : ''}
+          ${opt('', 'Ingen', 'Skjul denne delen', own && !u[k], 'block')}
+          ${cand.map(id => opt(id, name(id), id, own && u[k] === id, id.startsWith('calendar.') ? 'calendar_month' : 'sensors')).join('')}
+          ${!cand.length ? `<div style="padding:10px 12px;font-size:12px;color:#6d6c69">Fant ingen${q ? ` som matcher «${e(q)}»` : ` – søk etter ${doms.join('/')}`}</div>` : ''}
+        </div>`;
+        }
+        return `<div data-key="kd-src-${k}" style="display:flex;flex-direction:column;min-width:0;border-radius:18px;background:${open ? 'rgba(255,255,255,0.05)' : 'transparent'}">
+        <button data-on-click="srcPick" data-arg="${k}" style="min-height:52px;padding:4px 10px 4px 12px;border-radius:16px;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;width:100%;text-align:left">
+          <span style="width:32px;height:32px;border-radius:16px;display:grid;place-items:center;background:${cur ? 'oklch(0.78 0.13 350 / 0.16)' : 'rgba(255,255,255,0.06)'}"><span class="ms" style="font-size:18px;color:${cur ? 'oklch(0.82 0.1 350)' : '#8e8d89'}">${icon}</span></span>
+          <span style="min-width:0;display:flex;flex-direction:column;gap:1px"><span style="font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(label)}${own ? '' : ' <span style="font-size:11px;color:#6d6c69">· standard</span>'}</span><span style="font-size:11px;color:${cur && !ok ? 'oklch(0.72 0.15 25)' : '#8e8d89'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${e(hint)}">${e(open ? hint : sub)}</span></span>
+          <span class="ms" style="font-size:20px;color:#8e8d89">${open ? 'expand_less' : 'expand_more'}</span>
+        </button>${list}</div>`;
+      }).join('');
+      return `<div style="padding:10px 12px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">Kilder</div>${rows}`;
+    }
     tilpassHTML() {
-      const all = this._allCals(); if (!all.length) return '';
+      const all = this._allCals(); if (!all.length) return this._srcHTML();
       const on = new Set(this._cals().map(x => x.id)), user = !!this._userCals();
       const pill = (k, l, act) => `<button data-on-click="kalAlle" data-arg="${k}" style="height:30px;padding:0 12px;border-radius:15px;font-size:12px;font-weight:500;background:${act ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.06)'};color:${act ? '#f4f3ef' : '#a9a7a2'}">${l}</button>`;
       const allOn = all.every(x => on.has(x.id)), noneOn = !on.size;
-      return `<div style="padding:10px 12px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">Kalendere</div>
+      return `${this._srcHTML()}<div style="padding:10px 12px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89">Kalendere</div>
     <div style="display:flex;align-items:center;gap:6px;padding:2px 8px 6px 12px">
       <span style="flex:1;font-size:12px;color:#8e8d89">${on.size} av ${all.length} vises${user ? '' : ' · standard'}</span>
       ${pill('alle', 'Alle', allOn)}${pill('ingen', 'Ingen', noneOn)}${user ? pill('std', 'Standard', false) : ''}
@@ -8436,7 +9166,7 @@ try {
     }
 
     body() {
-      const s = this.state, c = this.config, TODAY = day0(new Date());
+      const s = this.state, c = { ...this.config, ...this._src() }, TODAY = day0(new Date());
       const cals = this._cals(), places = this._places();
       const has = { cal: true, cabin: places.length > 0, up: !!(this.st(c.serier) || this.st(c.filmer)), bday: !!(c.bursdager && this.st(c.bursdager)), post: !!(this.st(c.post) || this.st(c.post_kalender)) };
       const tabDefs = [['cal', 'Kalender', 'event'], ['cabin', 'Hytta', 'cottage'], ['up', 'Framover', 'movie'], ['bday', 'Bursdager', 'cake'], ['post', 'Posten', 'mail']].filter(t => has[t[0]]);
@@ -8457,7 +9187,7 @@ try {
         const dayS = d => { const n = Math.round((day0(d) - TODAY) / DAY); return n < 8 ? cap(d.toLocaleDateString('nb-NO', { weekday: 'short' }).replace('.', '')) : dmon(d); };
         const subOf = u => (u.type === 'serie' ? [u.episode, u.number, u.plex ? 'på Plex' : u.studio] : [u.kino ? 'Kino' : 'Film', u.plex ? 'på Plex' : u.studio]).filter(Boolean).join(' · ');
         const F = ups[0];
-        up = { filters: [['alle', 'Alle'], ['serie', 'Serier'], ['film', 'Filmer'], ['plex', 'Plex']].map(([k, l]) => ({ k, label: l, style: { height: 34, padding: '0 14px', borderRadius: 17, fontSize: 13, fontWeight: 500, background: s.filter === k ? '#f4f3ef' : '#1c1c1f', color: s.filter === k ? '#1a1a1c' : '#c9c7c2' } })),
+        up = { filters: [['alle', 'Alle'], ['serie', 'Serier'], ['film', 'Filmer'], ['plex', 'Plex']].filter(([k]) => k === 'alle' || (k === 'serie' ? this.st(c.serier) : k === 'film' ? this.st(c.filmer) : this.st(c.plex_serier) || this.st(c.plex_filmer))).map(([k, l]) => ({ k, label: l, style: { height: 34, padding: '0 14px', borderRadius: 17, fontSize: 13, fontWeight: 500, background: s.filter === k ? '#f4f3ef' : '#1c1c1f', color: s.filter === k ? '#1a1a1c' : '#c9c7c2' } })),
           featured: F ? { title: F.title, sub: subOf(F), when: `${dayS(F.when)} kl. ${hm(F.when)}`, tag: s.filter === 'plex' ? 'Plex' : F.type === 'serie' ? 'Sonarr' : 'Radarr', initials: ini(F.title),
             card: { display: 'flex', gap: 14, alignItems: 'center', padding: 14, borderRadius: 24, background: `linear-gradient(120deg, ${col(F)}, #1c1c1f 85%)` },
             poster: { width: 84, height: 120, borderRadius: 12, flex: 'none', display: 'grid', placeItems: 'center', padding: 8, boxSizing: 'border-box', background: `linear-gradient(160deg, ${col(F)}, #111)`, boxShadow: '0 8px 20px rgba(0,0,0,0.4)' } } : null,
@@ -8512,9 +9242,7 @@ try {
 ${isCalTab ? `
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 4px">
       <span style="font-size:15px;font-weight:500"><span>${e(CV.calHead)}</span></span>
-      <div style="display:flex;gap:2px;padding:3px;border-radius:16px;background:#1c1c1f">
-        ${CV.calViews.map(v => `<button data-on-click="goView" data-arg="${v.k}" title="${e(v.label)}" style="${S(v.style)}"><span class="ms" style="font-size:18px">${e(v.icon)}</span><span>${e(v.label)}</span></button>`).join('')}
-      </div>
+      <div style="width:210px;max-width:60%;flex:none">${KD.segHTML('kal-view', CV.calViews.map(v => [v.k, v.label, v.icon]), s.view, 'goView', { pink: true, small: true })}</div>
     </div>` : ''}
 ${isCal ? `
     <section style="display:flex;flex-direction:column">
@@ -8591,9 +9319,7 @@ ${H ? `
     </div>
 
     <div style="display:flex;align-items:center;justify-content:center;gap:8px">
-      <div style="display:flex;gap:2px;padding:4px;border-radius:22px;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.12)">
-        ${H.subs.map(t => `<button data-on-click="goSub" data-arg="${t.k}" style="${S(t.style)}"><span>${e(t.label)}</span></button>`).join('')}
-      </div>
+      <div style="flex:1;min-width:0">${KD.segHTML('kal-hsub', H.subs.map(t => [t.k, t.label]), s.hsub, 'goSub', { pink: true })}</div>
       <button data-on-click="toggleSearch" style="${S(H.searchBtn)}"><span class="ms" style="font-size:20px">search</span></button>
     </div>
     ${H.searching ? `<input data-on-input="setQ" value="${e(H.q)}" placeholder="Søk etter person eller sted" style="height:46px;border-radius:23px;border:0;outline:none;padding:0 18px;background:#1c1c1f;color:#f2f1ee;font:inherit;font-size:14px">` : ''}
@@ -8642,9 +9368,7 @@ ${H ? `
           <span style="display:flex;flex-direction:column;align-items:flex-end"><span style="font-size:24px;font-weight:300;letter-spacing:-0.02em"><span>${e(p.nights)}</span></span><span style="font-size:11px;color:#8e8d89">netter</span></span>
         </section>`).join('')}` : ''}` : ''}
 ${up ? `
-    <div style="display:flex;gap:6px">
-      ${up.filters.map(f => `<button data-on-click="goFilter" data-arg="${f.k}" style="${S(f.style)}"><span>${e(f.label)}</span></button>`).join('')}
-    </div>
+    ${KD.segHTML('kal-upf', up.filters.map(f => [f.k, f.label]), s.filter, 'goFilter', { small: true })}
     ${up.featured ? `<section style="${S(up.featured.card)}">
         <div style="${S(up.featured.poster)}"><span style="font-size:22px;font-weight:600;letter-spacing:-0.02em;text-align:center;line-height:1"><span>${e(up.featured.initials)}</span></span></div>
         <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px">
@@ -8833,7 +9557,7 @@ try {
       const subline = `${inList.length} oppgaver · ${done} fullført`;
       const progress = { width: `${inList.length ? done / inList.length * 100 : 0}%`, height: '100%', borderRadius: 3, background: GREEN, transition: 'width .4s' };
       const tabs = lists.map(l => { const act = cur === l.id, n = data[l.id].filter(x => !x.done).length; return { k: l.id, label: l.navn, count: n,
-        style: { height: 40, borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 13, fontWeight: 500, background: act ? PINK : 'transparent', color: act ? '#2a1720' : '#a9a7a2' },
+        style: { height: 40, borderRadius: 20, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 13, fontWeight: 500, background: act ? PINK : '#1c1c1f', color: act ? '#2a1720' : '#a9a7a2' },
         countStyle: { minWidth: 20, height: 20, borderRadius: 10, display: 'grid', placeItems: 'center', fontSize: 11, fontWeight: 600, background: act ? 'rgba(42,23,32,0.14)' : '#2a2a2d' } }; });
       const draftPrio = { label: PR[s.prio][0], style: { ...tag(s.prio), height: 32, padding: '0 12px', borderRadius: 16, fontSize: 12 } };
       const filters = [['open', 'Åpne'], ['high', 'Høy'], ['done', 'Fullført'], ['all', 'Alle']].map(([k, label]) => ({ k, label, style: { height: 32, padding: '0 13px', borderRadius: 16, fontSize: 12, fontWeight: 500, background: s.filter === k ? '#f4f3ef' : '#1c1c1f', color: s.filter === k ? '#1a1a1c' : '#c9c7c2' } }));
@@ -8855,9 +9579,10 @@ try {
     <div style="height:6px;border-radius:3px;background:#1f1f22;overflow:hidden;margin-top:8px"><div style="${S(progress)}"></div></div>
   </section>
 
-  <div style="display:grid;grid-template-columns:repeat(${Math.max(1, tabs.length)},1fr);gap:2px;padding:4px;border-radius:20px;background:#1c1c1f">
-    ${tabs.map(t => `<button data-on-click="goTab" data-arg="${e(t.k)}" style="${S(t.style)}"><span>${e(t.label)}</span><span style="${S(t.countStyle)}"><span>${e(t.count)}</span></span></button>`).join('')}
-  </div>
+  ${tabs.length <= 3 && tabs.every(t => String(t.label).length <= (tabs.length > 2 ? 11 : 17)) ? KD.segHTML('lister', tabs.map(t => [t.k, t.count ? `${t.label} · ${t.count}` : t.label]), cur, 'goTab', { pink: true, h: 40 })
+    : `<div data-key="tabs-rull" style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:0 var(--kd-kant,10px)">
+    ${tabs.map(t => `<button data-key="tab-${e(t.k)}" data-on-click="goTab" data-arg="${e(t.k)}" style="${S({ ...t.style, flex: 'none', maxWidth: 200, padding: '0 8px 0 16px', whiteSpace: 'nowrap' })}"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis">${e(t.label)}</span><span style="${S({ ...t.countStyle, flex: 'none' })}"><span>${e(t.count)}</span></span></button>`).join('')}
+  </div>`}
 
   <form style="display:flex;align-items:center;gap:10px;height:52px;padding:0 8px 0 16px;border-radius:26px;background:#1c1c1f;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05)">
     <span class="ms" style="font-size:20px;color:#6d6c69">add</span>
@@ -9393,23 +10118,6 @@ try {
    * ==================================================================== */
   const Y = H.Y, G = 'oklch(0.72 0.14 150)', PINK = KD.PINK, a = KD.a;
   const STARS = [[8, 14], [18, 30], [30, 10], [40, 24], [52, 8], [60, 34], [70, 16], [84, 28], [92, 12], [24, 46], [46, 44], [78, 42]];
-  /** Designets natt-scene (Scene({ on })) som HTML */
-  const scene = (on) => `<div style="position:absolute;inset:0;pointer-events:none">`
-    + STARS.map(([x, y], i) => `<span style="${S({ position: 'absolute', left: x + '%', top: y + '%', width: i % 3 ? 2 : 3, height: i % 3 ? 2 : 3, borderRadius: 2, background: '#fff', animation: 'tw ' + (2 + i % 3) + 's ease-in-out ' + (i * 0.3) + 's infinite' })}"></span>`).join('')
-    + `<span style="${S({ position: 'absolute', left: '24%', right: '-10%', top: '46%', height: 180, borderRadius: '50%', border: '1.5px dashed rgba(255,255,255,0.18)' })}"></span>`
-    + `<span style="${S({ position: 'absolute', right: '26%', top: '28%', width: 18, height: 18, borderRadius: '50%', boxShadow: 'inset -5px -2px 0 0 #f1ecd9', transform: 'rotate(-20deg)', filter: 'drop-shadow(0 0 8px rgba(241,236,217,0.6))' })}"></span>`
-    + `<span style="${S({ position: 'absolute', left: 0, right: 0, bottom: 0, height: 44, background: '#0f1612' })}"></span>`
-    + `<span style="${S({ position: 'absolute', right: 18, bottom: 44, width: 0, height: 0, borderLeft: '9px solid transparent', borderRight: '9px solid transparent', borderBottom: '24px solid #0b120f' })}"></span>`
-    + `<span style="${S({ position: 'absolute', right: 80, bottom: 44, width: 0, height: 0, borderLeft: '8px solid transparent', borderRight: '8px solid transparent', borderBottom: '20px solid #0b120f' })}"></span>`
-    + `<span style="${S({ position: 'absolute', right: 30, bottom: 44, width: 58, height: 30, background: '#1e2433' })}"></span>`
-    + `<span style="${S({ position: 'absolute', right: 24, bottom: 74, width: 0, height: 0, borderLeft: '35px solid transparent', borderRight: '35px solid transparent', borderBottom: '20px solid #262d3d' })}"></span>`
-    + [40, 64].map(r => `<span style="${S({ position: 'absolute', right: r, bottom: 58, width: 9, height: 7, borderRadius: 1, background: on ? '#f3c96b' : '#2d3446', boxShadow: on ? '0 0 8px #f3c96b' : 'none', transition: 'background .6s, box-shadow .6s' })}"></span>`).join('')
-    + [96, 22].map(r => `<span style="${S({ position: 'absolute', right: r, bottom: 44 })}">`
-      + `<span style="${S({ position: 'absolute', left: -1, bottom: 0, width: 2, height: 14, background: '#3a4150' })}"></span>`
-      + `<span style="${S({ position: 'absolute', left: -3, bottom: 14, width: 6, height: 6, borderRadius: 3, background: on ? '#ffe3a0' : '#3a4150', boxShadow: on ? '0 0 10px 3px rgba(255,210,120,0.8)' : 'none', transition: 'all .6s', animation: on ? 'glow 3s ease-in-out infinite' : 'none' })}"></span>`
-      + `<span style="${S({ position: 'absolute', left: -18, bottom: -4, width: 36, height: 10, borderRadius: '50%', background: 'radial-gradient(closest-side, rgba(255,210,120,0.55), transparent)', opacity: on ? 1 : 0, transition: 'opacity .6s' })}"></span></span>`).join('')
-    + `</div>`;
-
   /* Designets scener → ki_rom-scener (button.<rom>_lys_<id>) og nivå for reserve-dimming */
   const SC = [['max', 'Maks', 'light_mode', 100, 'maks'], ['kveld', 'Kveld', 'weekend', 45, 'komfort'], ['dim', 'Dempet', 'brightness_4', 20, 'mindre'], ['natt', 'Natt', 'bedtime', 5, 'natt'], ['av', 'Alt av', 'dark_mode', 0, 'av']];
   /* Kjente KI Utelys-innstillinger med designets tekster */
@@ -9547,8 +10255,6 @@ a:hover{color:oklch(0.86 0.12 95)}`;
     body() {
       const s = this.state, c = this.config, h = this.hass;
       const tab = s.tab || c.fane || 'out';
-      const tabDef = (k, l) => ({ k, label: l, style: { height: 38, padding: '0 14px', borderRadius: 19, fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', background: tab === k ? PINK : 'transparent', color: tab === k ? '#2a1720' : '#c9c7c2', transition: 'background .2s' } });
-      const tabs = [tabDef('out', 'Utelys'), tabDef('f1', 'Første etg'), tabDef('f2', 'Andre etg'), tabDef('on', 'Lys på')];
       const fl = this._fl = this._floors();
 
       let inner = '';
@@ -9563,11 +10269,7 @@ a:hover{color:oklch(0.86 0.12 95)}`;
     <button data-on-click="closeSheet" style="width:36px;height:36px;border-radius:18px;background:#232326;display:grid;place-items:center"><span class="ms" style="font-size:20px">close</span></button>
   </header>
 
-  <div style="display:flex;justify-content:center">
-    <div style="display:flex;gap:2px;padding:4px;border-radius:22px;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.12)">
-      ${tabs.map(t => `<button data-on-click="tab" data-arg="${t.k}" style="${S(t.style)}">${E(t.label)}</button>`).join('')}
-    </div>
-  </div>
+  ${KD.segHTML('lysfane', [['out', 'Utelys', 'deck'], ['f1', '1. etg'], ['f2', '2. etg'], ['on', 'Lys på']], tab, 'tab', { pink: true })}
 ${inner}
 </div>`;
     }
@@ -9579,34 +10281,47 @@ ${inner}
       const nPaa = this._pick('neste_paa', /^sensor\.(ki_)?utelys.*neste_(paa|på|on)$/), nAv = this._pick('neste_av', /^sensor\.(ki_)?utelys.*neste_(av|off)$/);
       const wPaa = H.when(nPaa && this.v(nPaa)), wAv = H.when(nAv && this.v(nAv));
       const sol = this._has(c.sol) ? c.sol : 'sun.sun';
-      const rise = H.when(this.at(sol, 'next_rising')), set = H.when(this.at(sol, 'next_setting')), dusk = H.when(this.at(sol, 'next_dusk'));
-      const outPill = { height: 28, padding: '0 10px', borderRadius: 14, display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, background: out ? 'rgba(243,201,107,0.22)' : 'rgba(255,255,255,0.1)', color: out ? '#f3d58f' : '#c3c8d6' };
-      const nw = out ? wAv : wPaa;
-      const nextLabel = (out ? 'slukkes' : 'tennes') + (nw && nw.dag ? ' ' + nw.dag : '');
-      const nextTime = nw ? nw.kl : '–';
+      const rise = H.when(this.at(sol, 'next_rising')), set = H.when(this.at(sol, 'next_setting')), dusk = H.when(this.at(sol, 'next_dusk')), dawn = H.when(this.at(sol, 'next_dawn'));
       const kl = w => w ? w.kl : '–';
-      const times = [['emoji_objects', 'Tennes' + (wPaa && wPaa.dag ? ' ' + wPaa.dag : ''), kl(wPaa)], ['light_off', 'Slukkes' + (wAv && wAv.dag ? ' ' + wAv.dag : ''), kl(wAv)]];
+      const dag = w => w && w.dag ? ' ' + w.dag : '';
+      const mod = w => w && w.d ? w.d.getHours() * 60 + w.d.getMinutes() : null;
+      const now = new Date(), nowM = now.getHours() * 60 + now.getMinutes();
+      const rM = mod(rise), sM = mod(set);
+      const day = this._has(sol) ? this.v(sol) === 'above_horizon' : (rM != null && sM != null ? nowM >= rM && nowM < sM : false);
+      // sola/månen langs buen: andel av dagen (sol opp → ned) eller natta (ned → opp)
+      let f = 0.5;
+      if (rM != null && sM != null) {
+        const dl = ((sM - rM) + 1440) % 1440 || 720, nl = 1440 - dl;
+        f = day ? (((nowM - rM) + 1440) % 1440) / dl : (((nowM - sM) + 1440) % 1440) / nl;
+        f = KD.clamp(f, 0.02, 0.98);
+      }
+      const nw = out ? wAv : wPaa;
+      const nextLabel = (out ? 'Slukkes' : 'Tennes') + dag(nw);
       const sw = on => ({ track: { position: 'relative', width: 46, height: 28, borderRadius: 14, flex: 'none', background: on ? G : '#3a3a3d', transition: 'background .2s' }, knob: { position: 'absolute', top: 3, left: on ? 21 : 3, width: 22, height: 22, borderRadius: 11, background: '#1c1c1f', transition: 'left .2s' } });
-      const autoPill = { display: 'flex', alignItems: 'center', gap: 14, height: 64, padding: '0 16px 0 5px', borderRadius: 32, background: '#1c1c1f', width: '100%', boxSizing: 'border-box' };
-      const autoIcon = { width: 54, height: 54, borderRadius: 27, flex: 'none', display: 'grid', placeItems: 'center', background: '#262629' };
+      const autoId = this._pick('auto', /^switch\.(ki_)?utelys.*_(auto|automatikk)$/);
+      const autoOn = autoId ? this.isOn(autoId) : true;
       const autos = [
-        [this._pick('auto', /^switch\.(ki_)?utelys.*_(auto|automatikk)$/), 'smart_toy', 'Automatikk', out ? 'Utelyset er på' : 'Utelyset er av'],
-        [this._pick('kveld', /^switch\.(ki_)?utelys.*_kveld$/), 'wb_twilight', 'Kveld', 'Tenn i skumringen'],
-        [this._pick('morgen', /^switch\.(ki_)?utelys.*_morgen$/), 'sunny', 'Morgen', 'Tenn før det lysner'],
+        [autoId, 'smart_toy', 'Automatikk', autoOn ? 'Styrer utelyset etter sola og lysnivå' : 'Av – utelyset styres manuelt', true],
+        [this._pick('kveld', /^switch\.(ki_)?utelys.*_kveld$/), 'wb_twilight', 'Kveld', 'Tenn i skumringen', false],
+        [this._pick('morgen', /^switch\.(ki_)?utelys.*_morgen$/), 'wb_sunny', 'Morgen', 'Tenn før det lysner', false],
       ].filter(x => x[0]);
       const lamps = [].concat(c.utelamper || []).filter(id => this._has(id));
       const lampList = lamps.length ? lamps : ids.filter(id => id !== c.utelys);
+      const lampsOn = lampList.filter(id => H.shown(this, id).v > 0).length;
       // dagslengde
       let dagl = '–';
       if (rise && set && rise.d && set.d) {
         let ms = set.d - rise.d; if (ms < 0) ms += 86400e3; if (ms > 86400e3) ms -= 86400e3;
         const m = Math.round(ms / 60000); dagl = `${Math.floor(m / 60)} t ${m % 60} min`;
       }
+      // hvor lenge utelyset står på (tennes → slukkes)
+      let onDur = null;
+      if (wPaa && wAv && wPaa.d && wAv.d) { let m = Math.round((wAv.d - wPaa.d) / 60000); if (m < 0) m += 1440; if (m > 1440) m -= 1440; onDur = `${Math.floor(m / 60)} t ${m % 60} min`; }
       const st = this.state.fold || {};
       const foldDef = (k, icon, title, meta, rows) => {
         const open = !!st[k];
         return { k, icon, title, meta, open, chev: { fontSize: 22, color: '#a9a7a2', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .25s' },
-          rows: rows.map(([k2, v, id], i) => ({ k: k2, v, id, row: { display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderTop: i ? '1px solid rgba(255,255,255,0.05)' : 'none' } })) };
+          rows: rows.map(([k2, v, id, ic], i) => ({ k: k2, v, id, ic, row: { display: 'flex', alignItems: 'center', gap: 12, minHeight: 44, borderTop: i ? '1px solid rgba(255,255,255,0.05)' : 'none', cursor: id ? 'pointer' : 'default' } })) };
       };
       // innstillinger: config eller alle KI Utelys-tall/tider
       let instIds = [].concat(c.innstillinger || []).filter(id => this._has(id));
@@ -9621,47 +10336,113 @@ ${inner}
         if (stt && !isNaN(parseFloat(v)) && /^(number|input_number)\./.test(id)) { const n = parseFloat(v); v = (n < 0 ? '−' : '') + KD.nf(Math.abs(n), Number.isInteger(n) ? 0 : 1) + (this.unit(id) ? ' ' + this.unit(id) : ''); }
         else if (stt && /^time\./.test(id)) v = String(v).slice(0, 5);
         else if (!stt || KD.BAD.has(v)) v = '–';
-        return [label, v, id];
+        const ic = /terskel_(paa|på|on)$/.test(id) ? 'brightness_low' : /terskel_(av|off)$/.test(id) ? 'brightness_high' : /morke|mørke/.test(id) ? 'dark_mode' : /^time|input_datetime/.test(id) ? 'schedule' : 'tune';
+        return [label, v, id, ic];
       });
-      const folds = [foldDef('sol', 'light_mode', 'Sola', `↑ ${kl(rise)} ↓ ${kl(set)}`, [['Soloppgang', kl(rise)], ['Solnedgang', kl(set)], ['Borgerlig skumring', kl(dusk)], ['Dagslengde', dagl]])];
+      const elev = parseFloat(this.at(sol, 'elevation'));
+      const folds = [foldDef('sol', 'light_mode', 'Sola', `↑ ${kl(rise)}  ↓ ${kl(set)}`, [['Daggry', kl(dawn), null, 'wb_twilight'], ['Soloppgang', kl(rise), null, 'wb_sunny'], ['Solnedgang', kl(set), null, 'wb_twilight'], ['Borgerlig skumring', kl(dusk), null, 'nights_stay'], ['Dagslengde', dagl, null, 'hourglass_empty'], ...(isNaN(elev) ? [] : [['Solhøyde nå', `${KD.nf(elev, 1)}°`, null, 'explore']])])];
       if (instRows.length) folds.push(foldDef('inst', 'tune', 'Innstillinger', 'terskler og mørketid', instRows));
 
+      /* ---- tidslinje kl. 12 → 12 (natta i midten) ---- */
+      const P = m => ((((m - 720) % 1440) + 1440) % 1440) / 1440 * 100;
+      const seg = (a1, b1, css) => { if (a1 == null || b1 == null) return ''; const x = P(a1), y = P(b1); const parts = y >= x ? [[x, y]] : [[x, 100], [0, y]]; return parts.map(([l, r]) => `<span style="position:absolute;top:0;bottom:0;left:${l.toFixed(2)}%;width:${Math.max(0, r - l).toFixed(2)}%;${css}"></span>`).join(''); };
+      const dM = mod(dawn), kM = mod(dusk), onM = mod(wPaa), offM = mod(wAv);
+      const tl = `<div style="position:relative;height:10px;border-radius:5px;overflow:hidden;background:linear-gradient(90deg,oklch(0.82 0.12 75 / 0.55),oklch(0.86 0.12 95 / 0.35))">
+          ${seg(sM, rM, 'background:#262d58')}
+          ${seg(sM, kM, `background:linear-gradient(90deg,${a('oklch(0.82 0.12 75)', 0.45)},#262d58)`)}
+          ${seg(dM, rM, `background:linear-gradient(90deg,#262d58,${a('oklch(0.82 0.12 75)', 0.45)})`)}
+        </div>
+        <div style="position:relative;height:4px;margin-top:4px;border-radius:2px;background:rgba(255,255,255,0.06);overflow:hidden">${seg(onM, offM, `background:${Y};box-shadow:0 0 8px ${Y}`)}</div>
+        <span style="position:absolute;top:-5px;height:30px;left:calc(${P(nowM).toFixed(2)}% - 1px);width:2px;border-radius:1px;background:#fff;box-shadow:0 0 6px rgba(255,255,255,0.7)"></span>
+        <span style="position:absolute;top:-22px;left:${P(nowM).toFixed(2)}%;transform:translateX(-50%);font-size:10px;font-weight:600;color:#fff;letter-spacing:.04em">NÅ</span>`;
+      const ticks = ['12', '18', '00', '06', '12'];
+
+      /* ---- himmelen med sol/måne langs buen ---- */
+      const HOR = 132, ARC = 84;
+      const bx = 50 - 42 * Math.cos(Math.PI * f), by = HOR - ARC * Math.sin(Math.PI * f);
+      const sky = day ? 'linear-gradient(180deg,#1b3a5e 0%,#2c5a80 62%,#3a6a7e 100%)' : 'linear-gradient(180deg,#0b1030 0%,#1a1f3d 70%,#232a45 100%)';
+      const orb = day
+        ? `<span style="position:absolute;left:calc(${bx.toFixed(2)}% - 13px);top:${(by - 13).toFixed(1)}px;width:26px;height:26px;border-radius:13px;background:radial-gradient(circle at 40% 40%,#fff6d6,${Y} 60%);box-shadow:0 0 22px 6px ${a(Y, 0.55)}"></span>`
+        : `<span style="position:absolute;left:calc(${bx.toFixed(2)}% - 10px);top:${(by - 10).toFixed(1)}px;width:20px;height:20px;border-radius:50%;box-shadow:inset -6px -2px 0 0 #f1ecd9;transform:rotate(-20deg);filter:drop-shadow(0 0 8px rgba(241,236,217,0.6))"></span>`;
+      const lampGlow = (x) => `<span style="position:absolute;left:${x}%;bottom:44px">
+          <span style="position:absolute;left:-1px;bottom:0;width:2px;height:16px;background:#3a4150"></span>
+          <span style="position:absolute;left:-3px;bottom:16px;width:6px;height:6px;border-radius:3px;background:${out ? '#ffe3a0' : '#3a4150'};box-shadow:${out ? '0 0 10px 3px rgba(255,210,120,0.8)' : 'none'};transition:all .6s;animation:${out ? 'glow 3s ease-in-out infinite' : 'none'}"></span>
+          <span style="position:absolute;left:-22px;bottom:-5px;width:44px;height:12px;border-radius:50%;background:radial-gradient(closest-side,rgba(255,210,120,0.55),transparent);opacity:${out ? 1 : 0};transition:opacity .6s"></span></span>`;
+      const heroScene = `<div style="position:absolute;inset:0;pointer-events:none">
+          ${day ? '' : STARS.map(([x, y], i) => `<span style="${S({ position: 'absolute', left: x + '%', top: (y * 0.8) + '%', width: i % 3 ? 2 : 3, height: i % 3 ? 2 : 3, borderRadius: 2, background: '#fff', animation: 'tw ' + (2 + i % 3) + 's ease-in-out ' + (i * 0.3) + 's infinite' })}"></span>`).join('')}
+          <svg viewBox="0 0 100 ${HOR + 4}" preserveAspectRatio="none" style="position:absolute;left:0;top:0;width:100%;height:${HOR + 4}px;overflow:visible"><path d="M 8 ${HOR} A 42 ${ARC} 0 0 1 92 ${HOR}" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="1.5" stroke-dasharray="3 5" vector-effect="non-scaling-stroke"/></svg>
+          ${orb}
+          <span style="position:absolute;left:0;right:0;top:${HOR}px;bottom:0;background:${day ? '#18261e' : '#0f1612'}"></span>
+          <span style="position:absolute;right:26px;bottom:44px;width:58px;height:30px;background:${day ? '#2a3348' : '#1e2433'}"></span>
+          <span style="position:absolute;right:20px;bottom:74px;width:0;height:0;border-left:35px solid transparent;border-right:35px solid transparent;border-bottom:20px solid ${day ? '#333d55' : '#262d3d'}"></span>
+          ${[36, 60].map(r => `<span style="position:absolute;right:${r}px;bottom:58px;width:9px;height:7px;border-radius:1px;background:${out ? '#f3c96b' : '#2d3446'};box-shadow:${out ? '0 0 8px #f3c96b' : 'none'};transition:background .6s,box-shadow .6s"></span>`).join('')}
+          ${lampGlow(72)}${lampGlow(95)}
+        </div>`;
+      const heroH = HOR + 44;
+      const pwr = { width: 52, height: 52, borderRadius: 26, flex: 'none', display: 'grid', placeItems: 'center', background: out ? Y : 'rgba(255,255,255,0.12)', color: out ? '#141416' : '#e6e4df', boxShadow: out ? `0 0 0 6px ${a(Y, 0.18)}, 0 8px 24px ${a(Y, 0.35)}` : 'inset 0 1px 0 rgba(255,255,255,0.12)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', transition: 'background .3s, box-shadow .3s' };
+      const statusTxt = out ? (lampsOn ? `På · ${lampsOn} av ${lampList.length || ids.length} lamper` : 'På') : 'Av';
+      const cardS = 'border-radius:28px;background:#1c1c1f';
+      const lbl = 'font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#8e8d89';
+
       return `
-    <section style="position:relative;overflow:hidden;height:176px;border-radius:28px;background:linear-gradient(180deg,#0e1330 0%,#1a1f3d 70%,#131a1a 100%)">
-      ${scene(out)}
-      <div style="position:absolute;left:18px;top:18px;display:flex;flex-direction:column;gap:8px;align-items:flex-start">
-        <span style="font-size:13px;font-weight:500;color:#dfe3ee">Utelys</span>
-        <button data-on-click="toggleOut" style="${S(outPill)}"><span class="ms" style="font-size:15px;font-variation-settings:'FILL' 1">${out ? 'wb_twilight' : 'dark_mode'}</span><span>${out ? 'På' : 'Av'}</span></button>
+    <section data-lay="utelys-hero" data-lay-navn="Utelys og sola" style="position:relative;overflow:hidden;border-radius:28px;background:${sky};transition:background .6s">
+      <div style="position:relative;height:${heroH}px">
+        ${heroScene}
+        <div style="position:absolute;left:18px;right:14px;top:16px;display:flex;align-items:flex-start;gap:12px">
+          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+            <span style="font-size:13px;font-weight:500;color:#dfe3ee">Utelys</span>
+            <span style="font-size:12px;color:${out ? '#f3d58f' : '#c3c8d6'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(statusTxt)}${autoId ? ` · ${autoOn ? 'auto' : 'manuell'}` : ''}</span>
+          </div>
+          <button class="kdl-a96" data-on-click="toggleOut" title="${out ? 'Slå av utelys' : 'Slå på utelys'}" style="${S(pwr)}"><span class="ms" style="font-size:26px;font-variation-settings:'FILL' 1">${out ? 'light' : 'power_settings_new'}</span></button>
+        </div>
+        <div style="position:absolute;left:18px;bottom:12px;display:flex;flex-direction:column;gap:0;text-shadow:0 1px 8px rgba(0,0,0,0.4)">
+          <span style="font-size:12px;color:#c3c8d6">${E(nextLabel)}</span>
+          <span style="font-size:34px;font-weight:300;letter-spacing:-0.03em;line-height:1.05;font-variant-numeric:tabular-nums">${E(nw ? nw.kl : '–')}</span>
+        </div>
       </div>
-      <div style="position:absolute;left:18px;bottom:16px;display:flex;flex-direction:column;gap:6px">
-        <span style="display:flex;align-items:baseline;gap:8px"><span style="font-size:13px;color:#c3c8d6">${E(nextLabel)}</span><span style="font-size:28px;font-weight:300;letter-spacing:-0.02em;font-variant-numeric:tabular-nums">${E(nextTime)}</span></span>
-        <span style="font-size:12px;color:#c3c8d6">Sol opp ${E(kl(rise))} · ned ${E(kl(set))}</span>
+      <div style="position:relative;padding:26px 18px 14px;background:rgba(10,12,20,0.55);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
+        <div style="position:relative">${tl}</div>
+        <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:10px;color:#8e8d89;font-variant-numeric:tabular-nums">${ticks.map(t => `<span style="width:0;display:flex;justify-content:center">${t}</span>`).join('')}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:12px;font-size:11px;color:#a9a7a2">
+          <span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:3px;background:${a('oklch(0.82 0.12 75)', 0.6)}"></span>Dagslys ${E(kl(rise))}–${E(kl(set))}</span>
+          <span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:4px;border-radius:2px;background:${Y};box-shadow:0 0 6px ${Y}"></span>Utelys ${E(kl(wPaa))}–${E(kl(wAv))}</span>
+        </div>
       </div>
     </section>
 
-    <section style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
-      ${times.map(([icon, k, v], i) => `<div data-on-click="rowMore" data-arg="${E((i ? nAv : nPaa) || '')}" style="display:flex;flex-direction:column;gap:6px;padding:12px 16px 16px 12px;border-radius:28px;background:#1c1c1f">
-          <span style="width:50px;height:50px;border-radius:25px;background:#262629;display:grid;place-items:center;margin-bottom:22px"><span class="ms" style="font-size:24px">${icon}</span></span>
-          <span style="font-size:13px;color:#c9c7c2;padding-left:4px">${E(k)}</span>
-          <span style="font-size:32px;font-weight:300;letter-spacing:-0.03em;line-height:1;padding-left:4px;font-variant-numeric:tabular-nums">${E(v)}</span>
-        </div>`).join('')}
+    <section data-lay="utelys-plan" data-lay-navn="Tidsplan" style="${cardS};padding:16px 18px;display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;align-items:center;gap:8px"><span style="flex:1;${lbl}">Tidsplan</span>${onDur ? `<span style="font-size:12px;color:#a9a7a2">på i ${E(onDur)}</span>` : ''}</div>
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:10px">
+        ${[[nPaa, 'emoji_objects', 'Tennes' + dag(wPaa), kl(wPaa), !out], null, [nAv, 'light_off', 'Slukkes' + dag(wAv), kl(wAv), out]].map(x => !x ? `<span class="ms" style="font-size:20px;color:#6d6c69">arrow_forward</span>`
+          : `<button data-on-click="rowMore" data-arg="${E(x[0] || '')}" style="min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:12px 14px;border-radius:20px;background:${x[4] ? a(Y, 0.12) : '#232326'};box-shadow:${x[4] ? `inset 0 0 0 1px ${a(Y, 0.35)}` : 'none'};text-align:left">
+              <span style="display:flex;align-items:center;gap:6px;min-width:0;max-width:100%;font-size:12px;color:${x[4] ? Y : '#a9a7a2'}"><span class="ms" style="font-size:16px;flex:none">${x[1]}</span><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(x[2])}</span></span>
+              <span style="font-size:28px;font-weight:300;letter-spacing:-0.03em;line-height:1;font-variant-numeric:tabular-nums">${E(x[3])}</span>
+            </button>`).join('')}
+      </div>
     </section>
 
-    ${autos.length ? `<section style="display:flex;flex-direction:column;gap:8px">
-      ${autos.map(([id, icon, k, sub]) => { const w = sw(this.isOn(id)); return `<button data-on-click="autoTog" data-arg="${E(id)}" style="${S(autoPill)}">
-          <span style="${S(autoIcon)}"><span class="ms" style="font-size:24px">${icon}</span></span>
-          <span style="flex:1;min-width:0;display:flex;flex-direction:column;text-align:left"><span style="font-size:15px;font-weight:500">${E(k)}</span><span style="font-size:12px;color:#a9a7a2">${E(sub)}</span></span>
+    ${lampList.length ? `<section data-lay="utelys-lamper" data-lay-navn="Utelamper" style="display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;align-items:center;gap:10px;padding:4px 6px 0">
+        <span class="ms" style="font-size:18px;color:#a9a7a2">deck</span>
+        <span style="flex:1;font-size:15px;font-weight:500">Utelamper</span>
+        <span style="font-size:12px;color:#8e8d89;white-space:nowrap">${lampsOn ? `${lampsOn} på` : 'alle av'}</span>
+        <button data-on-click="toggleOut" style="${S({ height: 30, padding: '0 12px', borderRadius: 15, fontSize: 12, fontWeight: 600, background: lampsOn ? '#262629' : a(Y, 0.18), color: lampsOn ? '#c9c7c2' : Y })}">${lampsOn ? 'Av' : 'På'}</button>
+      </div>
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
+        ${lampList.map(id => H.pill(this, id, H.strip(this.fname(id), ['ute']), false)).join('')}
+      </div>
+    </section>` : ''}
+
+    ${autos.length ? `<section data-lay="utelys-auto" data-lay-navn="Automatikk" style="${cardS};padding:6px 6px 6px;display:flex;flex-direction:column">
+      <div style="padding:10px 12px 6px;${lbl}">Automatikk</div>
+      ${autos.map(([id, icon, k, sub, main], i) => { const on = this.isOn(id), w = sw(on), dim = !main && !autoOn; return `<button data-key="auto-${E(id)}" data-on-click="autoTog" data-arg="${E(id)}" data-hold="rowMore" style="display:flex;align-items:center;gap:12px;min-height:64px;padding:8px 12px 8px 8px;border-radius:22px;text-align:left;opacity:${dim ? 0.5 : 1};${i ? 'border-top:1px solid rgba(255,255,255,0.05);border-radius:0 0 22px 22px;' : ''}${main && autos.length > 1 ? 'margin-bottom:2px;' : ''}">
+          <span style="width:44px;height:44px;border-radius:22px;flex:none;display:grid;place-items:center;background:${on ? a(main ? G : Y, 0.16) : '#262629'};color:${on ? (main ? G : Y) : '#a9a7a2'};transition:background .25s,color .25s"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' ${on ? 1 : 0}">${icon}</span></span>
+          <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px"><span style="font-size:15px;font-weight:500">${E(k)}</span><span style="font-size:12px;color:#a9a7a2">${E(sub)}</span></span>
           <span style="${S(w.track)}"><span style="${S(w.knob)}"></span></span>
         </button>`; }).join('')}
     </section>` : ''}
 
-    ${lampList.length ? `<section style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
-      ${lampList.map(id => { const lit = this.v(id) === 'on'; const name = H.strip(this.fname(id), ['ute']);
-        const st2 = { height: 72, padding: '0 20px', borderRadius: 36, display: 'flex', alignItems: 'center', gap: 14, background: lit ? Y : '#1c1c1f', color: lit ? '#1a1a1c' : '#c9c7c2', boxShadow: lit ? '0 8px 24px oklch(0.86 0.12 95 / 0.25)' : 'none', transition: 'background .3s, box-shadow .3s' };
-        return `<button class="kdl-a97" data-on-click="lampTog" data-arg="${E(id)}" data-hold="rowMore" style="${S(st2)}"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">${/veranda/i.test(name + id) ? 'light' : 'lightbulb'}</span><span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(name)}</span></button>`; }).join('')}
-    </section>` : ''}
-
-    ${folds.map(d => `<section style="display:flex;flex-direction:column;border-radius:28px;background:#1c1c1f;overflow:hidden">
+    ${folds.map(d => `<section data-lay="utelys-${d.k}" style="display:flex;flex-direction:column;${cardS};overflow:hidden">
         <button data-on-click="fold" data-arg="${d.k}" style="display:flex;align-items:center;gap:12px;height:58px;padding:0 18px;text-align:left">
           <span class="ms" style="font-size:22px">${d.icon}</span>
           <span style="flex:1;font-size:15px;font-weight:500">${E(d.title)}</span>
@@ -9669,7 +10450,7 @@ ${inner}
           <span class="ms" style="${S(d.chev)}">expand_more</span>
         </button>
         ${d.open ? `<div style="display:flex;flex-direction:column;padding:0 18px 10px">
-            ${d.rows.map(r => `<div ${r.id ? `data-on-click="rowMore" data-arg="${E(r.id)}" ` : ''}style="${S(r.row)}"><span style="flex:1;font-size:13px">${E(r.k)}</span><span style="font-size:12px;font-weight:600;padding:6px 11px;border-radius:12px;background:#262629;font-variant-numeric:tabular-nums">${E(r.v)}</span></div>`).join('')}
+            ${d.rows.map(r => `<div ${r.id ? `data-on-click="rowMore" data-arg="${E(r.id)}" ` : ''}style="${S(r.row)}">${r.ic ? `<span class="ms" style="font-size:18px;color:#8e8d89">${r.ic}</span>` : ''}<span style="flex:1;min-width:0;font-size:13px">${E(r.k)}</span><span style="font-size:12px;font-weight:600;padding:6px 11px;border-radius:12px;background:#262629;font-variant-numeric:tabular-nums;white-space:nowrap">${E(r.v)}</span></div>`).join('')}
           </div>` : ''}
       </section>`).join('')}`;
     }
@@ -9933,6 +10714,77 @@ try {
       const r = this._room(), ud = JSON.parse(JSON.stringify(H.userHideNow(this) || {}));
       delete ud[r.id]; H.saveUserHide(this, ud); this._queue();
     }
+    /* ----- tilpass fliser og scener (per bruker, i romraden: fliser/scener { skjul, vis, rekkefolge, navn, ekstra }) ----- */
+    _udRow(kind, fn) {
+      const r = this._room(), ud = JSON.parse(JSON.stringify(KD.userData(this) || {}));
+      const row = ud[r.id] = ud[r.id] || {};
+      const g = row[kind] = row[kind] || {};
+      fn(g);
+      for (const k of Object.keys(g)) if ((Array.isArray(g[k]) && !g[k].length) || (g[k] && typeof g[k] === 'object' && !Array.isArray(g[k]) && !Object.keys(g[k]).length)) delete g[k];
+      if (!Object.keys(g).length) delete row[kind];
+      this.haptic('selection');
+      KD.saveUserData(this, ud);
+      this._queue();
+    }
+    tileTog(ev, key) { this.edHide(ev, 'fliser|' + key); }
+    sceneHide(ev, key) { this.edHide(ev, 'scener|' + key); }
+    edHide(ev, arg) {
+      const i = String(arg).indexOf('|'), kind = arg.slice(0, i), key = arg.slice(i + 1);
+      const hidden = kind === 'fliser' ? (this._tileHid ? this._tileHid(key) : false) : !!((this._scenes || []).find(x => x.key === key) || {}).hid;
+      this._udRow(kind, g => {
+        g.skjul = (g.skjul || []).filter(x => x !== key);
+        if (kind === 'fliser') { g.vis = (g.vis || []).filter(x => x !== key); if (!hidden) g.skjul.push(key); else g.vis.push(key); }
+        else if (!hidden) g.skjul.push(key);
+      });
+    }
+    edMove(ev, arg) {
+      const [kind, key, d] = String(arg).split('|');
+      const list = [...((kind === 'fliser' ? this._tileOrder : this._sceneOrder) || [])];
+      const i = list.indexOf(key), j = i + (+d); if (i < 0 || j < 0 || j >= list.length) return;
+      [list[i], list[j]] = [list[j], list[i]];
+      this._udRow(kind, g => { g.rekkefolge = list; });
+    }
+    edName(ev, arg, el) {
+      const i = String(arg).indexOf('|'), kind = arg.slice(0, i), key = arg.slice(i + 1), v = String((el && el.value) || '').trim();
+      const def = (el && el.getAttribute('placeholder')) || '';
+      this._udRow(kind, g => { g.navn = { ...(g.navn || {}) }; if (!v || v === def) delete g.navn[key]; else g.navn[key] = v.slice(0, 30); });
+    }
+    edKey(ev) { if (ev.key === 'Enter') { ev.preventDefault(); ev.target.blur(); } }
+    scDel(ev, key) {
+      this._udRow('scener', g => { g.ekstra = (g.ekstra || []).filter(x => x !== key); g.skjul = (g.skjul || []).filter(x => x !== key); g.rekkefolge = (g.rekkefolge || []).filter(x => x !== key); if (g.navn) delete g.navn[key]; });
+    }
+    scAddTog() { this.setState({ scAdd: !this.state.scAdd, scQ: '' }); }
+    scQ(ev, arg, el) { this._scQ = el.value; clearTimeout(this._scqT); this._scqT = setTimeout(() => this.setState({ scQ: this._scQ }), 150); }
+    scAddGo(ev, id) {
+      if (!id) return;
+      this._udRow('scener', g => { g.ekstra = [...(g.ekstra || []).filter(x => x !== id), id]; g.skjul = (g.skjul || []).filter(x => x !== id); });
+    }
+    /** redigeringspanel for fliser/scener: gi nytt navn, flytt, skjul/vis (+ legg til scene/skript) */
+    _edPanel(kind, title, icon, items, navn) {
+      const s = this.state, n = items.length;
+      const ib = (on, arg, ic, tip, col, dis) => `<button class="kdr-a92" data-on-click="${on}" data-arg="${E(arg)}" title="${tip}" style="${S({ width: 34, height: 34, borderRadius: 17, flex: 'none', display: 'grid', placeItems: 'center', color: col || '#8e8d89', opacity: dis ? 0.25 : 1, pointerEvents: dis ? 'none' : null })}"><span class="ms" style="font-size:19px">${ic}</span></button>`;
+      const rows = items.map((x, i) => `<div data-key="ed-${kind}-${E(x.key)}" style="display:flex;align-items:center;gap:2px;min-height:48px;border-top:${i ? '1px solid rgba(255,255,255,0.05)' : 'none'}">
+          <span style="${S({ width: 34, height: 34, borderRadius: 17, flex: 'none', display: 'grid', placeItems: 'center', marginRight: 6, background: x.hid ? '#262629' : 'oklch(0.78 0.13 350 / 0.18)', color: x.hid ? '#6d6c69' : 'oklch(0.85 0.09 350)' })}"><span class="ms" style="font-size:18px">${E(x.icon)}</span></span>
+          <input data-on-change="edName" data-on-keydown="edKey" data-arg="${E(kind + '|' + x.key)}" value="${E(x.label)}" placeholder="${E(x.def)}" maxlength="30" enterkeyhint="done" autocomplete="off" style="${S({ flex: 1, minWidth: 0, height: 36, padding: '0 10px', borderRadius: 12, border: 'none', outline: 'none', background: 'rgba(255,255,255,0.04)', color: x.hid ? '#8e8d89' : '#f2f1ee', font: 'inherit', fontSize: 13, boxSizing: 'border-box', textDecoration: x.hid ? 'line-through' : 'none' })}">
+          ${ib('edMove', `${kind}|${x.key}|-1`, 'arrow_upward', 'Flytt fram', null, i === 0)}${ib('edMove', `${kind}|${x.key}|1`, 'arrow_downward', 'Flytt bak', null, i === n - 1)}
+          ${ib('edHide', `${kind}|${x.key}`, x.hid ? 'visibility_off' : 'visibility', x.hid ? 'Vis' : 'Skjul', x.hid ? '#6d6c69' : 'oklch(0.82 0.1 350)')}
+          ${x.extra ? ib('scDel', x.key, 'delete', 'Fjern', 'oklch(0.72 0.15 25)') : ''}
+        </div>`).join('');
+      let add = '';
+      if (kind === 'scener') {
+        const have = new Set(items.map(x => x.key)), q = String(s.scQ || '').toLowerCase(), r = this._r || this._room(), w = String(r.navn || r.id).toLowerCase();
+        const cand = s.scAdd ? Object.keys(this.all()).filter(id => /^(scene|script)\./.test(id) && !have.has(id) && (!q || (id + ' ' + this.fname(id)).toLowerCase().includes(q)))
+          .sort((x, y) => ((y.includes(r.id) || this.fname(y).toLowerCase().includes(w)) - (x.includes(r.id) || this.fname(x).toLowerCase().includes(w))) || (y.startsWith('scene.') - x.startsWith('scene.')) || this.fname(x).localeCompare(this.fname(y), 'nb')) : [];
+        add = `<button class="kdr-a92" data-on-click="scAddTog" style="display:flex;align-items:center;justify-content:center;gap:6px;height:40px;margin-top:6px;border-radius:20px;font-size:13px;font-weight:500;background:${s.scAdd ? 'oklch(0.78 0.13 350 / 0.2)' : 'rgba(255,255,255,0.06)'};color:#e6e4df"><span class="ms" style="font-size:18px">${s.scAdd ? 'expand_less' : 'add'}</span>${s.scAdd ? 'Lukk' : 'Legg til scene eller skript'}</button>
+        ${s.scAdd ? `<input data-key="kd-scq" data-keep="1" data-on-input="scQ" placeholder="Søk etter scene eller skript …" autocomplete="off" style="height:38px;margin-top:8px;padding:0 14px;border-radius:19px;border:none;outline:none;background:#262629;color:#f2f1ee;font:inherit;font-size:13px;box-sizing:border-box;width:100%">
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;max-height:240px;overflow-y:auto;overscroll-behavior:contain">${cand.slice(0, 40).map(id => `<button class="kdr-a92" data-key="kd-sca-${E(id)}" data-on-click="scAddGo" data-arg="${E(id)}" style="${S({ display: 'flex', alignItems: 'center', gap: 6, maxWidth: '100%', minWidth: 0, height: 34, padding: '0 12px 0 8px', borderRadius: 17, fontSize: 12, fontWeight: 500, background: 'rgba(255,255,255,0.06)', color: '#c9c7c2' })}"><span class="ms" style="font-size:16px;flex:none">${id.startsWith('script.') ? 'play_circle' : 'palette'}</span><span style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(this.fname(id))}</span></button>`).join('') || '<span style="font-size:12px;color:#6d6c69">Ingen scener eller skript funnet</span>'}</div>
+        ${cand.length > 40 ? `<span style="display:block;margin-top:6px;font-size:11px;color:#6d6c69">${cand.length - 40} til – søk for å snevre inn</span>` : ''}` : ''}`;
+      }
+      return `<div data-key="kd-ed-${kind}" style="display:flex;flex-direction:column;padding:12px 10px 10px 12px;border-radius:24px;background:#1c1c1f;box-shadow:inset 0 0 0 1px oklch(0.78 0.13 350 / 0.25)">
+      <div style="display:flex;align-items:center;gap:8px;padding:0 4px 6px;font-size:12px;color:#8e8d89"><span class="ms" style="font-size:16px">${icon}</span><span style="flex:1">${E(title)} · gi nytt navn, flytt eller skjul</span></div>
+      ${rows || '<span style="padding:8px 4px;font-size:12px;color:#6d6c69">Ingen ennå</span>'}${add}
+    </div>`;
+    }
     sensorAll(ev, k) { this.setState({ sensAll: this.state.sensAll === k ? null : k, sensQ: '' }); }
     sensorQ(ev, arg, el) { this._sensQ = el.value; clearTimeout(this._sqT); this._sqT = setTimeout(() => this.setState({ sensQ: this._sensQ }), 150); }
     /** Animasjonen i topp-pillen (innflyging + pulserende glød) – av/på per bruker, gjelder alle popups */
@@ -10139,13 +10991,25 @@ try {
         subStyle: { fontSize: 12, color: actv ? '#e6e4df' : '#8e8d89', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } });
       const presOn = sensors.some(z => z.pres && z.hot);
       const tStrom = () => tile('strom', 'bolt', 'Strøm', `${watt} W nå`, C.amber, watt > 0, 'moreInfo', o.effekt[0] || '');
-      const tiles = [
-        tile('lys', 'lightbulb', 'Lys', on ? `${on} av ${o.lys.length} på` : 'Alle av', C.yellow, on > 0, 'lightsAll', ''),
-        cover ? tile('gardin', 'curtains', 'Gardiner', cv ? `${cv} % åpen` : 'Lukket', C.pink, cv > 0, 'curtain', cover, cv) : tStrom(),
-        m0 ? tile('media', m0.tv ? 'tv' : 'speaker', 'Media', m0.playing ? 'Spiller' : 'Pauset', C.green, m0.playing, 'mediaTog', m0.id)
-          : tile('tilstede', 'sensor_occupied', 'Tilstede', presOn ? 'Noen her' : 'Tomt', C.blue, act > 0, 'moreInfo', (sensors.find(z => z.pres) || {}).id || ''),
-        cover ? tStrom() : tile('fukt', 'water_drop', 'Fukt', `${hum != null ? nf(hum, 0) : '–'} %`, C.blue, false, 'moreInfo', L.humId || ''),
-      ];
+      const presS = sensors.find(z => z.pres);
+      const TF = { // alle mulige fliser (nøkkel → bygger)
+        lys: () => tile('lys', 'lightbulb', 'Lys', on ? `${on} av ${o.lys.length} på` : 'Alle av', C.yellow, on > 0, 'lightsAll', ''),
+        gardin: cover ? () => tile('gardin', 'curtains', 'Gardiner', cv ? `${cv} % åpen` : 'Lukket', C.pink, cv > 0, 'curtain', cover, cv) : null,
+        media: m0 ? () => tile('media', m0.tv ? 'tv' : 'speaker', 'Media', m0.playing ? 'Spiller' : 'Pauset', C.green, m0.playing, 'mediaTog', m0.id) : null,
+        tilstede: presS || !m0 ? () => tile('tilstede', 'sensor_occupied', 'Tilstede', presOn ? 'Noen her' : 'Tomt', C.blue, act > 0, 'moreInfo', (presS || {}).id || '') : null,
+        strom: tStrom,
+        fukt: () => tile('fukt', 'water_drop', 'Fukt', `${hum != null ? nf(hum, 0) : '–'} %`, C.blue, false, 'moreInfo', L.humId || ''),
+        klima: k ? () => tile('klima', 'heat', 'Klima', `${Number.isInteger(k.set) ? k.set : nf(k.set, 1)}° · ${k.heating ? 'varmer' : 'holder'}`, C.red, !!k.heating, 'moreInfo', k.power || k.id) : null,
+      };
+      const U = KD.userRoom(this, r.id), UF = U.fliser || {}, US = U.scener || {};
+      const tDef = ['lys', cover ? 'gardin' : 'strom', m0 ? 'media' : 'tilstede', cover ? 'strom' : 'fukt'];
+      const tAll = [...tDef, ...Object.keys(TF).filter(x => !tDef.includes(x))].filter(x => TF[x]);
+      const ordered = (all, rek) => [...(rek || []).filter(x => all.includes(x)), ...all.filter(x => !(rek || []).includes(x))].filter((x, i, arr) => arr.indexOf(x) === i);
+      const tOrder = this._tileOrder = ordered(tAll, UF.rekkefolge);
+      const tHid = x => (UF.skjul || []).includes(x) || (!tDef.includes(x) && !(UF.vis || []).includes(x));
+      this._tileHid = tHid;
+      const tilesAll = tOrder.map(x => { const t = TF[x](); t.def = t.label; if (UF.navn && UF.navn[x]) t.label = UF.navn[x]; t.hid = tHid(x); return t; });
+      const tiles = s.edit ? tilesAll : tilesAll.filter(t => !t.hid);
 
       // scener
       const lo = H.lysOv(this, r.id);
@@ -10154,7 +11018,12 @@ try {
       else for (const id of Object.keys(KI_SC)) { const b = `button.${r.id}_lys_${id}`; if (this._has(b)) scenes.push({ key: b, ent: b, label: KI_SC[id][0], icon: KI_SC[id][1] }); }
       for (const id of [...o.skript, ...o.scener]) scenes.push({ key: id, ent: id, label: H.strip(this.fname(id), words), icon: id.startsWith('script.') ? 'play_circle' : 'palette' });
       if (!scenes.length && o.lys.length) scenes = SCENES.map(([key, label, icon]) => ({ key: 'fb:' + key, fb: key, label, icon }));
+      for (const id of [].concat(US.ekstra || [])) if (this._has(id) && !scenes.some(x => x.key === id)) scenes.push({ key: id, ent: id, label: H.strip(this.fname(id), words), icon: id.startsWith('script.') ? 'play_circle' : 'palette', extra: true });
+      const sHid = x => (US.skjul || []).includes(x);
+      const sOrder = this._sceneOrder = ordered(scenes.map(x => x.key), US.rekkefolge);
+      scenes = sOrder.map(key => { const x = scenes.find(y => y.key === key); return { ...x, def: x.label, label: (US.navn && US.navn[key]) || x.label, hid: sHid(key) }; });
       this._scenes = scenes;
+      const scShown = s.edit ? scenes : scenes.filter(x => !x.hid);
 
       const humBar = { display: 'block', width: `${hum != null ? KD.clamp(hum, 0, 100) : 0}%`, height: '100%', borderRadius: 3, background: hum > 60 ? C.amber : C.blue };
       const headIcon = { width: 40, height: 40, borderRadius: 20, flex: 'none', display: 'grid', placeItems: 'center', background: col, color: '#141416' };
@@ -10184,25 +11053,27 @@ try {
     </div>
   </section>
 
-  <section style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
-    ${tiles.map(t => `<button class="kdr-a97" data-key="${t.key}" data-on-click="${t.go}" data-arg="${E(t.arg)}" data-hold="moreInfo" style="${S(t.style)}">
+  <section style="display:flex;flex-direction:column;gap:12px"><div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
+    ${tiles.map(t => `<button class="kdr-a97" data-key="${t.key}" data-on-click="${s.edit ? 'tileTog' : t.go}" data-arg="${E(s.edit ? t.key : t.arg)}" ${s.edit ? '' : 'data-hold="moreInfo" '}style="${S({ ...t.style, ...(s.edit ? { opacity: t.hid ? 0.38 : 1, boxShadow: t.hid ? 'inset 0 0 0 1px rgba(255,255,255,0.12)' : 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.55)' } : {}) })}">
         <span style="${S(t.fill)}"></span>
         <span style="${S(t.iconWrap)}"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">${t.icon}</span></span>
         <span style="position:relative;display:flex;flex-direction:column;gap:1px;min-width:0;text-align:left">
           <span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(t.label)}</span>
           <span style="${S(t.subStyle)}">${E(t.sub)}</span>
         </span>
+        ${s.edit ? `<span class="ms" style="position:relative;margin-left:auto;font-size:18px;color:${t.hid ? '#f2f1ee' : 'oklch(0.82 0.1 350)'}">${t.hid ? 'visibility_off' : 'visibility'}</span>` : ''}
       </button>`).join('')}
-  </section>
+  </div>${s.edit ? this._edPanel('fliser', 'Fliser', 'grid_view', tilesAll.map(t => ({ key: t.key, icon: t.icon, label: t.label, def: t.def, hid: t.hid })), UF.navn) : ''}</section>
 
-  ${scenes.length ? `<section data-hscroll="1" style="display:flex;gap:14px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:2px var(--kd-kant,10px)">
-    ${scenes.map(x => { const act = s.scene === x.key;
+  ${scShown.length || s.edit ? `<section style="display:flex;flex-direction:column;gap:12px">${scShown.length ? `<div data-hscroll="1" style="display:flex;gap:14px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--kd-kant,10px));padding:2px var(--kd-kant,10px)">
+    ${scShown.map(x => { const act = s.scene === x.key && !s.edit;
       const bubble = { width: 58, height: 58, borderRadius: 29, display: 'grid', placeItems: 'center', background: act ? PINK : '#1c1c1f', color: act ? '#2a1720' : '#c9c7c2', boxShadow: act ? '0 6px 18px rgba(240,140,190,0.3)' : 'inset 0 0 0 1px rgba(255,255,255,0.05)', transform: act ? 'scale(1.06)' : 'scale(1)', transition: 'transform .35s cubic-bezier(.34,1.8,.64,1), background .25s' };
-      return `<button data-key="${E(x.key)}" data-on-click="sceneGo" data-arg="${E(x.key)}" style="flex:none;display:flex;flex-direction:column;align-items:center;gap:6px;width:62px">
+      if (s.edit) Object.assign(bubble, { opacity: x.hid ? 0.38 : 1, boxShadow: x.hid ? 'inset 0 0 0 1px rgba(255,255,255,0.12)' : 'inset 0 0 0 1.5px oklch(0.78 0.13 350 / 0.55)' });
+      return `<button data-key="${E(x.key)}" data-on-click="${s.edit ? 'sceneHide' : 'sceneGo'}" data-arg="${E(x.key)}" style="flex:none;display:flex;flex-direction:column;align-items:center;gap:6px;width:62px">
         <span style="${S(bubble)}"><span class="ms" style="${S({ fontSize: 24, fontVariationSettings: `'FILL' ${act ? 1 : 0}` })}">${E(x.icon)}</span></span>
-        <span style="${S({ fontSize: 11, fontWeight: 500, color: act ? '#f2f1ee' : '#8e8d89', whiteSpace: 'nowrap' })}">${E(x.label)}</span>
+        <span style="${S({ fontSize: 11, fontWeight: 500, color: act ? '#f2f1ee' : '#8e8d89', whiteSpace: 'nowrap', maxWidth: 66, overflow: 'hidden', textOverflow: 'ellipsis', opacity: s.edit && x.hid ? 0.5 : 1 })}">${E(x.label)}</span>
       </button>`; }).join('')}
-  </section>` : ''}
+  </div>` : ''}${s.edit ? this._edPanel('scener', 'Scener', 'auto_awesome', scenes.map(x => ({ key: x.key, icon: x.icon, label: x.label, def: x.def, hid: x.hid, extra: x.extra })), US.navn) : ''}</section>` : ''}
 
   ${lightRows.length ? `<section style="display:flex;flex-direction:column;gap:8px">
     <div style="display:flex;justify-content:space-between;padding:0 6px"><span style="font-size:15px;font-weight:500">Lys</span><span style="font-size:12px;color:#8e8d89">${on} på · dra for å dimme</span></div>
